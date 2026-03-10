@@ -1,7 +1,8 @@
-/Users/mgaudin/Code/void-cli/target/debug/deps/void_slack-98a940b5d84a8138.d: crates/void-slack/src/lib.rs Cargo.toml
+/Users/mgaudin/Code/void-cli/target/debug/deps/void_slack-98a940b5d84a8138.d: /Users/mgaudin/Code/void-cli/clippy.toml crates/void-slack/src/lib.rs Cargo.toml
 
-/Users/mgaudin/Code/void-cli/target/debug/deps/libvoid_slack-98a940b5d84a8138.rmeta: crates/void-slack/src/lib.rs Cargo.toml
+/Users/mgaudin/Code/void-cli/target/debug/deps/libvoid_slack-98a940b5d84a8138.rmeta: /Users/mgaudin/Code/void-cli/clippy.toml crates/void-slack/src/lib.rs Cargo.toml
 
+/Users/mgaudin/Code/void-cli/clippy.toml:
 crates/void-slack/src/lib.rs:
 Cargo.toml:
 

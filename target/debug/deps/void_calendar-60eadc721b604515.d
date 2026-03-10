@@ -1,7 +1,8 @@
-/Users/mgaudin/Code/void-cli/target/debug/deps/void_calendar-60eadc721b604515.d: crates/void-calendar/src/lib.rs Cargo.toml
+/Users/mgaudin/Code/void-cli/target/debug/deps/void_calendar-60eadc721b604515.d: /Users/mgaudin/Code/void-cli/clippy.toml crates/void-calendar/src/lib.rs Cargo.toml
 
-/Users/mgaudin/Code/void-cli/target/debug/deps/libvoid_calendar-60eadc721b604515.rmeta: crates/void-calendar/src/lib.rs Cargo.toml
+/Users/mgaudin/Code/void-cli/target/debug/deps/libvoid_calendar-60eadc721b604515.rmeta: /Users/mgaudin/Code/void-cli/clippy.toml crates/void-calendar/src/lib.rs Cargo.toml
 
+/Users/mgaudin/Code/void-cli/clippy.toml:
 crates/void-calendar/src/lib.rs:
 Cargo.toml:
 
