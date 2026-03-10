@@ -1,4 +1,8 @@
 use clap::Args;
+use void_core::config::{self, VoidConfig};
+use void_core::db::Database;
+
+use crate::output::OutputFormatter;
 
 #[derive(Debug, Args)]
 pub struct InboxArgs {
@@ -10,13 +14,20 @@ pub struct InboxArgs {
     pub limit: i64,
 }
 
-pub fn run(args: &InboxArgs) -> anyhow::Result<()> {
-    eprintln!(
-        "void inbox{}: not yet implemented",
-        args.channel
-            .as_deref()
-            .map(|c| format!(" --channel {c}"))
-            .unwrap_or_default()
-    );
-    Ok(())
+pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
+    let cfg = VoidConfig::load_or_default(&config::default_config_path());
+    let db = Database::open(&cfg.db_path())?;
+    let formatter = OutputFormatter::new(json);
+
+    let messages = db.recent_messages(args.channel.as_deref(), args.limit)?;
+    formatter.print_messages(&messages)
+}
+
+pub fn run_conversations(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
+    let cfg = VoidConfig::load_or_default(&config::default_config_path());
+    let db = Database::open(&cfg.db_path())?;
+    let formatter = OutputFormatter::new(json);
+
+    let conversations = db.list_conversations(args.channel.as_deref(), args.limit)?;
+    formatter.print_conversations(&conversations)
 }

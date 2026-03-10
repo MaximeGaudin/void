@@ -54,7 +54,7 @@ enum Command {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let log_level = if cli.verbose { "debug" } else { "info" };
+    let log_level = if cli.verbose { "debug" } else { "warn" };
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -67,13 +67,13 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Auth(args)) => commands::auth::run(args),
         Some(Command::Sync(args)) => commands::sync::run(args),
         Some(Command::Doctor) => commands::doctor::run(),
-        Some(Command::Inbox(args)) => commands::inbox::run(args),
-        Some(Command::Conversations(args)) => commands::inbox::run(args),
-        Some(Command::Messages(args)) => commands::messages::run(args),
-        Some(Command::Search(args)) => commands::search::run(args),
+        Some(Command::Inbox(args)) => commands::inbox::run(args, cli.json),
+        Some(Command::Conversations(args)) => commands::inbox::run_conversations(args, cli.json),
+        Some(Command::Messages(args)) => commands::messages::run(args, cli.json),
+        Some(Command::Search(args)) => commands::search::run(args, cli.json),
         Some(Command::Send(args)) => commands::send::run(args),
         Some(Command::Reply(args)) => commands::reply::run(args),
-        Some(Command::Calendar(args)) => commands::calendar::run(args),
+        Some(Command::Calendar(args)) => commands::calendar::run(args, cli.json),
         Some(Command::Accounts(args)) => commands::accounts::run(args),
         Some(Command::Config(args)) => commands::config::run(args),
         None => {

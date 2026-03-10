@@ -1,4 +1,8 @@
 use clap::Args;
+use void_core::config::{self, VoidConfig};
+use void_core::db::Database;
+
+use crate::output::OutputFormatter;
 
 #[derive(Debug, Args)]
 pub struct SearchArgs {
@@ -12,7 +16,11 @@ pub struct SearchArgs {
     pub limit: i64,
 }
 
-pub fn run(args: &SearchArgs) -> anyhow::Result<()> {
-    eprintln!("void search \"{}\": not yet implemented", args.query);
-    Ok(())
+pub fn run(args: &SearchArgs, json: bool) -> anyhow::Result<()> {
+    let cfg = VoidConfig::load_or_default(&config::default_config_path());
+    let db = Database::open(&cfg.db_path())?;
+    let formatter = OutputFormatter::new(json);
+
+    let messages = db.search_messages(&args.query, args.limit)?;
+    formatter.print_messages(&messages)
 }
