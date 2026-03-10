@@ -45,6 +45,7 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 tokio-util = "0.7"
+tabled = "0.17"
 
 # Internal crates
 void-core = { path = "crates/void-core" }

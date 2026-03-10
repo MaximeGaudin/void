@@ -1,4 +1,5 @@
 mod commands;
+pub mod output;
 
 use clap::{Parser, Subcommand};
 
