@@ -1,1 +1,1 @@
-// WhatsApp adapter for Void CLI
+pub mod channel;
