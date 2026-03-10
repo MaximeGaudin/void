@@ -56,6 +56,8 @@ impl std::fmt::Display for ConversationKind {
 pub struct Conversation {
     pub id: String,
     pub account_id: String,
+    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
+    pub connector: String,
     pub external_id: String,
     pub name: Option<String>,
     pub kind: ConversationKind,
@@ -69,12 +71,19 @@ pub struct Message {
     pub id: String,
     pub conversation_id: String,
     pub account_id: String,
+    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
+    pub connector: String,
     pub external_id: String,
     pub sender: String,
     pub sender_name: Option<String>,
     pub body: Option<String>,
+    /// When the message was originally sent (UTC epoch seconds).
     pub timestamp: i64,
+    /// When we first synced this message (UTC epoch seconds).
+    pub synced_at: Option<i64>,
     pub is_from_me: bool,
+    pub is_read: bool,
+    pub is_archived: bool,
     pub reply_to_id: Option<String>,
     pub media_type: Option<String>,
     pub metadata: Option<serde_json::Value>,
@@ -84,6 +93,8 @@ pub struct Message {
 pub struct CalendarEvent {
     pub id: String,
     pub account_id: String,
+    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
+    pub connector: String,
     pub external_id: String,
     pub title: String,
     pub description: Option<String>,
@@ -96,6 +107,17 @@ pub struct CalendarEvent {
     pub calendar_name: Option<String>,
     pub meet_link: Option<String>,
     pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Contact {
+    pub sender: String,
+    pub sender_name: Option<String>,
+    pub account_id: String,
+    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
+    pub connector: String,
+    pub message_count: i64,
+    pub last_message_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,12 +173,16 @@ mod tests {
             id: "m1".into(),
             conversation_id: "c1".into(),
             account_id: "a1".into(),
+            connector: "slack".into(),
             external_id: "ext1".into(),
             sender: "user@example.com".into(),
             sender_name: Some("Alice".into()),
             body: Some("Hello world".into()),
             timestamp: 1_700_000_000,
+            synced_at: Some(1_700_000_010),
             is_from_me: false,
+            is_read: false,
+            is_archived: false,
             reply_to_id: None,
             media_type: None,
             metadata: None,
@@ -172,6 +198,7 @@ mod tests {
         let event = CalendarEvent {
             id: "e1".into(),
             account_id: "cal1".into(),
+            connector: "calendar".into(),
             external_id: "goog123".into(),
             title: "Standup".into(),
             description: None,

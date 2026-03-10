@@ -39,7 +39,7 @@ pub fn run() {
             .list_conversations(None, 10000)
             .map(|c| c.len())
             .unwrap_or(0);
-        let recent = db.recent_messages(None, 5).unwrap_or_default();
+        let recent = db.recent_messages(None, 5, true).unwrap_or_default();
 
         if convs > 0 {
             eprintln!("{convs} conversations\n");

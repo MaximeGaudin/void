@@ -31,4 +31,26 @@ pub trait Channel: Send + Sync {
         content: MessageContent,
         in_thread: bool,
     ) -> anyhow::Result<String>;
+
+    /// Mark a message as read on the remote service.
+    /// `external_id` is the platform-specific message identifier.
+    /// `conversation_external_id` is the platform-specific conversation/channel ID.
+    async fn mark_read(
+        &self,
+        _external_id: &str,
+        _conversation_external_id: &str,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Archive a message on the remote service (e.g., remove from inbox).
+    /// `external_id` is the platform-specific message identifier.
+    /// `conversation_external_id` is the platform-specific conversation/channel ID.
+    async fn archive(
+        &self,
+        _external_id: &str,
+        _conversation_external_id: &str,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

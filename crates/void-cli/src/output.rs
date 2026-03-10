@@ -1,7 +1,7 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{Local, TimeZone};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
-use void_core::models::{CalendarEvent, ChannelType, Conversation, HealthStatus, Message};
+use void_core::models::{CalendarEvent, ChannelType, Contact, Conversation, HealthStatus, Message};
 
 pub struct OutputFormatter {
     json: bool,
@@ -66,6 +66,23 @@ impl OutputFormatter {
         Ok(())
     }
 
+    pub fn print_contacts(&self, contacts: &[Contact]) -> anyhow::Result<()> {
+        if self.json {
+            println!("{}", serde_json::to_string_pretty(&json_wrap(contacts))?);
+            return Ok(());
+        }
+
+        if contacts.is_empty() {
+            eprintln!("No contacts found.");
+            return Ok(());
+        }
+
+        let rows: Vec<ContactRow> = contacts.iter().map(ContactRow::from).collect();
+        let table = Table::new(rows).with(Style::rounded()).to_string();
+        println!("{table}");
+        Ok(())
+    }
+
     pub fn print_health(&self, statuses: &[HealthStatus]) -> anyhow::Result<()> {
         if self.json {
             println!("{}", serde_json::to_string_pretty(&json_wrap(statuses))?);
@@ -84,9 +101,10 @@ fn json_wrap<T: serde::Serialize>(data: T) -> serde_json::Value {
 }
 
 fn format_ts(ts: i64) -> String {
-    Utc.timestamp_opt(ts, 0)
+    Local
+        .timestamp_opt(ts, 0)
         .single()
-        .map(|dt: DateTime<Utc>| dt.format("%Y-%m-%d %H:%M").to_string())
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| ts.to_string())
 }
 
@@ -121,7 +139,7 @@ struct ConversationRow {
 impl From<&Conversation> for ConversationRow {
     fn from(c: &Conversation) -> Self {
         Self {
-            channel: badge_from_account_id(&c.account_id),
+            channel: badge_from_connector(&c.connector),
             id: truncate(&c.id, 12),
             name: c.name.clone().unwrap_or_else(|| "-".into()),
             kind: c.kind.to_string(),
@@ -149,7 +167,7 @@ struct MessageRow {
 impl From<&Message> for MessageRow {
     fn from(m: &Message) -> Self {
         Self {
-            channel: badge_from_account_id(&m.account_id),
+            channel: badge_from_connector(&m.connector),
             time: format_ts(m.timestamp),
             sender: m
                 .sender_name
@@ -196,6 +214,38 @@ impl From<&CalendarEvent> for EventRow {
 }
 
 #[derive(Tabled)]
+struct ContactRow {
+    #[tabled(rename = "CH")]
+    channel: String,
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Address")]
+    address: String,
+    #[tabled(rename = "Account")]
+    account: String,
+    #[tabled(rename = "Messages")]
+    message_count: i64,
+    #[tabled(rename = "Last Active")]
+    last_active: String,
+}
+
+impl From<&Contact> for ContactRow {
+    fn from(c: &Contact) -> Self {
+        Self {
+            channel: badge_from_connector(&c.connector),
+            name: c
+                .sender_name
+                .clone()
+                .unwrap_or_else(|| truncate(&c.sender, 30)),
+            address: truncate(&c.sender, 40),
+            account: c.account_id.clone(),
+            message_count: c.message_count,
+            last_active: format_ts(c.last_message_at),
+        }
+    }
+}
+
+#[derive(Tabled)]
 struct HealthRow {
     #[tabled(rename = "Account")]
     account: String,
@@ -218,6 +268,67 @@ impl From<&HealthStatus> for HealthRow {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_ts_uses_local_timezone() {
+        let ts = 1_700_000_000i64; // 2023-11-14 21:13:20 UTC
+        let formatted = format_ts(ts);
+        let local_dt = Local.timestamp_opt(ts, 0).single().unwrap();
+        let expected = local_dt.format("%Y-%m-%d %H:%M").to_string();
+        assert_eq!(formatted, expected);
+        assert!(formatted.starts_with("2023-11-1"));
+    }
+
+    #[test]
+    fn format_ts_zero_epoch() {
+        let formatted = format_ts(0);
+        assert!(
+            formatted.contains("1970-01-0") || formatted.contains("1969-12-31"),
+            "epoch 0 should format to a 1970/1969 date, got: {formatted}"
+        );
+    }
+
+    #[test]
+    fn truncate_short_string_unchanged() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_long_string_adds_ellipsis() {
+        assert_eq!(truncate("hello world", 8), "hello...");
+    }
+
+    #[test]
+    fn badge_from_whatsapp() {
+        assert_eq!(badge_from_connector("whatsapp"), "[WA]");
+    }
+
+    #[test]
+    fn badge_from_slack() {
+        assert_eq!(badge_from_connector("slack"), "[SL]");
+    }
+
+    #[test]
+    fn badge_from_gmail() {
+        assert_eq!(badge_from_connector("gmail"), "[GM]");
+    }
+
+    #[test]
+    fn badge_from_calendar() {
+        assert_eq!(badge_from_connector("calendar"), "[CA]");
+    }
+
+    #[test]
+    fn badge_from_unknown() {
+        let badge = badge_from_connector("custom");
+        assert!(badge.starts_with('['));
+        assert!(badge.ends_with(']'));
+    }
+}
+
 pub fn parse_channel_type(s: &str) -> Option<ChannelType> {
     match s.to_lowercase().as_str() {
         "whatsapp" | "wa" => Some(ChannelType::WhatsApp),
@@ -228,18 +339,12 @@ pub fn parse_channel_type(s: &str) -> Option<ChannelType> {
     }
 }
 
-/// Derive a short channel badge from the account_id convention (e.g. "wa_..." -> "[WA]").
-fn badge_from_account_id(account_id: &str) -> String {
-    let id = account_id.to_lowercase();
-    if id.starts_with("wa") || id.contains("whatsapp") {
-        "[WA]".into()
-    } else if id.contains("slack") || id.starts_with("sl") {
-        "[SL]".into()
-    } else if id.contains("gmail") || id.contains("email") || id.starts_with("gm") {
-        "[GM]".into()
-    } else if id.contains("calendar") || id.contains("cal") {
-        "[CA]".into()
-    } else {
-        format!("[{}]", truncate(account_id, 4))
+fn badge_from_connector(connector: &str) -> String {
+    match connector {
+        "whatsapp" => "[WA]".into(),
+        "slack" => "[SL]".into(),
+        "gmail" => "[GM]".into(),
+        "calendar" => "[CA]".into(),
+        other => format!("[{}]", truncate(other, 4)),
     }
 }

@@ -1,4 +1,5 @@
 use clap::Args;
+use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 
@@ -20,6 +21,7 @@ pub struct MessagesArgs {
 }
 
 pub fn run(args: &MessagesArgs, json: bool) -> anyhow::Result<()> {
+    debug!(conversation_id = %args.conversation_id, "messages");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);

@@ -1,5 +1,6 @@
 use chrono::Datelike;
 use clap::{Args, Subcommand};
+use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 
@@ -51,6 +52,12 @@ pub struct CreateEventArgs {
 }
 
 pub fn run(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
+    let subcommand = match &args.command {
+        None => "list",
+        Some(CalendarCommand::Week) => "week",
+        Some(CalendarCommand::Create(_)) => "create",
+    };
+    debug!(subcommand, "calendar");
     match &args.command {
         Some(CalendarCommand::Week) => run_week(json),
         Some(CalendarCommand::Create(create_args)) => {

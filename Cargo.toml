@@ -50,6 +50,12 @@ reqwest = { version = "0.12", features = ["json"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 futures-util = "0.3"
 base64 = "0.22"
+daemonize = "0.5"
+libc = "0.2"
+html-to-markdown-rs = "2"
+open = "5"
+url = "2"
+urlencoding = "2"
 
 # Internal crates
 void-core = { path = "crates/void-core" }

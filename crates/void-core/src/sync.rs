@@ -53,8 +53,8 @@ impl SyncEngine {
 
         let cancel_on_signal = cancel.clone();
         tokio::spawn(async move {
-            tokio::signal::ctrl_c().await.ok();
-            info!("received interrupt, shutting down...");
+            wait_for_shutdown_signal().await;
+            info!("received shutdown signal, shutting down...");
             cancel_on_signal.cancel();
         });
 
@@ -68,6 +68,26 @@ impl SyncEngine {
 
     fn acquire_lock(&self) -> anyhow::Result<FileLock> {
         FileLock::acquire(&self.lock_path)
+    }
+}
+
+/// Wait for either SIGINT (Ctrl+C) or SIGTERM.
+async fn wait_for_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = sigterm.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for ctrl_c");
     }
 }
 

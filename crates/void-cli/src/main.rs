@@ -10,9 +10,9 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Output as JSON instead of human-readable text
+    /// Output as human-readable tables instead of JSON
     #[arg(long, global = true)]
-    json: bool,
+    pretty: bool,
 
     /// Override store directory
     #[arg(long, global = true)]
@@ -29,6 +29,8 @@ enum Command {
     Auth(commands::auth::AuthArgs),
     /// Start background sync
     Sync(commands::sync::SyncArgs),
+    /// Stop the running sync daemon
+    Stop,
     /// Check configuration and connectivity
     Doctor,
     /// Show recent messages across all channels
@@ -37,12 +39,20 @@ enum Command {
     Conversations(commands::inbox::InboxArgs),
     /// Show messages in a conversation
     Messages(commands::messages::MessagesArgs),
+    /// List contacts across all channels
+    Contacts(commands::contacts::ContactsArgs),
+    /// List channels and groups (excluding DMs)
+    Channels(commands::channels::ChannelsArgs),
     /// Full-text search across messages
     Search(commands::search::SearchArgs),
     /// Send a new message
     Send(commands::send::SendArgs),
     /// Reply to a message
     Reply(commands::reply::ReplyArgs),
+    /// Mark a message as read
+    Read(commands::read::ReadArgs),
+    /// Archive a message (e.g., remove from Gmail inbox)
+    Archive(commands::archive::ArchiveArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
     /// Manage accounts
@@ -51,10 +61,27 @@ enum Command {
     Config(commands::config::ConfigArgs),
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    if matches!(cli.command, Some(Command::Stop)) {
+        return commands::sync::stop_daemon();
+    }
+
+    if let Some(Command::Sync(ref args)) = cli.command {
+        if args.stop {
+            return commands::sync::stop_daemon();
+        }
+        if args.daemon {
+            return commands::sync::daemonize(args, cli.verbose);
+        }
+    }
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async_main(cli))
+}
+
+async fn async_main(cli: Cli) -> anyhow::Result<()> {
     let log_level = if cli.verbose { "debug" } else { "warn" };
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -67,14 +94,19 @@ async fn main() -> anyhow::Result<()> {
     match &cli.command {
         Some(Command::Auth(args)) => commands::auth::run(args).await,
         Some(Command::Sync(args)) => commands::sync::run(args).await,
+        Some(Command::Stop) => commands::sync::stop_daemon(),
         Some(Command::Doctor) => commands::doctor::run(),
-        Some(Command::Inbox(args)) => commands::inbox::run(args, cli.json),
-        Some(Command::Conversations(args)) => commands::inbox::run_conversations(args, cli.json),
-        Some(Command::Messages(args)) => commands::messages::run(args, cli.json),
-        Some(Command::Search(args)) => commands::search::run(args, cli.json),
+        Some(Command::Inbox(args)) => commands::inbox::run(args, !cli.pretty),
+        Some(Command::Conversations(args)) => commands::inbox::run_conversations(args, !cli.pretty),
+        Some(Command::Messages(args)) => commands::messages::run(args, !cli.pretty),
+        Some(Command::Contacts(args)) => commands::contacts::run(args, !cli.pretty),
+        Some(Command::Channels(args)) => commands::channels::run(args, !cli.pretty),
+        Some(Command::Search(args)) => commands::search::run(args, !cli.pretty),
         Some(Command::Send(args)) => commands::send::run(args).await,
-        Some(Command::Reply(args)) => commands::reply::run(args),
-        Some(Command::Calendar(args)) => commands::calendar::run(args, cli.json),
+        Some(Command::Reply(args)) => commands::reply::run(args).await,
+        Some(Command::Read(args)) => commands::read::run(args).await,
+        Some(Command::Archive(args)) => commands::archive::run(args).await,
+        Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty),
         Some(Command::Accounts(args)) => commands::accounts::run(args),
         Some(Command::Config(args)) => commands::config::run(args),
         None => {

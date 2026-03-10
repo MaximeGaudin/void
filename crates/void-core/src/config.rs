@@ -133,6 +133,22 @@ impl VoidConfig {
     pub fn db_path(&self) -> PathBuf {
         self.store_path().join("void.db")
     }
+
+    pub fn find_account(&self, account_id: &str) -> Option<&AccountConfig> {
+        self.accounts.iter().find(|a| a.id == account_id)
+    }
+
+    /// Find a config account by connector type string ("slack", "gmail", "whatsapp", "calendar").
+    pub fn find_account_by_connector(&self, connector: &str) -> Option<&AccountConfig> {
+        let target = match connector {
+            "whatsapp" => AccountType::WhatsApp,
+            "slack" => AccountType::Slack,
+            "gmail" => AccountType::Gmail,
+            "calendar" => AccountType::Calendar,
+            _ => return None,
+        };
+        self.accounts.iter().find(|a| a.account_type == target)
+    }
 }
 
 pub fn default_config_path() -> PathBuf {

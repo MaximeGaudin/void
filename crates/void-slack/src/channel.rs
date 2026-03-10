@@ -9,7 +9,7 @@ use void_core::channel::Channel;
 use void_core::db::Database;
 use void_core::models::*;
 
-use crate::api::{SlackApiClient, SlackConversation, SlackMessage};
+use crate::api::{SlackApiClient, SlackConversation, SlackMessage, SlackReaction};
 
 pub struct SlackChannel {
     account_id: String,
@@ -29,7 +29,13 @@ impl SlackChannel {
     }
 
     async fn backfill(&self, db: &Database) -> anyhow::Result<()> {
-        info!(account_id = %self.account_id, "starting Slack backfill");
+        info!(account_id = %self.account_id, "starting Slack backfill (last 7 days)");
+
+        let oldest_ts = chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::days(7))
+            .unwrap_or_else(chrono::Utc::now)
+            .timestamp()
+            .to_string();
 
         let mut user_cache: HashMap<String, String> = HashMap::new();
         let mut cursor: Option<String> = None;
@@ -43,11 +49,16 @@ impl SlackChannel {
                 db.upsert_conversation(&conversation)?;
                 total_convs += 1;
 
-                match self.api.conversations_history(&conv.id, 100, None).await {
+                match self
+                    .api
+                    .conversations_history(&conv.id, 100, Some(&oldest_ts))
+                    .await
+                {
                     Ok(history) => {
                         for msg in &history.messages {
                             if let Some(message) = map_message(
                                 msg,
+                                conv,
                                 &conversation.id,
                                 &self.account_id,
                                 &mut user_cache,
@@ -141,15 +152,30 @@ impl Channel for SlackChannel {
                 last_sync: None,
                 message_count: None,
             }),
-            Err(e) => Ok(HealthStatus {
-                account_id: self.account_id.clone(),
-                channel_type: ChannelType::Slack,
-                ok: false,
-                message: format!("Auth failed: {e}"),
-                last_sync: None,
-                message_count: None,
-            }),
+            Err(e) => {
+                warn!(account_id = %self.account_id, error = %e, "Slack health check failed");
+                Ok(HealthStatus {
+                    account_id: self.account_id.clone(),
+                    channel_type: ChannelType::Slack,
+                    ok: false,
+                    message: format!("Auth failed: {e}"),
+                    last_sync: None,
+                    message_count: None,
+                })
+            }
         }
+    }
+
+    async fn mark_read(
+        &self,
+        external_id: &str,
+        conversation_external_id: &str,
+    ) -> anyhow::Result<()> {
+        info!(account_id = %self.account_id, ts = %external_id, channel = %conversation_external_id, "marking Slack message as read");
+        self.api
+            .conversations_mark(conversation_external_id, external_id)
+            .await?;
+        Ok(())
     }
 
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
@@ -169,6 +195,8 @@ impl Channel for SlackChannel {
         content: MessageContent,
         in_thread: bool,
     ) -> anyhow::Result<String> {
+        info!(account_id = %self.account_id, message_id = %message_id, in_thread, "sending Slack reply");
+
         let text = match &content {
             MessageContent::Text(t) => t.clone(),
             MessageContent::File { caption, .. } => {
@@ -176,7 +204,6 @@ impl Channel for SlackChannel {
             }
         };
 
-        // message_id format: "channel_id:ts"
         let parts: Vec<&str> = message_id.splitn(2, ':').collect();
         if parts.len() != 2 {
             anyhow::bail!("invalid message_id format, expected 'channel_id:ts'");
@@ -188,7 +215,9 @@ impl Channel for SlackChannel {
             .api
             .chat_post_message(channel_id, &text, thread_ts)
             .await?;
-        Ok(resp.ts.unwrap_or_default())
+        let reply_ts = resp.ts.clone().unwrap_or_default();
+        debug!(account_id = %self.account_id, ts = %reply_ts, "Slack reply sent");
+        Ok(reply_ts)
     }
 }
 
@@ -210,6 +239,7 @@ fn map_conversation(conv: &SlackConversation, account_id: &str) -> Conversation 
     Conversation {
         id: format!("{}-{}", account_id, conv.id),
         account_id: account_id.to_string(),
+        connector: "slack".into(),
         external_id: conv.id.clone(),
         name: Some(name),
         kind,
@@ -221,6 +251,7 @@ fn map_conversation(conv: &SlackConversation, account_id: &str) -> Conversation 
 
 async fn map_message(
     msg: &SlackMessage,
+    conv: &SlackConversation,
     conversation_id: &str,
     account_id: &str,
     user_cache: &mut HashMap<String, String>,
@@ -233,23 +264,61 @@ async fn map_message(
     let sender = msg.user.clone().unwrap_or_else(|| "unknown".into());
     let sender_name = resolve_user_name(&sender, user_cache, api).await;
 
+    let metadata = build_metadata(conv, &msg.reactions);
+
     Some(Message {
         id: format!("{account_id}-{}", msg.ts),
         conversation_id: conversation_id.to_string(),
         account_id: account_id.to_string(),
+        connector: "slack".into(),
         external_id: msg.ts.clone(),
         sender: sender.clone(),
         sender_name: Some(sender_name),
         body: msg.text.clone(),
         timestamp: parse_ts(&msg.ts).unwrap_or(0),
+        synced_at: None,
         is_from_me: false,
+        is_read: false,
+        is_archived: false,
         reply_to_id: msg
             .thread_ts
             .as_ref()
             .map(|ts| format!("{account_id}-{ts}")),
         media_type: None,
-        metadata: None,
+        metadata,
     })
+}
+
+fn build_metadata(
+    conv: &SlackConversation,
+    reactions: &[SlackReaction],
+) -> Option<serde_json::Value> {
+    let kind = if conv.is_im.unwrap_or(false) {
+        "dm"
+    } else if conv.is_mpim.unwrap_or(false) {
+        "group_dm"
+    } else if conv.is_group.unwrap_or(false) || conv.is_private.unwrap_or(false) {
+        "private_channel"
+    } else {
+        "channel"
+    };
+
+    let mut meta = serde_json::json!({
+        "channel_id": conv.id,
+        "channel_name": conv.name.as_deref().or(conv.user.as_deref()).unwrap_or(&conv.id),
+        "channel_kind": kind,
+        "is_private": conv.is_private.unwrap_or(false) || conv.is_im.unwrap_or(false) || conv.is_mpim.unwrap_or(false),
+    });
+
+    if !reactions.is_empty() {
+        let r: Vec<serde_json::Value> = reactions
+            .iter()
+            .map(|r| serde_json::json!({"name": r.name, "count": r.count}))
+            .collect();
+        meta["reactions"] = serde_json::Value::Array(r);
+    }
+
+    Some(meta)
 }
 
 async fn resolve_user_name(
@@ -276,7 +345,8 @@ async fn resolve_user_name(
             cache.insert(user_id.to_string(), name.clone());
             name
         }
-        Err(_) => {
+        Err(e) => {
+            warn!(user_id = %user_id, error = %e, "Slack user lookup failed, falling back to user_id");
             cache.insert(user_id.to_string(), user_id.to_string());
             user_id.to_string()
         }
@@ -305,6 +375,7 @@ mod tests {
         };
         let result = map_conversation(&conv, "work-slack");
         assert_eq!(result.kind, ConversationKind::Dm);
+        assert_eq!(result.connector, "slack");
         assert_eq!(result.name.as_deref(), Some("U456"));
         assert_eq!(result.external_id, "D123");
     }
@@ -323,6 +394,7 @@ mod tests {
         };
         let result = map_conversation(&conv, "work-slack");
         assert_eq!(result.kind, ConversationKind::Channel);
+        assert_eq!(result.connector, "slack");
         assert_eq!(result.name.as_deref(), Some("general"));
     }
 
@@ -330,5 +402,79 @@ mod tests {
     fn parse_slack_ts() {
         assert_eq!(parse_ts("1700000000.123456"), Some(1_700_000_000));
         assert_eq!(parse_ts("invalid"), None);
+    }
+
+    #[test]
+    fn build_metadata_channel_no_reactions() {
+        let conv = SlackConversation {
+            id: "C789".into(),
+            name: Some("general".into()),
+            is_channel: Some(true),
+            is_group: Some(false),
+            is_im: Some(false),
+            is_mpim: Some(false),
+            is_private: Some(false),
+            user: None,
+        };
+        let meta = build_metadata(&conv, &[]).unwrap();
+        assert_eq!(meta["channel_id"], "C789");
+        assert_eq!(meta["channel_name"], "general");
+        assert_eq!(meta["channel_kind"], "channel");
+        assert_eq!(meta["is_private"], false);
+        assert!(meta.get("reactions").is_none());
+    }
+
+    #[test]
+    fn build_metadata_dm_with_reactions() {
+        let conv = SlackConversation {
+            id: "D123".into(),
+            name: None,
+            is_channel: Some(false),
+            is_group: Some(false),
+            is_im: Some(true),
+            is_mpim: Some(false),
+            is_private: Some(true),
+            user: Some("U456".into()),
+        };
+        let reactions = vec![
+            SlackReaction {
+                name: "thumbsup".into(),
+                count: 3,
+                users: vec![],
+            },
+            SlackReaction {
+                name: "heart".into(),
+                count: 1,
+                users: vec![],
+            },
+        ];
+        let meta = build_metadata(&conv, &reactions).unwrap();
+        assert_eq!(meta["channel_id"], "D123");
+        assert_eq!(meta["channel_name"], "U456");
+        assert_eq!(meta["channel_kind"], "dm");
+        assert_eq!(meta["is_private"], true);
+        let r = meta["reactions"].as_array().unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0]["name"], "thumbsup");
+        assert_eq!(r[0]["count"], 3);
+        assert_eq!(r[1]["name"], "heart");
+    }
+
+    #[test]
+    fn build_metadata_private_channel() {
+        let conv = SlackConversation {
+            id: "G111".into(),
+            name: Some("secret-project".into()),
+            is_channel: Some(false),
+            is_group: Some(true),
+            is_im: Some(false),
+            is_mpim: Some(false),
+            is_private: Some(true),
+            user: None,
+        };
+        let meta = build_metadata(&conv, &[]).unwrap();
+        assert_eq!(meta["channel_kind"], "private_channel");
+        assert_eq!(meta["is_private"], true);
+        assert_eq!(meta["channel_name"], "secret-project");
     }
 }

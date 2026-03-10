@@ -1,4 +1,5 @@
 use clap::Args;
+use tracing::{debug, info};
 
 use void_core::config::{self, VoidConfig};
 use void_core::models::MessageContent;
@@ -29,6 +30,7 @@ pub struct SendArgs {
 }
 
 pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
+    info!(via = %args.via, to = %args.to, "send");
     let channel_type = parse_channel_type(&args.via)
         .ok_or_else(|| anyhow::anyhow!("Unknown channel type: {}", args.via))?;
 
@@ -49,6 +51,7 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
 
     let store_path = cfg.store_path();
     let channel = channel_factory::build_channel(account, &store_path)?;
+    debug!("channel built");
 
     let content = if let Some(ref path) = args.file {
         MessageContent::File {

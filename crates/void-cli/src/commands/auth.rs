@@ -1,4 +1,5 @@
 use clap::Args;
+use tracing::info;
 
 use void_core::config::{self, VoidConfig};
 
@@ -13,6 +14,7 @@ pub struct AuthArgs {
 }
 
 pub async fn run(args: &AuthArgs) -> anyhow::Result<()> {
+    info!(channel_type = %args.channel_type, account = ?args.account_name, "starting auth");
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path).map_err(|e| {
         anyhow::anyhow!(

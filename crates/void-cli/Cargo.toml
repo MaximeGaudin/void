@@ -26,3 +26,5 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 tabled = { workspace = true }
 tokio-util = { workspace = true }
+daemonize = { workspace = true }
+libc = { workspace = true }

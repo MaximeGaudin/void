@@ -1,5 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 /// Google Calendar API client.
 pub struct CalendarApiClient {
@@ -16,6 +17,7 @@ impl CalendarApiClient {
     }
 
     pub async fn list_calendars(&self) -> anyhow::Result<CalendarListResponse> {
+        debug!("calendar: list_calendars");
         let resp: CalendarListResponse = self
             .http
             .get("https://www.googleapis.com/calendar/v3/users/me/calendarList")
@@ -25,6 +27,8 @@ impl CalendarApiClient {
             .json()
             .await
             .context("calendar: failed to list calendars")?;
+        let count = resp.items.as_ref().map(|i| i.len()).unwrap_or(0);
+        debug!(count, "calendar: list_calendars ok");
         Ok(resp)
     }
 
@@ -35,6 +39,12 @@ impl CalendarApiClient {
         time_max: Option<&str>,
         sync_token: Option<&str>,
     ) -> anyhow::Result<EventListResponse> {
+        debug!(
+            calendar_id,
+            time_min = ?time_min,
+            time_max = ?time_max,
+            "calendar: list_events"
+        );
         let mut params: Vec<(&str, String)> = vec![
             ("singleEvents", "true".into()),
             ("orderBy", "startTime".into()),
@@ -63,6 +73,13 @@ impl CalendarApiClient {
             .json()
             .await
             .context("calendar: failed to list events")?;
+        let count = resp.items.as_ref().map(|i| i.len()).unwrap_or(0);
+        let has_sync_token = resp.next_sync_token.is_some();
+        let has_page_token = resp.next_page_token.is_some();
+        debug!(
+            count,
+            has_sync_token, has_page_token, "calendar: list_events ok"
+        );
         Ok(resp)
     }
 
@@ -72,6 +89,11 @@ impl CalendarApiClient {
         event: &InsertEventRequest,
         conference_data_version: Option<u32>,
     ) -> anyhow::Result<GoogleCalendarEvent> {
+        debug!(
+            calendar_id,
+            summary = event.summary.as_str(),
+            "calendar: insert_event"
+        );
         let url = format!(
             "https://www.googleapis.com/calendar/v3/calendars/{}/events",
             urlencoded(calendar_id)
@@ -92,6 +114,8 @@ impl CalendarApiClient {
             .json()
             .await
             .context("calendar: failed to insert event")?;
+        let event_id = resp.id.as_deref().unwrap_or("(none)");
+        debug!(event_id, "calendar: insert_event ok");
         Ok(resp)
     }
 }

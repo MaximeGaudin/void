@@ -1,11 +1,15 @@
 pub mod accounts;
+pub mod archive;
 pub mod auth;
 pub mod calendar;
 pub mod channel_factory;
+pub mod channels;
 pub mod config;
+pub mod contacts;
 pub mod doctor;
 pub mod inbox;
 pub mod messages;
+pub mod read;
 pub mod reply;
 pub mod search;
 pub mod send;

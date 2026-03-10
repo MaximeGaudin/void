@@ -61,7 +61,10 @@ pub fn run() -> anyhow::Result<()> {
             .list_conversations(None, 10000)
             .map(|c| c.len())
             .unwrap_or(0);
-        let msg_count = db.recent_messages(None, 1).map(|m| m.len()).unwrap_or(0);
+        let msg_count = db
+            .recent_messages(None, 1, true)
+            .map(|m| m.len())
+            .unwrap_or(0);
         let event_count = db
             .list_events(Some(0), Some(i64::MAX), 10000)
             .map(|e| e.len())

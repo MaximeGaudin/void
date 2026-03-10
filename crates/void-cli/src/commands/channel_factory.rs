@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use tracing::debug;
 
 use void_core::channel::Channel;
 use void_core::config::{expand_tilde, AccountConfig, AccountSettings, AccountType};
@@ -8,6 +9,7 @@ pub fn build_channel(
     account: &AccountConfig,
     store_path: &Path,
 ) -> anyhow::Result<Arc<dyn Channel>> {
+    debug!(account_id = %account.id, type = %account.account_type, "building channel");
     match (&account.account_type, &account.settings) {
         (
             AccountType::Slack,

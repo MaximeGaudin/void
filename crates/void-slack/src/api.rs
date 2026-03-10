@@ -1,5 +1,10 @@
 use anyhow::Context;
-use serde::{Deserialize, Serialize};
+use reqwest::Response;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tracing::{debug, error, warn};
+
+const MAX_RETRIES: u32 = 5;
+const DEFAULT_RETRY_SECS: u64 = 5;
 
 /// Low-level Slack Web API client using user token.
 pub struct SlackApiClient {
@@ -15,16 +20,106 @@ impl SlackApiClient {
         }
     }
 
+    /// Extract `Retry-After` header (seconds) from a response, default to `DEFAULT_RETRY_SECS`.
+    fn retry_after(resp: &Response) -> u64 {
+        resp.headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(DEFAULT_RETRY_SECS)
+    }
+
+    /// GET with automatic retry on 429 / `ratelimited`.
+    async fn get_with_retry<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        params: &[(&str, String)],
+        label: &str,
+    ) -> anyhow::Result<T> {
+        for attempt in 0..=MAX_RETRIES {
+            let resp = self
+                .http
+                .get(url)
+                .bearer_auth(&self.user_token)
+                .query(params)
+                .send()
+                .await?;
+
+            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                let wait = Self::retry_after(&resp);
+                if attempt < MAX_RETRIES {
+                    warn!(
+                        wait_secs = wait,
+                        attempt, label, "rate limited, backing off"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                    continue;
+                }
+                anyhow::bail!("rate limited after {MAX_RETRIES} retries: {label}");
+            }
+
+            let slack_resp: SlackResponse<T> = resp.json().await?;
+            if let Some(ref err) = slack_resp.error {
+                if err == "ratelimited" && attempt < MAX_RETRIES {
+                    warn!(attempt, label, "rate limited (json), backing off");
+                    tokio::time::sleep(std::time::Duration::from_secs(DEFAULT_RETRY_SECS)).await;
+                    continue;
+                }
+            }
+            return slack_resp.into_result().context(format!("{label} failed"));
+        }
+        unreachable!()
+    }
+
+    /// POST (JSON body) with automatic retry on 429 / `ratelimited`.
+    async fn post_with_retry<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        label: &str,
+    ) -> anyhow::Result<T> {
+        for attempt in 0..=MAX_RETRIES {
+            let resp = self
+                .http
+                .post(url)
+                .bearer_auth(&self.user_token)
+                .json(body)
+                .send()
+                .await?;
+
+            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                let wait = Self::retry_after(&resp);
+                if attempt < MAX_RETRIES {
+                    warn!(
+                        wait_secs = wait,
+                        attempt, label, "rate limited, backing off"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                    continue;
+                }
+                anyhow::bail!("rate limited after {MAX_RETRIES} retries: {label}");
+            }
+
+            let slack_resp: SlackResponse<T> = resp.json().await?;
+            if let Some(ref err) = slack_resp.error {
+                if err == "ratelimited" && attempt < MAX_RETRIES {
+                    warn!(attempt, label, "rate limited (json), backing off");
+                    tokio::time::sleep(std::time::Duration::from_secs(DEFAULT_RETRY_SECS)).await;
+                    continue;
+                }
+            }
+            return slack_resp.into_result().context(format!("{label} failed"));
+        }
+        unreachable!()
+    }
+
     pub async fn auth_test(&self) -> anyhow::Result<AuthTestResponse> {
-        let resp: SlackResponse<AuthTestResponse> = self
-            .http
-            .post("https://slack.com/api/auth.test")
-            .bearer_auth(&self.user_token)
-            .send()
-            .await?
-            .json()
-            .await?;
-        resp.into_result().context("auth.test failed")
+        self.post_with_retry(
+            "https://slack.com/api/auth.test",
+            &serde_json::json!({}),
+            "auth.test",
+        )
+        .await
     }
 
     pub async fn conversations_list(
@@ -32,27 +127,20 @@ impl SlackApiClient {
         cursor: Option<&str>,
         limit: u32,
     ) -> anyhow::Result<ConversationsListResponse> {
-        let mut params = vec![
-            (
-                "types",
-                "public_channel,private_channel,mpim,im".to_string(),
-            ),
+        let mut params: Vec<(&str, String)> = vec![
+            ("types", "public_channel,private_channel,mpim,im".into()),
             ("limit", limit.to_string()),
-            ("exclude_archived", "true".to_string()),
+            ("exclude_archived", "true".into()),
         ];
         if let Some(c) = cursor {
             params.push(("cursor", c.to_string()));
         }
-        let resp: SlackResponse<ConversationsListResponse> = self
-            .http
-            .get("https://slack.com/api/conversations.list")
-            .bearer_auth(&self.user_token)
-            .query(&params)
-            .send()
-            .await?
-            .json()
-            .await?;
-        resp.into_result().context("conversations.list failed")
+        self.get_with_retry(
+            "https://slack.com/api/conversations.list",
+            &params,
+            "conversations.list",
+        )
+        .await
     }
 
     pub async fn conversations_history(
@@ -61,36 +149,46 @@ impl SlackApiClient {
         limit: u32,
         oldest: Option<&str>,
     ) -> anyhow::Result<ConversationsHistoryResponse> {
-        let mut params = vec![
+        let mut params: Vec<(&str, String)> = vec![
             ("channel", channel_id.to_string()),
             ("limit", limit.to_string()),
         ];
         if let Some(o) = oldest {
             params.push(("oldest", o.to_string()));
         }
-        let resp: SlackResponse<ConversationsHistoryResponse> = self
-            .http
-            .get("https://slack.com/api/conversations.history")
-            .bearer_auth(&self.user_token)
-            .query(&params)
-            .send()
-            .await?
-            .json()
-            .await?;
-        resp.into_result().context("conversations.history failed")
+        self.get_with_retry(
+            "https://slack.com/api/conversations.history",
+            &params,
+            "conversations.history",
+        )
+        .await
     }
 
     pub async fn users_info(&self, user_id: &str) -> anyhow::Result<UserInfoResponse> {
-        let resp: SlackResponse<UserInfoResponse> = self
-            .http
-            .get("https://slack.com/api/users.info")
-            .bearer_auth(&self.user_token)
-            .query(&[("user", user_id)])
-            .send()
-            .await?
-            .json()
+        debug!(user_id, "slack: users.info");
+        let params: Vec<(&str, String)> = vec![("user", user_id.to_string())];
+        let result: UserInfoResponse = self
+            .get_with_retry("https://slack.com/api/users.info", &params, "users.info")
             .await?;
-        resp.into_result().context("users.info failed")
+        debug!(user_id = ?result.user.as_ref().map(|u| &u.id), "slack: users.info success");
+        Ok(result)
+    }
+
+    pub async fn conversations_mark(&self, channel: &str, ts: &str) -> anyhow::Result<()> {
+        debug!(channel, ts, "slack: conversations.mark");
+        let body = serde_json::json!({
+            "channel": channel,
+            "ts": ts,
+        });
+        let _: serde_json::Value = self
+            .post_with_retry(
+                "https://slack.com/api/conversations.mark",
+                &body,
+                "conversations.mark",
+            )
+            .await?;
+        debug!(channel, ts, "slack: conversations.mark success");
+        Ok(())
     }
 
     pub async fn chat_post_message(
@@ -99,6 +197,7 @@ impl SlackApiClient {
         text: &str,
         thread_ts: Option<&str>,
     ) -> anyhow::Result<ChatPostMessageResponse> {
+        debug!(channel, thread_ts, "slack: chat.postMessage");
         let mut body = serde_json::json!({
             "channel": channel,
             "text": text,
@@ -106,16 +205,15 @@ impl SlackApiClient {
         if let Some(ts) = thread_ts {
             body["thread_ts"] = serde_json::Value::String(ts.to_string());
         }
-        let resp: SlackResponse<ChatPostMessageResponse> = self
-            .http
-            .post("https://slack.com/api/chat.postMessage")
-            .bearer_auth(&self.user_token)
-            .json(&body)
-            .send()
-            .await?
-            .json()
+        let result: ChatPostMessageResponse = self
+            .post_with_retry(
+                "https://slack.com/api/chat.postMessage",
+                &body,
+                "chat.postMessage",
+            )
             .await?;
-        resp.into_result().context("chat.postMessage failed")
+        debug!(ts = ?result.ts, "slack: chat.postMessage success");
+        Ok(result)
     }
 }
 
@@ -135,10 +233,9 @@ impl<T> SlackResponse<T> {
             self.data
                 .ok_or_else(|| anyhow::anyhow!("Slack returned ok=true but no data"))
         } else {
-            Err(anyhow::anyhow!(
-                "Slack API error: {}",
-                self.error.unwrap_or_else(|| "unknown".into())
-            ))
+            let err = self.error.unwrap_or_else(|| "unknown".into());
+            error!(error = %err, "slack: API error");
+            Err(anyhow::anyhow!("Slack API error: {}", err))
         }
     }
 }
@@ -190,6 +287,16 @@ pub struct SlackMessage {
     #[serde(rename = "type")]
     pub msg_type: Option<String>,
     pub subtype: Option<String>,
+    #[serde(default)]
+    pub reactions: Vec<SlackReaction>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SlackReaction {
+    pub name: String,
+    pub count: u32,
+    #[serde(default)]
+    pub users: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

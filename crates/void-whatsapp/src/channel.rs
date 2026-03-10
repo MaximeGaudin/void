@@ -3,9 +3,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use wa_rs::bot::Bot;
 use wa_rs::client::Client;
+use wa_rs::proto_helpers::MessageExt;
 use wa_rs::send::SendOptions;
 use wa_rs::types::events::Event;
 use wa_rs::types::message::MessageInfo;
@@ -21,18 +22,91 @@ use void_core::db::Database;
 use void_core::models::*;
 
 pub struct WhatsAppChannel {
-    account_id: String,
+    config_id: String,
     session_db_path: String,
     client: Arc<Mutex<Option<Arc<Client>>>>,
+    own_jid: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl WhatsAppChannel {
     pub fn new(account_id: &str, session_db_path: &str) -> Self {
         Self {
-            account_id: account_id.to_string(),
+            config_id: account_id.to_string(),
             session_db_path: session_db_path.to_string(),
             client: Arc::new(Mutex::new(None)),
+            own_jid: Arc::new(std::sync::Mutex::new(None)),
         }
+    }
+
+    /// Connects to WhatsApp if not already connected using the saved session.
+    /// Used by send/reply to establish a temporary connection.
+    async fn ensure_connected(&self) -> anyhow::Result<()> {
+        {
+            let guard = self.client.lock().await;
+            if guard.is_some() {
+                return Ok(());
+            }
+        }
+
+        info!(account_id = %self.config_id, "starting WhatsApp connection for send");
+        let backend = Arc::new(SqliteStore::new(&self.session_db_path).await?);
+        let client_holder = Arc::clone(&self.client);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+
+        let mut bot = Bot::builder()
+            .with_backend(backend)
+            .with_transport_factory(TokioWebSocketTransportFactory::new())
+            .with_http_client(UreqHttpClient::new())
+            .on_event(move |event, client| {
+                let client_holder = Arc::clone(&client_holder);
+                let tx = tx.clone();
+                async move {
+                    {
+                        let mut holder = client_holder.lock().await;
+                        if holder.is_none() {
+                            *holder = Some(client);
+                        }
+                    }
+                    let _ = tx.send(event);
+                }
+            })
+            .build()
+            .await?;
+
+        let bot_future = bot.run().await?;
+
+        tokio::select! {
+            _ = bot_future => {
+                anyhow::bail!("WhatsApp disconnected before connecting");
+            }
+            result = async {
+                loop {
+                    match rx.recv().await {
+                        Some(Event::Connected(_)) => {
+                            info!("WhatsApp connected for send");
+                            return Ok::<(), anyhow::Error>(());
+                        }
+                        Some(Event::PairError(e)) => {
+                            error!(account_id = %self.config_id, error = ?e, "WhatsApp PairError");
+                            return Err(anyhow::anyhow!("Auth error: {:?}. Run `void auth whatsapp` first.", e));
+                        }
+                        Some(Event::LoggedOut(_)) => {
+                            error!(account_id = %self.config_id, "WhatsApp LoggedOut");
+                            return Err(anyhow::anyhow!("Session expired. Run `void auth whatsapp` to re-authenticate."));
+                        }
+                        None => {
+                            error!(account_id = %self.config_id, "WhatsApp connection closed unexpectedly");
+                            return Err(anyhow::anyhow!("Connection closed unexpectedly"));
+                        }
+                        _ => {}
+                    }
+                }
+            } => {
+                result?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -43,7 +117,7 @@ impl Channel for WhatsAppChannel {
     }
 
     fn account_id(&self) -> &str {
-        &self.account_id
+        &self.config_id
     }
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
@@ -67,26 +141,30 @@ impl Channel for WhatsAppChannel {
 
         tokio::select! {
             _ = bot_future => {
+                error!(account_id = %self.config_id, "WhatsApp disconnected before authentication completed");
                 anyhow::bail!("WhatsApp disconnected before authentication completed");
             }
             result = async {
                 loop {
                     match rx.recv().await {
                         Some(Event::PairingQrCode { code, .. }) => {
-                            eprintln!("Scan this QR code with WhatsApp > Linked Devices > Link a Device:\n{code}");
+                            eprintln!("Scan this QR code with WhatsApp > Linked Devices > Link a Device:\n");
+                            render_qr(&code);
                         }
                         Some(Event::PairSuccess(_)) => {
-                            info!(account_id = %self.account_id, "WhatsApp paired successfully");
+                            info!(account_id = %self.config_id, "WhatsApp paired successfully");
                             return Ok::<(), anyhow::Error>(());
                         }
                         Some(Event::Connected(_)) => {
-                            info!(account_id = %self.account_id, "WhatsApp connected (session exists)");
+                            info!(account_id = %self.config_id, "WhatsApp connected (session exists)");
                             return Ok(());
                         }
                         Some(Event::PairError(e)) => {
+                            warn!(account_id = %self.config_id, error = ?e, "WhatsApp authenticate PairError");
                             return Err(anyhow::anyhow!("Pairing error: {:?}", e));
                         }
                         None => {
+                            error!(account_id = %self.config_id, "WhatsApp authenticate event channel closed");
                             return Err(anyhow::anyhow!("Event channel closed"));
                         }
                         _ => {}
@@ -100,12 +178,13 @@ impl Channel for WhatsAppChannel {
     }
 
     async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
-        info!(account_id = %self.account_id, "starting WhatsApp sync");
+        info!(config_id = %self.config_id, "starting WhatsApp sync");
 
         let backend = Arc::new(SqliteStore::new(&self.session_db_path).await?);
         let db_clone = Arc::clone(&db);
-        let account_id = self.account_id.clone();
+        let config_id = self.config_id.clone();
         let client_holder = Arc::clone(&self.client);
+        let own_jid_holder = Arc::clone(&self.own_jid);
 
         let mut bot = Bot::builder()
             .with_backend(backend)
@@ -113,8 +192,9 @@ impl Channel for WhatsAppChannel {
             .with_http_client(UreqHttpClient::new())
             .on_event(move |event, client| {
                 let db = Arc::clone(&db_clone);
-                let account_id = account_id.clone();
+                let config_id = config_id.clone();
                 let client_holder = Arc::clone(&client_holder);
+                let own_jid_holder = Arc::clone(&own_jid_holder);
                 async move {
                     {
                         let mut holder = client_holder.lock().await;
@@ -125,12 +205,27 @@ impl Channel for WhatsAppChannel {
 
                     match event {
                         Event::PairingQrCode { code, .. } => {
-                            eprintln!("Scan this QR code with WhatsApp:\n{code}");
+                            eprintln!("Scan this QR code with WhatsApp:\n");
+                            render_qr(&code);
                         }
                         Event::Connected(_) => {
                             info!("WhatsApp connected");
                         }
                         Event::Message(msg, info) => {
+                            // Discover own JID from outgoing messages
+                            if info.source.is_from_me {
+                                let mut jid_lock = own_jid_holder.lock().expect("mutex");
+                                if jid_lock.is_none() {
+                                    let jid = info.source.sender.to_string();
+                                    info!(own_jid = %jid, "discovered own WhatsApp JID");
+                                    *jid_lock = Some(jid);
+                                }
+                            }
+                            let account_id = own_jid_holder
+                                .lock()
+                                .expect("mutex")
+                                .clone()
+                                .unwrap_or_else(|| config_id.clone());
                             if let Err(e) = handle_message(&db, &account_id, &msg, &info) {
                                 warn!("Failed to store WA message: {e}");
                             }
@@ -162,8 +257,9 @@ impl Channel for WhatsAppChannel {
 
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
         let connected = self.client.lock().await.is_some();
+        debug!(account_id = %self.config_id, connected, "WhatsApp health check");
         Ok(HealthStatus {
-            account_id: self.account_id.clone(),
+            account_id: self.config_id.clone(),
             channel_type: ChannelType::WhatsApp,
             ok: connected,
             message: if connected {
@@ -177,15 +273,18 @@ impl Channel for WhatsAppChannel {
     }
 
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
+        self.ensure_connected().await?;
         let guard = self.client.lock().await;
         let client = guard
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("WhatsApp not connected"))?;
         let jid = parse_jid(to)?;
+        info!(account_id = %self.config_id, recipient_jid = %jid, "sending WhatsApp message");
         let msg = build_wa_message(&content, None)?;
         let msg_id = client
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
+        debug!(account_id = %self.config_id, message_id = %msg_id, "WhatsApp message sent");
         Ok(msg_id)
     }
 
@@ -198,7 +297,9 @@ impl Channel for WhatsAppChannel {
         in_thread: bool,
     ) -> anyhow::Result<String> {
         let (chat_jid_str, quoted_msg_id) = parse_reply_id(message_id)?;
+        info!(account_id = %self.config_id, reply_target = %chat_jid_str, quoted_msg_id = %quoted_msg_id, in_thread, "sending WhatsApp reply");
 
+        self.ensure_connected().await?;
         let guard = self.client.lock().await;
         let client = guard
             .as_ref()
@@ -219,8 +320,22 @@ impl Channel for WhatsAppChannel {
         let msg_id = client
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
+        debug!(account_id = %self.config_id, message_id = %msg_id, "WhatsApp reply sent");
         Ok(msg_id)
     }
+}
+
+/// Returns true for system/protocol messages that have no user-visible content.
+fn is_system_message(msg: &WaMessage) -> bool {
+    let base = msg.get_base_message();
+    base.sender_key_distribution_message.is_some()
+        || base.protocol_message.is_some()
+        || base.sticker_sync_rmr_message.is_some()
+        || base.keep_in_chat_message.is_some()
+        || base.pin_in_chat_message.is_some()
+        || base
+            .fast_ratchet_key_sender_key_distribution_message
+            .is_some()
 }
 
 fn handle_message(
@@ -229,6 +344,17 @@ fn handle_message(
     msg: &WaMessage,
     info: &MessageInfo,
 ) -> anyhow::Result<()> {
+    if is_system_message(msg) {
+        debug!(msg_id = %info.id, "skipping system message");
+        return Ok(());
+    }
+
+    let base = msg.get_base_message();
+
+    if let Some(ref reaction) = base.reaction_message {
+        return handle_reaction(db, account_id, reaction, info);
+    }
+
     let chat_jid = info.source.chat.to_string();
     let sender_jid = info.source.sender.to_string();
     let is_group = info.source.is_group;
@@ -237,6 +363,7 @@ fn handle_message(
     let conversation = Conversation {
         id: conv_id.clone(),
         account_id: account_id.to_string(),
+        connector: "whatsapp".into(),
         external_id: chat_jid.clone(),
         name: if is_group {
             Some(chat_jid.clone())
@@ -261,10 +388,16 @@ fn handle_message(
     let body = extract_text(msg);
     let media_type = extract_media_type(msg);
 
+    if body.is_none() && media_type.is_none() {
+        debug!(msg_id = %info.id, "skipping message with no extractable content");
+        return Ok(());
+    }
+
     let message = void_core::models::Message {
         id: format!("wa_{account_id}_{}", info.id),
         conversation_id: conv_id,
         account_id: account_id.to_string(),
+        connector: "whatsapp".into(),
         external_id: info.id.clone(),
         sender: sender_jid,
         sender_name: if info.push_name.is_empty() {
@@ -274,7 +407,10 @@ fn handle_message(
         },
         body,
         timestamp: info.timestamp.timestamp(),
+        synced_at: None,
         is_from_me: info.source.is_from_me,
+        is_read: false,
+        is_archived: false,
         reply_to_id: extract_quoted_id(msg),
         media_type,
         metadata: None,
@@ -285,46 +421,210 @@ fn handle_message(
     Ok(())
 }
 
+fn handle_reaction(
+    db: &Database,
+    account_id: &str,
+    reaction: &wa_rs_proto::whatsapp::message::ReactionMessage,
+    info: &MessageInfo,
+) -> anyhow::Result<()> {
+    let target_id = reaction
+        .key
+        .as_ref()
+        .and_then(|k| k.id.as_ref())
+        .ok_or_else(|| anyhow::anyhow!("reaction has no target message key"))?;
+
+    let emoji = reaction.text.as_deref().unwrap_or("");
+    let sender = info.source.sender.to_string();
+    let sender_name = if info.push_name.is_empty() {
+        sender.clone()
+    } else {
+        info.push_name.clone()
+    };
+
+    let Some(original) = db.find_message_by_external_id(account_id, target_id)? else {
+        debug!(target_id, "reaction target message not found, skipping");
+        return Ok(());
+    };
+
+    let mut meta = original
+        .metadata
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let reactions = meta
+        .as_object_mut()
+        .unwrap()
+        .entry("reactions")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .unwrap();
+
+    // Remove any existing reaction from the same sender
+    reactions.retain(|r| r.get("sender").and_then(|s| s.as_str()) != Some(&sender));
+
+    // Empty emoji means reaction removed; non-empty means add/replace
+    if !emoji.is_empty() {
+        reactions.push(serde_json::json!({
+            "emoji": emoji,
+            "sender": sender,
+            "sender_name": sender_name,
+        }));
+    }
+
+    db.update_message_metadata(&original.id, &meta)?;
+    debug!(
+        target_id,
+        emoji,
+        sender = %sender,
+        "updated reaction on message"
+    );
+    Ok(())
+}
+
+fn render_qr(code: &str) {
+    if let Err(e) = qr2term::print_qr(code) {
+        eprintln!("Could not render QR code: {e}");
+        eprintln!("Raw pairing code: {code}");
+    }
+}
+
 fn extract_text(msg: &WaMessage) -> Option<String> {
-    if let Some(ref text) = msg.conversation {
-        return Some(text.clone());
+    let base = msg.get_base_message();
+
+    if let Some(text) = base.text_content() {
+        if !text.is_empty() {
+            return Some(text.to_string());
+        }
     }
-    if let Some(ref ext) = msg.extended_text_message {
-        return ext.text.clone();
+
+    if let Some(caption) = base.get_caption() {
+        if !caption.is_empty() {
+            return Some(caption.to_string());
+        }
     }
-    if let Some(ref img) = msg.image_message {
-        return img.caption.clone();
+
+    if let Some(ref loc) = base.location_message {
+        return Some(
+            loc.name
+                .clone()
+                .unwrap_or_else(|| "📍 Location".to_string()),
+        );
     }
-    if let Some(ref vid) = msg.video_message {
-        return vid.caption.clone();
+    if let Some(ref contact) = base.contact_message {
+        return Some(format!(
+            "👤 {}",
+            contact.display_name.as_deref().unwrap_or("Contact")
+        ));
     }
-    if let Some(ref doc) = msg.document_message {
-        return doc.caption.clone();
+    if let Some(ref contacts) = base.contacts_array_message {
+        let count = contacts.contacts.len();
+        return Some(format!("👥 {count} contacts"));
     }
+    if base.sticker_message.is_some() || base.lottie_sticker_message.is_some() {
+        return Some("🖼️ Sticker".to_string());
+    }
+    if base.audio_message.is_some() {
+        return Some("🎵 Audio".to_string());
+    }
+    if base.ptv_message.is_some() {
+        return Some("🎥 Video note".to_string());
+    }
+
+    if let Some(ref poll) = base.poll_creation_message {
+        return Some(format!("📊 {}", poll.name.as_deref().unwrap_or("Poll")));
+    }
+    if let Some(ref poll) = base.poll_creation_message_v2 {
+        return Some(format!("📊 {}", poll.name.as_deref().unwrap_or("Poll")));
+    }
+    if let Some(ref poll) = base.poll_creation_message_v3 {
+        return Some(format!("📊 {}", poll.name.as_deref().unwrap_or("Poll")));
+    }
+    if let Some(ref poll) = base.poll_creation_message_v5 {
+        return Some(format!("📊 {}", poll.name.as_deref().unwrap_or("Poll")));
+    }
+    if base.poll_update_message.is_some() {
+        return Some("📊 Poll vote".to_string());
+    }
+
+    if let Some(ref invite) = base.group_invite_message {
+        return Some(format!(
+            "👥 Group invite: {}",
+            invite.group_name.as_deref().unwrap_or("group")
+        ));
+    }
+
+    if let Some(ref live_loc) = base.live_location_message {
+        return Some(
+            live_loc
+                .caption
+                .clone()
+                .unwrap_or_else(|| "📍 Live location".to_string()),
+        );
+    }
+
+    if base.call.is_some() || base.bcall_message.is_some() {
+        return Some("📞 Call".to_string());
+    }
+    if base.call_log_messsage.is_some() {
+        return Some("📞 Call".to_string());
+    }
+
+    if let Some(ref event) = base.event_message {
+        return Some(format!("📅 {}", event.name.as_deref().unwrap_or("Event")));
+    }
+
+    if base.image_message.is_some() {
+        return Some("📷 Image".to_string());
+    }
+    if base.video_message.is_some() {
+        return Some("🎬 Video".to_string());
+    }
+    if base.document_message.is_some() {
+        return Some("📄 Document".to_string());
+    }
+
     None
 }
 
 fn extract_media_type(msg: &WaMessage) -> Option<String> {
-    if msg.image_message.is_some() {
+    let base = msg.get_base_message();
+    if base.image_message.is_some() {
         return Some("image".into());
     }
-    if msg.video_message.is_some() {
+    if base.video_message.is_some() || base.ptv_message.is_some() {
         return Some("video".into());
     }
-    if msg.audio_message.is_some() {
+    if base.audio_message.is_some() {
         return Some("audio".into());
     }
-    if msg.document_message.is_some() {
+    if base.document_message.is_some() {
         return Some("document".into());
     }
-    if msg.sticker_message.is_some() {
+    if base.sticker_message.is_some() || base.lottie_sticker_message.is_some() {
         return Some("sticker".into());
     }
-    if msg.location_message.is_some() {
+    if base.location_message.is_some() || base.live_location_message.is_some() {
         return Some("location".into());
     }
-    if msg.contact_message.is_some() {
+    if base.contact_message.is_some() || base.contacts_array_message.is_some() {
         return Some("contact".into());
+    }
+    if base.poll_creation_message.is_some()
+        || base.poll_creation_message_v2.is_some()
+        || base.poll_creation_message_v3.is_some()
+        || base.poll_creation_message_v5.is_some()
+        || base.poll_update_message.is_some()
+    {
+        return Some("poll".into());
+    }
+    if base.group_invite_message.is_some() {
+        return Some("invite".into());
+    }
+    if base.call.is_some() || base.call_log_messsage.is_some() || base.bcall_message.is_some() {
+        return Some("call".into());
+    }
+    if base.event_message.is_some() {
+        return Some("event".into());
     }
     None
 }
@@ -440,6 +740,116 @@ mod tests {
     }
 
     #[test]
+    fn extract_text_ephemeral_wrapper() {
+        use wa_rs_proto::whatsapp::message::FutureProofMessage;
+        let msg = WaMessage {
+            ephemeral_message: Some(Box::new(FutureProofMessage {
+                message: Some(Box::new(WaMessage {
+                    conversation: Some("ephemeral text".into()),
+                    ..Default::default()
+                })),
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("ephemeral text".into()));
+    }
+
+    #[test]
+    fn extract_text_device_sent_wrapper() {
+        use wa_rs_proto::whatsapp::message::DeviceSentMessage;
+        let msg = WaMessage {
+            device_sent_message: Some(Box::new(DeviceSentMessage {
+                message: Some(Box::new(WaMessage {
+                    extended_text_message: Some(Box::new(ExtendedTextMessage {
+                        text: Some("from other device".into()),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("from other device".into()));
+    }
+
+    #[test]
+    fn extract_text_view_once_wrapper() {
+        use wa_rs_proto::whatsapp::message::{FutureProofMessage, ImageMessage};
+        let msg = WaMessage {
+            view_once_message: Some(Box::new(FutureProofMessage {
+                message: Some(Box::new(WaMessage {
+                    image_message: Some(Box::new(ImageMessage {
+                        caption: Some("view once caption".into()),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                })),
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("view once caption".into()));
+    }
+
+    #[test]
+    fn extract_text_edited_message_wrapper() {
+        use wa_rs_proto::whatsapp::message::FutureProofMessage;
+        let msg = WaMessage {
+            edited_message: Some(Box::new(FutureProofMessage {
+                message: Some(Box::new(WaMessage {
+                    conversation: Some("edited text".into()),
+                    ..Default::default()
+                })),
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("edited text".into()));
+    }
+
+    #[test]
+    fn extract_text_protocol_message_returns_none() {
+        use wa_rs_proto::whatsapp::message::ProtocolMessage;
+        let msg = WaMessage {
+            protocol_message: Some(Box::new(ProtocolMessage::default())),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), None);
+    }
+
+    #[test]
+    fn extract_text_image_caption() {
+        use wa_rs_proto::whatsapp::message::ImageMessage;
+        let msg = WaMessage {
+            image_message: Some(Box::new(ImageMessage {
+                caption: Some("photo caption".into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("photo caption".into()));
+    }
+
+    #[test]
+    fn extract_text_sticker_fallback() {
+        use wa_rs_proto::whatsapp::message::StickerMessage;
+        let msg = WaMessage {
+            sticker_message: Some(Box::new(StickerMessage::default())),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("\u{1f5bc}\u{fe0f} Sticker".into()));
+    }
+
+    #[test]
+    fn extract_text_audio_fallback() {
+        use wa_rs_proto::whatsapp::message::AudioMessage;
+        let msg = WaMessage {
+            audio_message: Some(Box::new(AudioMessage::default())),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("\u{1f3b5} Audio".into()));
+    }
+
+    #[test]
     fn extract_media_type_image() {
         use wa_rs_proto::whatsapp::message::ImageMessage;
         let msg = WaMessage {
@@ -447,6 +857,30 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(extract_media_type(&msg), Some("image".into()));
+    }
+
+    #[test]
+    fn extract_media_type_through_ephemeral() {
+        use wa_rs_proto::whatsapp::message::{FutureProofMessage, VideoMessage};
+        let msg = WaMessage {
+            ephemeral_message: Some(Box::new(FutureProofMessage {
+                message: Some(Box::new(WaMessage {
+                    video_message: Some(Box::new(VideoMessage::default())),
+                    ..Default::default()
+                })),
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_media_type(&msg), Some("video".into()));
+    }
+
+    #[test]
+    fn extract_media_type_none_for_text() {
+        let msg = WaMessage {
+            conversation: Some("just text".into()),
+            ..Default::default()
+        };
+        assert_eq!(extract_media_type(&msg), None);
     }
 
     #[test]
@@ -472,6 +906,134 @@ mod tests {
             ext.context_info.as_ref().unwrap().stanza_id,
             Some("orig_msg_123".into())
         );
+    }
+
+    #[test]
+    fn extract_text_reaction_returns_none() {
+        use wa_rs_proto::whatsapp::message::ReactionMessage;
+        let msg = WaMessage {
+            reaction_message: Some(ReactionMessage {
+                text: Some("❤️".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        // Reactions are handled via metadata on the target message, not as separate messages
+        assert_eq!(extract_text(&msg), None);
+        assert_eq!(extract_media_type(&msg), None);
+    }
+
+    #[test]
+    fn extract_text_poll() {
+        use wa_rs_proto::whatsapp::message::PollCreationMessage;
+        let msg = WaMessage {
+            poll_creation_message: Some(Box::new(PollCreationMessage {
+                name: Some("Favorite color?".into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("📊 Favorite color?".into()));
+        assert_eq!(extract_media_type(&msg), Some("poll".into()));
+    }
+
+    #[test]
+    fn extract_text_group_invite() {
+        use wa_rs_proto::whatsapp::message::GroupInviteMessage;
+        let msg = WaMessage {
+            group_invite_message: Some(Box::new(GroupInviteMessage {
+                group_name: Some("My Group".into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("👥 Group invite: My Group".into()));
+        assert_eq!(extract_media_type(&msg), Some("invite".into()));
+    }
+
+    #[test]
+    fn extract_text_call() {
+        use wa_rs_proto::whatsapp::message::Call;
+        let msg = WaMessage {
+            call: Some(Box::new(Call::default())),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("📞 Call".into()));
+        assert_eq!(extract_media_type(&msg), Some("call".into()));
+    }
+
+    #[test]
+    fn extract_text_video_note() {
+        use wa_rs_proto::whatsapp::message::VideoMessage;
+        let msg = WaMessage {
+            ptv_message: Some(Box::new(VideoMessage::default())),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("🎥 Video note".into()));
+        assert_eq!(extract_media_type(&msg), Some("video".into()));
+    }
+
+    #[test]
+    fn extract_text_event() {
+        use wa_rs_proto::whatsapp::message::EventMessage;
+        let msg = WaMessage {
+            event_message: Some(Box::new(EventMessage {
+                name: Some("Team meeting".into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("📅 Team meeting".into()));
+        assert_eq!(extract_media_type(&msg), Some("event".into()));
+    }
+
+    #[test]
+    fn is_system_message_sender_key_distribution() {
+        use wa_rs_proto::whatsapp::message::SenderKeyDistributionMessage;
+        let msg = WaMessage {
+            sender_key_distribution_message: Some(SenderKeyDistributionMessage::default()),
+            ..Default::default()
+        };
+        assert!(is_system_message(&msg));
+    }
+
+    #[test]
+    fn is_system_message_protocol() {
+        use wa_rs_proto::whatsapp::message::ProtocolMessage;
+        let msg = WaMessage {
+            protocol_message: Some(Box::new(ProtocolMessage::default())),
+            ..Default::default()
+        };
+        assert!(is_system_message(&msg));
+    }
+
+    #[test]
+    fn is_system_message_false_for_text() {
+        let msg = WaMessage {
+            conversation: Some("hello".into()),
+            ..Default::default()
+        };
+        assert!(!is_system_message(&msg));
+    }
+
+    #[test]
+    fn extract_text_image_no_caption_fallback() {
+        use wa_rs_proto::whatsapp::message::ImageMessage;
+        let msg = WaMessage {
+            image_message: Some(Box::new(ImageMessage::default())),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("📷 Image".into()));
+    }
+
+    #[test]
+    fn extract_text_document_fallback() {
+        use wa_rs_proto::whatsapp::message::DocumentMessage;
+        let msg = WaMessage {
+            document_message: Some(Box::new(DocumentMessage::default())),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("📄 Document".into()));
     }
 
     #[test]

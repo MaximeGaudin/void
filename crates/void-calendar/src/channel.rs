@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use void_core::channel::Channel;
 use void_core::db::Database;
@@ -49,6 +49,7 @@ impl CalendarChannel {
             .unwrap_or(true);
 
         if is_expired {
+            debug!(account_id = %self.account_id, "refreshing Calendar access token");
             if let Some(ref refresh_token) = cache.refresh_token {
                 let creds = void_gmail::auth::load_client_credentials(&self.credentials_file)?;
                 let http = reqwest::Client::new();
@@ -146,6 +147,13 @@ impl CalendarChannel {
     ) -> anyhow::Result<CalendarEvent> {
         let api = self.get_client().await?;
 
+        let cal_id = self
+            .calendar_ids
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("primary");
+        info!(account_id = %self.account_id, title = %title, calendar_id = %cal_id, "creating Calendar event");
+
         let timezone = "UTC".to_string();
         let attendee_list = attendees.map(|a| {
             a.split(',')
@@ -183,15 +191,13 @@ impl CalendarChannel {
             conference_data,
         };
 
-        let cal_id = self
-            .calendar_ids
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("primary");
         let conference_version = if meet { Some(1) } else { None };
         let resp = api
             .insert_event(cal_id, &request, conference_version)
             .await?;
+
+        let event_id = resp.id.as_deref().unwrap_or("new");
+        debug!(account_id = %self.account_id, event_id = %event_id, "Calendar event created");
 
         let cal_event =
             map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| CalendarEvent {
@@ -201,6 +207,7 @@ impl CalendarChannel {
                     resp.id.as_deref().unwrap_or("new")
                 ),
                 account_id: self.account_id.clone(),
+                connector: "calendar".into(),
                 external_id: resp.id.clone().unwrap_or_default(),
                 title: title.to_string(),
                 description: None,
@@ -234,6 +241,12 @@ impl Channel for CalendarChannel {
         let api = self.get_client().await?;
         let cals = api.list_calendars().await?;
         let count = cals.items.as_ref().map(|i| i.len()).unwrap_or(0);
+        let calendar_list: Vec<&str> = cals
+            .items
+            .as_ref()
+            .map(|items| items.iter().filter_map(|c| c.summary.as_deref()).collect())
+            .unwrap_or_default();
+        debug!(account_id = %self.account_id, calendars = count, calendar_list = ?calendar_list, "Calendar authenticated");
         info!(calendars = count, "Calendar authenticated");
         Ok(())
     }
@@ -272,23 +285,29 @@ impl Channel for CalendarChannel {
                         message_count: None,
                     })
                 }
-                Err(e) => Ok(HealthStatus {
+                Err(e) => {
+                    warn!(account_id = %self.account_id, error = %e, "Calendar health check API error");
+                    Ok(HealthStatus {
+                        account_id: self.account_id.clone(),
+                        channel_type: ChannelType::Calendar,
+                        ok: false,
+                        message: format!("API error: {e}"),
+                        last_sync: None,
+                        message_count: None,
+                    })
+                }
+            },
+            Err(e) => {
+                warn!(account_id = %self.account_id, error = %e, "Calendar health check auth error");
+                Ok(HealthStatus {
                     account_id: self.account_id.clone(),
                     channel_type: ChannelType::Calendar,
                     ok: false,
-                    message: format!("API error: {e}"),
+                    message: format!("Auth error: {e}"),
                     last_sync: None,
                     message_count: None,
-                }),
-            },
-            Err(e) => Ok(HealthStatus {
-                account_id: self.account_id.clone(),
-                channel_type: ChannelType::Calendar,
-                ok: false,
-                message: format!("Auth error: {e}"),
-                last_sync: None,
-                message_count: None,
-            }),
+                })
+            }
         }
     }
 
@@ -360,6 +379,7 @@ fn map_event(
     Some(CalendarEvent {
         id: format!("{account_id}-{id}"),
         account_id: account_id.to_string(),
+        connector: "calendar".into(),
         external_id: id.clone(),
         title: event.summary.clone().unwrap_or_else(|| "(no title)".into()),
         description: event.description.clone(),
