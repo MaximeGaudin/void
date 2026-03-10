@@ -1,1 +1,3 @@
-// Gmail adapter for Void CLI
+pub mod api;
+pub mod auth;
+pub mod channel;

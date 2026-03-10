@@ -2058,11 +2058,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
+ "chrono",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
+ "uuid",
  "void-core",
 ]
 
