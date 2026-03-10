@@ -25,13 +25,24 @@ pub fn run() -> anyhow::Result<()> {
     };
 
     let db_path = cfg.db_path();
-    match Database::open(&db_path) {
-        Ok(_db) => {
+    let db = match Database::open(&db_path) {
+        Ok(db) => {
             eprintln!("[OK] Database: {}", db_path.display());
+            Some(db)
         }
         Err(e) => {
             eprintln!("[!!] Database error: {e}");
+            None
         }
+    };
+
+    let store_path = cfg.store_path();
+    let lock_path = store_path.join("LOCK");
+    if lock_path.exists() {
+        let pid = std::fs::read_to_string(&lock_path).unwrap_or_default();
+        eprintln!("[OK] Sync daemon appears running ({})", pid.trim());
+    } else {
+        eprintln!("[--] Sync daemon not running");
     }
 
     eprintln!();
@@ -42,6 +53,30 @@ pub fn run() -> anyhow::Result<()> {
         for acc in &cfg.accounts {
             eprintln!("     - {} ({})", acc.id, acc.account_type);
         }
+    }
+
+    if let Some(ref db) = db {
+        eprintln!();
+        let conv_count = db
+            .list_conversations(None, 10000)
+            .map(|c| c.len())
+            .unwrap_or(0);
+        let msg_count = db.recent_messages(None, 1).map(|m| m.len()).unwrap_or(0);
+        let event_count = db
+            .list_events(Some(0), Some(i64::MAX), 10000)
+            .map(|e| e.len())
+            .unwrap_or(0);
+
+        eprintln!("Database stats:");
+        eprintln!("  Conversations: {conv_count}");
+        eprintln!(
+            "  Messages:      {}",
+            if msg_count > 0 { "yes" } else { "empty" }
+        );
+        eprintln!(
+            "  Events:        {}",
+            if event_count > 0 { "yes" } else { "empty" }
+        );
     }
 
     eprintln!("\nDoctor check complete.");

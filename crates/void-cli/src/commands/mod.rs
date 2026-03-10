@@ -9,4 +9,5 @@ pub mod messages;
 pub mod reply;
 pub mod search;
 pub mod send;
+pub mod status;
 pub mod sync;

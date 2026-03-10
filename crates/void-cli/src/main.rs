@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::Accounts(args)) => commands::accounts::run(args),
         Some(Command::Config(args)) => commands::config::run(args),
         None => {
-            eprintln!("void: unified communication CLI (run --help for usage)");
+            commands::status::run();
             Ok(())
         }
     }
