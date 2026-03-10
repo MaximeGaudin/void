@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -7,8 +8,12 @@ use crate::models::{CalendarEvent, ChannelType, Conversation, ConversationKind, 
 pub const SCHEMA_VERSION: i32 = 1;
 
 pub struct Database {
-    conn: Connection,
+    conn: Mutex<Connection>,
 }
+
+// SAFETY: All Connection access is protected by the Mutex.
+unsafe impl Send for Database {}
+unsafe impl Sync for Database {}
 
 impl Database {
     pub fn open(path: &Path) -> anyhow::Result<Self> {
@@ -19,7 +24,9 @@ impl Database {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "busy_timeout", 5000)?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        let db = Self { conn };
+        let db = Self {
+            conn: Mutex::new(conn),
+        };
         db.migrate()?;
         Ok(db)
     }
@@ -27,18 +34,24 @@ impl Database {
     pub fn open_in_memory() -> anyhow::Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        let db = Self { conn };
+        let db = Self {
+            conn: Mutex::new(conn),
+        };
         db.migrate()?;
         Ok(db)
     }
 
+    fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().expect("database mutex poisoned")
+    }
+
     fn migrate(&self) -> anyhow::Result<()> {
-        self.conn.execute_batch(
+        let conn = self.conn();
+        conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);",
         )?;
 
-        let current: Option<i32> = self
-            .conn
+        let current: Option<i32> = conn
             .query_row(
                 "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
                 [],
@@ -48,13 +61,14 @@ impl Database {
 
         let version = current.unwrap_or(0);
         if version < 1 {
+            drop(conn);
             self.migrate_v1()?;
         }
         Ok(())
     }
 
     fn migrate_v1(&self) -> anyhow::Result<()> {
-        self.conn.execute_batch(
+        self.conn().execute_batch(
             "
             CREATE TABLE IF NOT EXISTS conversations (
                 id              TEXT PRIMARY KEY,
@@ -142,7 +156,7 @@ impl Database {
     // -- Conversations --
 
     pub fn upsert_conversation(&self, conv: &Conversation) -> anyhow::Result<()> {
-        self.conn.execute(
+        self.conn().execute(
             "INSERT INTO conversations (id, account_id, external_id, name, kind, last_message_at, unread_count, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
@@ -170,9 +184,10 @@ impl Database {
         channel_type_filter: Option<&str>,
         limit: i64,
     ) -> anyhow::Result<Vec<Conversation>> {
+        let conn = self.conn();
         if let Some(ct) = channel_type_filter {
             let pattern = format!("%-{ct}");
-            let mut stmt = self.conn.prepare(
+            let mut stmt = conn.prepare(
                 "SELECT id, account_id, external_id, name, kind, last_message_at, unread_count, metadata
                  FROM conversations WHERE account_id LIKE ?1
                  ORDER BY last_message_at DESC NULLS LAST LIMIT ?2",
@@ -180,7 +195,7 @@ impl Database {
             let rows = stmt.query_map(params![pattern, limit], row_to_conversation)?;
             rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
         } else {
-            let mut stmt = self.conn.prepare(
+            let mut stmt = conn.prepare(
                 "SELECT id, account_id, external_id, name, kind, last_message_at, unread_count, metadata
                  FROM conversations ORDER BY last_message_at DESC NULLS LAST LIMIT ?1",
             )?;
@@ -190,7 +205,7 @@ impl Database {
     }
 
     pub fn get_conversation(&self, id: &str) -> anyhow::Result<Option<Conversation>> {
-        self.conn
+        self.conn()
             .query_row(
                 "SELECT id, account_id, external_id, name, kind, last_message_at, unread_count, metadata
                  FROM conversations WHERE id = ?1",
@@ -204,7 +219,7 @@ impl Database {
     // -- Messages --
 
     pub fn upsert_message(&self, msg: &Message) -> anyhow::Result<()> {
-        self.conn.execute(
+        self.conn().execute(
             "INSERT INTO messages (id, conversation_id, account_id, external_id, sender, sender_name, body, timestamp, is_from_me, reply_to_id, media_type, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
@@ -259,7 +274,8 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(params_ref.as_slice(), row_to_message)?;
@@ -267,7 +283,7 @@ impl Database {
     }
 
     pub fn get_message(&self, id: &str) -> anyhow::Result<Option<Message>> {
-        self.conn
+        self.conn()
             .query_row(
                 "SELECT id, conversation_id, account_id, external_id, sender, sender_name, body, timestamp, is_from_me, reply_to_id, media_type, metadata
                  FROM messages WHERE id = ?1",
@@ -279,7 +295,8 @@ impl Database {
     }
 
     pub fn search_messages(&self, query: &str, limit: i64) -> anyhow::Result<Vec<Message>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
             "SELECT m.id, m.conversation_id, m.account_id, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.is_from_me, m.reply_to_id, m.media_type, m.metadata
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
@@ -296,9 +313,10 @@ impl Database {
         channel_filter: Option<&str>,
         limit: i64,
     ) -> anyhow::Result<Vec<Message>> {
+        let conn = self.conn();
         if let Some(ct) = channel_filter {
             let pattern = format!("%-{ct}");
-            let mut stmt = self.conn.prepare(
+            let mut stmt = conn.prepare(
                 "SELECT id, conversation_id, account_id, external_id, sender, sender_name, body, timestamp, is_from_me, reply_to_id, media_type, metadata
                  FROM messages WHERE account_id LIKE ?1
                  ORDER BY timestamp DESC LIMIT ?2",
@@ -306,7 +324,7 @@ impl Database {
             let rows = stmt.query_map(params![pattern, limit], row_to_message)?;
             rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
         } else {
-            let mut stmt = self.conn.prepare(
+            let mut stmt = conn.prepare(
                 "SELECT id, conversation_id, account_id, external_id, sender, sender_name, body, timestamp, is_from_me, reply_to_id, media_type, metadata
                  FROM messages ORDER BY timestamp DESC LIMIT ?1",
             )?;
@@ -318,7 +336,7 @@ impl Database {
     // -- Calendar events --
 
     pub fn upsert_event(&self, event: &CalendarEvent) -> anyhow::Result<()> {
-        self.conn.execute(
+        self.conn().execute(
             "INSERT INTO events (id, account_id, external_id, title, description, location, start_at, end_at, all_day, attendees, status, calendar_name, meet_link, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
@@ -379,7 +397,8 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(params_ref.as_slice(), row_to_event)?;
@@ -389,7 +408,7 @@ impl Database {
     // -- Sync state --
 
     pub fn get_sync_state(&self, account_id: &str, key: &str) -> anyhow::Result<Option<String>> {
-        self.conn
+        self.conn()
             .query_row(
                 "SELECT value FROM sync_state WHERE account_id = ?1 AND key = ?2",
                 params![account_id, key],
@@ -400,16 +419,12 @@ impl Database {
     }
 
     pub fn set_sync_state(&self, account_id: &str, key: &str, value: &str) -> anyhow::Result<()> {
-        self.conn.execute(
+        self.conn().execute(
             "INSERT INTO sync_state (account_id, key, value) VALUES (?1, ?2, ?3)
              ON CONFLICT(account_id, key) DO UPDATE SET value = excluded.value",
             params![account_id, key, value],
         )?;
         Ok(())
-    }
-
-    pub fn conn(&self) -> &Connection {
-        &self.conn
     }
 }
 
@@ -476,7 +491,6 @@ fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<CalendarEvent> {
     })
 }
 
-// Re-export ChannelType for convenience in filter patterns
 impl ChannelType {
     pub fn account_id_suffix(&self) -> &'static str {
         match self {
@@ -529,8 +543,8 @@ mod tests {
     #[test]
     fn migration_runs() {
         let db = test_db();
-        let version: i32 = db
-            .conn
+        let conn = db.conn();
+        let version: i32 = conn
             .query_row(
                 "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
                 [],
