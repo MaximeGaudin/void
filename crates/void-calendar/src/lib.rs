@@ -1,1 +1,2 @@
-// Google Calendar adapter for Void CLI
+pub mod api;
+pub mod channel;
