@@ -24,7 +24,8 @@ pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
 
-    let messages = db.recent_messages(args.account.as_deref(), args.limit, args.all)?;
+    let mut messages = db.recent_messages(args.account.as_deref(), args.limit, args.all)?;
+    messages.reverse();
     formatter.print_messages(&messages)
 }
 
