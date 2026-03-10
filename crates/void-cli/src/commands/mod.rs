@@ -1,1 +1,11 @@
-// CLI command modules
+pub mod accounts;
+pub mod auth;
+pub mod calendar;
+pub mod config;
+pub mod doctor;
+pub mod inbox;
+pub mod messages;
+pub mod reply;
+pub mod search;
+pub mod send;
+pub mod sync;
