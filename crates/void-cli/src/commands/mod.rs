@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod auth;
 pub mod calendar;
+pub mod channel_factory;
 pub mod config;
 pub mod doctor;
 pub mod inbox;

@@ -3092,6 +3092,7 @@ dependencies = [
  "serde_json",
  "tabled",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "void-calendar",

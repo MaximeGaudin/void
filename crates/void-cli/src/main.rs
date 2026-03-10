@@ -51,7 +51,8 @@ enum Command {
     Config(commands::config::ConfigArgs),
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let log_level = if cli.verbose { "debug" } else { "warn" };
@@ -64,14 +65,14 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     match &cli.command {
-        Some(Command::Auth(args)) => commands::auth::run(args),
-        Some(Command::Sync(args)) => commands::sync::run(args),
+        Some(Command::Auth(args)) => commands::auth::run(args).await,
+        Some(Command::Sync(args)) => commands::sync::run(args).await,
         Some(Command::Doctor) => commands::doctor::run(),
         Some(Command::Inbox(args)) => commands::inbox::run(args, cli.json),
         Some(Command::Conversations(args)) => commands::inbox::run_conversations(args, cli.json),
         Some(Command::Messages(args)) => commands::messages::run(args, cli.json),
         Some(Command::Search(args)) => commands::search::run(args, cli.json),
-        Some(Command::Send(args)) => commands::send::run(args),
+        Some(Command::Send(args)) => commands::send::run(args).await,
         Some(Command::Reply(args)) => commands::reply::run(args),
         Some(Command::Calendar(args)) => commands::calendar::run(args, cli.json),
         Some(Command::Accounts(args)) => commands::accounts::run(args),

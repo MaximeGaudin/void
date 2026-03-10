@@ -25,3 +25,4 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 tabled = { workspace = true }
+tokio-util = { workspace = true }

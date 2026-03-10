@@ -102,6 +102,8 @@ fn truncate(s: &str, max: usize) -> String {
 
 #[derive(Tabled)]
 struct ConversationRow {
+    #[tabled(rename = "CH")]
+    channel: String,
     #[tabled(rename = "ID")]
     id: String,
     #[tabled(rename = "Name")]
@@ -119,6 +121,7 @@ struct ConversationRow {
 impl From<&Conversation> for ConversationRow {
     fn from(c: &Conversation) -> Self {
         Self {
+            channel: badge_from_account_id(&c.account_id),
             id: truncate(&c.id, 12),
             name: c.name.clone().unwrap_or_else(|| "-".into()),
             kind: c.kind.to_string(),
@@ -131,6 +134,8 @@ impl From<&Conversation> for ConversationRow {
 
 #[derive(Tabled)]
 struct MessageRow {
+    #[tabled(rename = "CH")]
+    channel: String,
     #[tabled(rename = "Time")]
     time: String,
     #[tabled(rename = "Sender")]
@@ -144,6 +149,7 @@ struct MessageRow {
 impl From<&Message> for MessageRow {
     fn from(m: &Message) -> Self {
         Self {
+            channel: badge_from_account_id(&m.account_id),
             time: format_ts(m.timestamp),
             sender: m
                 .sender_name
@@ -219,5 +225,21 @@ pub fn parse_channel_type(s: &str) -> Option<ChannelType> {
         "gmail" | "gm" | "email" => Some(ChannelType::Gmail),
         "calendar" | "cal" | "ca" => Some(ChannelType::Calendar),
         _ => None,
+    }
+}
+
+/// Derive a short channel badge from the account_id convention (e.g. "wa_..." -> "[WA]").
+fn badge_from_account_id(account_id: &str) -> String {
+    let id = account_id.to_lowercase();
+    if id.starts_with("wa") || id.contains("whatsapp") {
+        "[WA]".into()
+    } else if id.contains("slack") || id.starts_with("sl") {
+        "[SL]".into()
+    } else if id.contains("gmail") || id.contains("email") || id.starts_with("gm") {
+        "[GM]".into()
+    } else if id.contains("calendar") || id.contains("cal") {
+        "[CA]".into()
+    } else {
+        format!("[{}]", truncate(account_id, 4))
     }
 }
