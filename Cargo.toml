@@ -46,6 +46,9 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 tokio-util = "0.7"
 tabled = "0.17"
+reqwest = { version = "0.12", features = ["json"] }
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+futures-util = "0.3"
 
 # Internal crates
 void-core = { path = "crates/void-core" }

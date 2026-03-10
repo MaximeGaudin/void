@@ -1,1 +1,2 @@
-// Slack adapter for Void CLI
+pub mod api;
+pub mod channel;
