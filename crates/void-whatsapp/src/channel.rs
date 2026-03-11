@@ -212,7 +212,6 @@ impl Channel for WhatsAppChannel {
                             info!("WhatsApp connected");
                         }
                         Event::Message(msg, info) => {
-                            // Discover own JID from outgoing messages
                             if info.source.is_from_me {
                                 let mut jid_lock = own_jid_holder.lock().expect("mutex");
                                 if jid_lock.is_none() {
@@ -228,6 +227,26 @@ impl Channel for WhatsAppChannel {
                                 .unwrap_or_else(|| config_id.clone());
                             if let Err(e) = handle_message(&db, &account_id, &msg, &info) {
                                 warn!("Failed to store WA message: {e}");
+                            }
+                        }
+                        Event::MuteUpdate(mute) => {
+                            let account_id = own_jid_holder
+                                .lock()
+                                .expect("mutex")
+                                .clone()
+                                .unwrap_or_else(|| config_id.clone());
+                            let external_id = mute.jid.to_string();
+                            let is_muted = mute.action.muted.unwrap_or(false);
+                            debug!(
+                                jid = %external_id,
+                                is_muted,
+                                from_full_sync = mute.from_full_sync,
+                                "WhatsApp mute update"
+                            );
+                            if let Err(e) =
+                                db.set_mute_by_external_id(&account_id, &external_id, is_muted)
+                            {
+                                warn!("Failed to update mute state for {external_id}: {e}");
                             }
                         }
                         Event::Disconnected(_) => {
@@ -381,6 +400,7 @@ fn handle_message(
         },
         last_message_at: Some(info.timestamp.timestamp()),
         unread_count: 0,
+        is_muted: false,
         metadata: None,
     };
     db.upsert_conversation(&conversation)?;

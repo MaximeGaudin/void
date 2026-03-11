@@ -321,6 +321,7 @@ fn map_conversation(conv: &SlackConversation, account_id: &str) -> Conversation 
         kind,
         last_message_at: None,
         unread_count: 0,
+        is_muted: false,
         metadata: None,
     }
 }
@@ -342,7 +343,83 @@ fn map_message_cached(
         .cloned()
         .unwrap_or_else(|| sender.clone());
 
-    let metadata = build_metadata(conv, &msg.reactions);
+    let mut metadata = build_metadata(conv, &msg.reactions);
+    let text = msg.text.clone().unwrap_or_default();
+
+    let (body, media_type) = if !msg.files.is_empty() {
+        let file_descriptions: Vec<String> = msg
+            .files
+            .iter()
+            .map(|f| {
+                let name = f.name.as_deref().or(f.title.as_deref()).unwrap_or("file");
+                let icon = match f.mimetype.as_deref() {
+                    Some(m) if m.starts_with("image/") => "🖼️",
+                    Some(m) if m.starts_with("video/") => "🎬",
+                    Some(m) if m.starts_with("audio/") => "🎵",
+                    _ => "📎",
+                };
+                format!("{icon} {name}")
+            })
+            .collect();
+
+        if let Some(meta) = metadata.as_mut() {
+            let files_json: Vec<serde_json::Value> = msg
+                .files
+                .iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "id": f.id,
+                        "name": f.name,
+                        "title": f.title,
+                        "mimetype": f.mimetype,
+                        "filetype": f.filetype,
+                        "size": f.size,
+                        "url_private": f.url_private,
+                        "permalink": f.permalink,
+                    })
+                })
+                .collect();
+            meta["files"] = serde_json::Value::Array(files_json);
+        }
+
+        let first_mime = msg.files[0].mimetype.as_deref();
+        let mtype = first_mime.map(|m| {
+            if m.starts_with("image/") {
+                "image".to_string()
+            } else if m.starts_with("video/") {
+                "video".to_string()
+            } else if m.starts_with("audio/") {
+                "audio".to_string()
+            } else {
+                "file".to_string()
+            }
+        });
+
+        let body = if text.is_empty() {
+            file_descriptions.join(", ")
+        } else {
+            format!("{text}\n{}", file_descriptions.join(", "))
+        };
+        (Some(body), mtype)
+    } else if !msg.attachments.is_empty() && text.is_empty() {
+        let fallback: Vec<String> = msg
+            .attachments
+            .iter()
+            .filter_map(|a| {
+                a.title
+                    .clone()
+                    .or_else(|| a.fallback.clone())
+                    .or_else(|| a.text.clone())
+            })
+            .collect();
+        if fallback.is_empty() {
+            (Some(text), None)
+        } else {
+            (Some(fallback.join("\n")), None)
+        }
+    } else {
+        (if text.is_empty() { None } else { Some(text) }, None)
+    };
 
     Some(Message {
         id: format!("{account_id}-{}", msg.ts),
@@ -352,7 +429,7 @@ fn map_message_cached(
         external_id: msg.ts.clone(),
         sender: sender.clone(),
         sender_name: Some(sender_name),
-        body: msg.text.clone(),
+        body,
         timestamp: parse_ts(&msg.ts).unwrap_or(0),
         synced_at: None,
         is_from_me: false,
@@ -362,7 +439,7 @@ fn map_message_cached(
             .thread_ts
             .as_ref()
             .map(|ts| format!("{account_id}-{ts}")),
-        media_type: None,
+        media_type,
         metadata,
     })
 }

@@ -302,6 +302,31 @@ pub struct SlackMessage {
     pub subtype: Option<String>,
     #[serde(default)]
     pub reactions: Vec<SlackReaction>,
+    #[serde(default)]
+    pub files: Vec<SlackFile>,
+    #[serde(default)]
+    pub attachments: Vec<SlackAttachment>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SlackFile {
+    pub id: String,
+    pub name: Option<String>,
+    pub title: Option<String>,
+    pub mimetype: Option<String>,
+    pub filetype: Option<String>,
+    pub size: Option<u64>,
+    pub url_private: Option<String>,
+    pub permalink: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SlackAttachment {
+    pub fallback: Option<String>,
+    pub title: Option<String>,
+    pub text: Option<String>,
+    pub image_url: Option<String>,
+    pub from_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

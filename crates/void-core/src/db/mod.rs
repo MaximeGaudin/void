@@ -83,8 +83,8 @@ impl Database {
     pub fn upsert_conversation(&self, conv: &Conversation) -> anyhow::Result<()> {
         debug!(conversation_id = %conv.id, "upserting conversation");
         self.conn().execute(
-            "INSERT INTO conversations (id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "INSERT INTO conversations (id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
                 name = excluded.name,
                 connector = excluded.connector,
@@ -101,6 +101,7 @@ impl Database {
                 conv.kind.to_string(),
                 conv.last_message_at,
                 conv.unread_count,
+                conv.is_muted as i32,
                 conv.metadata.as_ref().map(|v| v.to_string()),
             ],
         )?;
@@ -112,13 +113,17 @@ impl Database {
         account_filter: Option<&str>,
         connector_filter: Option<&str>,
         limit: i64,
+        include_muted: bool,
     ) -> anyhow::Result<Vec<Conversation>> {
         let mut sql = String::from(
-            "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata
+            "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
              FROM conversations WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
+        if !include_muted {
+            sql.push_str(" AND is_muted = 0");
+        }
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
             sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
@@ -146,7 +151,7 @@ impl Database {
     pub fn get_conversation(&self, id: &str) -> anyhow::Result<Option<Conversation>> {
         self.conn()
             .query_row(
-                "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata
+                "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
                  FROM conversations WHERE id = ?1",
                 params![id],
                 row::row_to_conversation,
@@ -248,6 +253,7 @@ impl Database {
         account_filter: Option<&str>,
         connector_filter: Option<&str>,
         limit: i64,
+        include_muted: bool,
     ) -> anyhow::Result<Vec<Message>> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
@@ -258,6 +264,11 @@ impl Database {
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(escaped)];
 
+        if !include_muted {
+            sql.push_str(
+                " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.is_muted = 1)",
+            );
+        }
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
             sql.push_str(&format!(
@@ -293,6 +304,7 @@ impl Database {
         connector_filter: Option<&str>,
         limit: i64,
         include_archived: bool,
+        include_muted: bool,
     ) -> anyhow::Result<Vec<Message>> {
         let mut sql = String::from(
             "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
@@ -302,6 +314,11 @@ impl Database {
 
         if !include_archived {
             sql.push_str(" AND is_archived = 0");
+        }
+        if !include_muted {
+            sql.push_str(
+                " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = messages.conversation_id AND c.is_muted = 1)",
+            );
         }
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
@@ -527,13 +544,17 @@ impl Database {
         connector_filter: Option<&str>,
         search: Option<&str>,
         limit: i64,
+        include_muted: bool,
     ) -> anyhow::Result<Vec<Conversation>> {
         let mut sql = String::from(
-            "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata
+            "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
              FROM conversations WHERE kind IN ('group', 'channel')",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
+        if !include_muted {
+            sql.push_str(" AND is_muted = 0");
+        }
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
             sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
@@ -562,6 +583,43 @@ impl Database {
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(params_ref.as_slice(), row::row_to_conversation)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    // -- Mute state --
+
+    pub fn update_conversation_mute(
+        &self,
+        conversation_id: &str,
+        is_muted: bool,
+    ) -> anyhow::Result<bool> {
+        debug!(
+            conversation_id,
+            is_muted, "updating conversation mute state"
+        );
+        let updated = self.conn().execute(
+            "UPDATE conversations SET is_muted = ?2 WHERE id = ?1",
+            params![conversation_id, is_muted as i32],
+        )?;
+        Ok(updated > 0)
+    }
+
+    /// Set mute state for a conversation identified by its external_id and account_id.
+    /// Returns true if a row was updated.
+    pub fn set_mute_by_external_id(
+        &self,
+        account_id: &str,
+        external_id: &str,
+        is_muted: bool,
+    ) -> anyhow::Result<bool> {
+        debug!(
+            account_id,
+            external_id, is_muted, "setting mute by external_id"
+        );
+        let updated = self.conn().execute(
+            "UPDATE conversations SET is_muted = ?3 WHERE account_id = ?1 AND external_id = ?2",
+            params![account_id, external_id, is_muted as i32],
+        )?;
+        Ok(updated > 0)
     }
 
     // -- Sync state --
@@ -607,6 +665,7 @@ mod tests {
             kind: ConversationKind::Dm,
             last_message_at: Some(1_700_000_000),
             unread_count: 0,
+            is_muted: false,
             metadata: None,
         }
     }
@@ -781,7 +840,7 @@ mod tests {
         let loaded = db.get_conversation("c1").unwrap().unwrap();
         assert_eq!(loaded.name.as_deref(), Some("Conv c1"));
 
-        let list = db.list_conversations(None, None, 100).unwrap();
+        let list = db.list_conversations(None, None, 100, true).unwrap();
         assert_eq!(list.len(), 1);
     }
 
@@ -894,7 +953,7 @@ mod tests {
         ))
         .unwrap();
 
-        let results = db.search_messages("meeting", None, None, 10).unwrap();
+        let results = db.search_messages("meeting", None, None, 10, true).unwrap();
         assert_eq!(results.len(), 2);
     }
 
@@ -977,7 +1036,7 @@ mod tests {
     #[test]
     fn search_at_symbol_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("@MadMax", None, None, 50).unwrap();
+        let results = db.search_messages("@MadMax", None, None, 50, true).unwrap();
         assert!(!results.is_empty());
         assert!(results
             .iter()
@@ -988,7 +1047,7 @@ mod tests {
     fn search_at_symbol_with_connector_filter() {
         let db = seed_search_db();
         let results = db
-            .search_messages("@accounts", None, Some("gmail"), 50)
+            .search_messages("@accounts", None, Some("gmail"), 50, true)
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].connector, "gmail");
@@ -998,7 +1057,7 @@ mod tests {
     fn search_at_symbol_wrong_connector_returns_empty() {
         let db = seed_search_db();
         let results = db
-            .search_messages("@accounts", None, Some("whatsapp"), 50)
+            .search_messages("@accounts", None, Some("whatsapp"), 50, true)
             .unwrap();
         assert!(results.is_empty());
     }
@@ -1006,14 +1065,16 @@ mod tests {
     #[test]
     fn search_double_quotes_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages(r#""hello""#, None, None, 50).unwrap();
+        let results = db
+            .search_messages(r#""hello""#, None, None, 50, true)
+            .unwrap();
         let _ = results;
     }
 
     #[test]
     fn search_dash_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("-report", None, None, 50).unwrap();
+        let results = db.search_messages("-report", None, None, 50, true).unwrap();
         // Should not error — the dash is escaped
         let _ = results;
     }
@@ -1021,21 +1082,23 @@ mod tests {
     #[test]
     fn search_asterisk_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("budget*", None, None, 50).unwrap();
+        let results = db.search_messages("budget*", None, None, 50, true).unwrap();
         let _ = results;
     }
 
     #[test]
     fn search_plus_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("+required", None, None, 50).unwrap();
+        let results = db
+            .search_messages("+required", None, None, 50, true)
+            .unwrap();
         let _ = results;
     }
 
     #[test]
     fn search_boolean_operators_treated_as_literals() {
         let db = seed_search_db();
-        let results = db.search_messages("NOT", None, None, 50).unwrap();
+        let results = db.search_messages("NOT", None, None, 50, true).unwrap();
         // Should return results containing "NOT" as a word rather than treating it as boolean op
         assert!(!results.is_empty());
     }
@@ -1043,21 +1106,21 @@ mod tests {
     #[test]
     fn search_and_operator_literal() {
         let db = seed_search_db();
-        let results = db.search_messages("AND", None, None, 50).unwrap();
+        let results = db.search_messages("AND", None, None, 50, true).unwrap();
         let _ = results; // Must not crash
     }
 
     #[test]
     fn search_or_operator_literal() {
         let db = seed_search_db();
-        let results = db.search_messages("OR", None, None, 50).unwrap();
+        let results = db.search_messages("OR", None, None, 50, true).unwrap();
         let _ = results;
     }
 
     #[test]
     fn search_near_operator_literal() {
         let db = seed_search_db();
-        let results = db.search_messages("NEAR", None, None, 50).unwrap();
+        let results = db.search_messages("NEAR", None, None, 50, true).unwrap();
         let _ = results;
     }
 
@@ -1066,7 +1129,9 @@ mod tests {
         let db = seed_search_db();
         // In raw FTS5 "body:secret" would search column "body" for "secret".
         // Our escaping should prevent column-targeted search.
-        let results = db.search_messages("body:secret", None, None, 50).unwrap();
+        let results = db
+            .search_messages("body:secret", None, None, 50, true)
+            .unwrap();
         let _ = results;
     }
 
@@ -1074,7 +1139,7 @@ mod tests {
     fn search_parentheses_do_not_crash() {
         let db = seed_search_db();
         let results = db
-            .search_messages("(hello OR world)", None, None, 50)
+            .search_messages("(hello OR world)", None, None, 50, true)
             .unwrap();
         let _ = results;
     }
@@ -1082,7 +1147,7 @@ mod tests {
     #[test]
     fn search_curly_braces_do_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("{test}", None, None, 50).unwrap();
+        let results = db.search_messages("{test}", None, None, 50, true).unwrap();
         let _ = results;
     }
 
@@ -1090,12 +1155,12 @@ mod tests {
     fn search_sql_injection_attempt() {
         let db = seed_search_db();
         let results = db
-            .search_messages("'; DROP TABLE messages; --", None, None, 50)
+            .search_messages("'; DROP TABLE messages; --", None, None, 50, true)
             .unwrap();
         let _ = results;
 
         // Verify the messages table still exists and has data
-        let all = db.recent_messages(None, None, 100, true).unwrap();
+        let all = db.recent_messages(None, None, 100, true, true).unwrap();
         assert!(
             !all.is_empty(),
             "messages table must survive injection attempt"
@@ -1107,11 +1172,11 @@ mod tests {
         let db = seed_search_db();
         // An attacker might try to break out of quoting to inject FTS5 operators
         let results = db
-            .search_messages(r#"" OR body:*"#, None, None, 50)
+            .search_messages(r#"" OR body:*"#, None, None, 50, true)
             .unwrap();
         let _ = results;
 
-        let all = db.recent_messages(None, None, 100, true).unwrap();
+        let all = db.recent_messages(None, None, 100, true, true).unwrap();
         assert!(!all.is_empty());
     }
 
@@ -1119,7 +1184,7 @@ mod tests {
     fn search_empty_query_does_not_crash() {
         let db = seed_search_db();
         // Empty query should not cause a panic or SQL error
-        let result = db.search_messages("", None, None, 50);
+        let result = db.search_messages("", None, None, 50, true);
         // It's acceptable for this to return an error or empty results, but not panic
         let _ = result;
     }
@@ -1127,7 +1192,7 @@ mod tests {
     #[test]
     fn search_whitespace_only_query_does_not_crash() {
         let db = seed_search_db();
-        let result = db.search_messages("   ", None, None, 50);
+        let result = db.search_messages("   ", None, None, 50, true);
         let _ = result;
     }
 
@@ -1135,7 +1200,7 @@ mod tests {
     fn search_with_account_filter_and_special_chars() {
         let db = seed_search_db();
         let results = db
-            .search_messages("@MadMax", Some("test-slack"), None, 50)
+            .search_messages("@MadMax", Some("test-slack"), None, 50, true)
             .unwrap();
         assert!(!results.is_empty());
     }
@@ -1144,12 +1209,12 @@ mod tests {
     fn search_with_both_filters_and_special_chars() {
         let db = seed_search_db();
         let results = db
-            .search_messages("@MadMax", Some("test-slack"), Some("slack"), 50)
+            .search_messages("@MadMax", Some("test-slack"), Some("slack"), 50, true)
             .unwrap();
         assert!(!results.is_empty());
 
         let no_results = db
-            .search_messages("@MadMax", Some("test-slack"), Some("gmail"), 50)
+            .search_messages("@MadMax", Some("test-slack"), Some("gmail"), 50, true)
             .unwrap();
         assert!(no_results.is_empty());
     }
@@ -1158,7 +1223,7 @@ mod tests {
     fn search_limit_is_respected() {
         let db = seed_search_db();
         // All messages contain common words — search for something broad
-        let results = db.search_messages("the", None, None, 1).unwrap();
+        let results = db.search_messages("the", None, None, 1, true).unwrap();
         assert!(results.len() <= 1);
     }
 
@@ -1166,7 +1231,7 @@ mod tests {
     fn search_unicode_does_not_crash() {
         let db = seed_search_db();
         let results = db
-            .search_messages("café résumé 会議", None, None, 50)
+            .search_messages("café résumé 会議", None, None, 50, true)
             .unwrap();
         let _ = results;
     }
@@ -1174,7 +1239,7 @@ mod tests {
     #[test]
     fn search_emoji_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("📄", None, None, 50).unwrap();
+        let results = db.search_messages("📄", None, None, 50, true).unwrap();
         let _ = results;
     }
 
@@ -1182,7 +1247,7 @@ mod tests {
     fn search_backslash_does_not_crash() {
         let db = seed_search_db();
         let results = db
-            .search_messages(r"C:\Users\admin", None, None, 50)
+            .search_messages(r"C:\Users\admin", None, None, 50, true)
             .unwrap();
         let _ = results;
     }
@@ -1191,14 +1256,16 @@ mod tests {
     fn search_very_long_query_does_not_crash() {
         let db = seed_search_db();
         let long_query = "word ".repeat(200);
-        let results = db.search_messages(&long_query, None, None, 50).unwrap();
+        let results = db
+            .search_messages(&long_query, None, None, 50, true)
+            .unwrap();
         let _ = results;
     }
 
     #[test]
     fn search_null_byte_does_not_crash() {
         let db = seed_search_db();
-        let result = db.search_messages("hello\0world", None, None, 50);
+        let result = db.search_messages("hello\0world", None, None, 50, true);
         // May error but must not panic
         let _ = result;
     }
@@ -1302,7 +1369,7 @@ mod tests {
         db.upsert_message(&make_message("m3", "c1", "test-slack", "third", 3_000))
             .unwrap();
 
-        let results = db.recent_messages(None, None, 2, true).unwrap();
+        let results = db.recent_messages(None, None, 2, true, true).unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "m3");
         assert_eq!(results[1].id, "m2");
@@ -1419,7 +1486,7 @@ mod tests {
         let dm = make_conversation("c3", "test-slack", "D789");
         db.upsert_conversation(&dm).unwrap();
 
-        let channels = db.list_channels(None, None, None, 100).unwrap();
+        let channels = db.list_channels(None, None, None, 100, true).unwrap();
         assert_eq!(channels.len(), 2);
     }
 
@@ -1436,7 +1503,9 @@ mod tests {
         c2.name = Some("General".into());
         db.upsert_conversation(&c2).unwrap();
 
-        let results = db.list_channels(None, None, Some("engi"), 100).unwrap();
+        let results = db
+            .list_channels(None, None, Some("engi"), 100, true)
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name.as_deref(), Some("Engineering"));
     }
@@ -1525,5 +1594,158 @@ mod tests {
             loaded.metadata.as_ref().unwrap()["key"],
             serde_json::json!("value")
         );
+    }
+
+    // ---- Mute filtering tests ----
+
+    #[test]
+    fn mute_state_default_false() {
+        let db = test_db();
+        let conv = make_conversation("c1", "test-slack", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        let loaded = db.get_conversation("c1").unwrap().unwrap();
+        assert!(!loaded.is_muted);
+    }
+
+    #[test]
+    fn update_conversation_mute() {
+        let db = test_db();
+        let conv = make_conversation("c1", "test-slack", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        let updated = db.update_conversation_mute("c1", true).unwrap();
+        assert!(updated);
+
+        let loaded = db.get_conversation("c1").unwrap().unwrap();
+        assert!(loaded.is_muted);
+
+        db.update_conversation_mute("c1", false).unwrap();
+        let loaded = db.get_conversation("c1").unwrap().unwrap();
+        assert!(!loaded.is_muted);
+    }
+
+    #[test]
+    fn set_mute_by_external_id() {
+        let db = test_db();
+        let conv = make_conversation("c1", "my-wa-jid", "chat@g.us");
+        db.upsert_conversation(&conv).unwrap();
+
+        let updated = db
+            .set_mute_by_external_id("my-wa-jid", "chat@g.us", true)
+            .unwrap();
+        assert!(updated);
+
+        let loaded = db.get_conversation("c1").unwrap().unwrap();
+        assert!(loaded.is_muted);
+    }
+
+    #[test]
+    fn set_mute_by_external_id_nonexistent_returns_false() {
+        let db = test_db();
+        let updated = db.set_mute_by_external_id("nope", "nope", true).unwrap();
+        assert!(!updated);
+    }
+
+    #[test]
+    fn upsert_does_not_reset_mute() {
+        let db = test_db();
+        let conv = make_conversation("c1", "test-slack", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        db.update_conversation_mute("c1", true).unwrap();
+
+        let mut conv2 = make_conversation("c1", "test-slack", "C123");
+        conv2.name = Some("Updated Name".into());
+        db.upsert_conversation(&conv2).unwrap();
+
+        let loaded = db.get_conversation("c1").unwrap().unwrap();
+        assert!(loaded.is_muted, "upsert must not reset mute state");
+        assert_eq!(loaded.name.as_deref(), Some("Updated Name"));
+    }
+
+    #[test]
+    fn list_conversations_excludes_muted_by_default() {
+        let db = test_db();
+        let c1 = make_conversation("c1", "test", "E1");
+        db.upsert_conversation(&c1).unwrap();
+        let c2 = make_conversation("c2", "test", "E2");
+        db.upsert_conversation(&c2).unwrap();
+
+        db.update_conversation_mute("c2", true).unwrap();
+
+        let without_muted = db.list_conversations(None, None, 100, false).unwrap();
+        assert_eq!(without_muted.len(), 1);
+        assert_eq!(without_muted[0].id, "c1");
+
+        let with_muted = db.list_conversations(None, None, 100, true).unwrap();
+        assert_eq!(with_muted.len(), 2);
+    }
+
+    #[test]
+    fn recent_messages_excludes_muted_conversations() {
+        let db = test_db();
+        let c1 = make_conversation("c1", "test", "E1");
+        db.upsert_conversation(&c1).unwrap();
+        let c2 = make_conversation("c2", "test", "E2");
+        db.upsert_conversation(&c2).unwrap();
+
+        db.upsert_message(&make_message("m1", "c1", "test", "visible", 1_000))
+            .unwrap();
+        db.upsert_message(&make_message("m2", "c2", "test", "muted msg", 2_000))
+            .unwrap();
+
+        db.update_conversation_mute("c2", true).unwrap();
+
+        let without_muted = db.recent_messages(None, None, 100, true, false).unwrap();
+        assert_eq!(without_muted.len(), 1);
+        assert_eq!(without_muted[0].body.as_deref(), Some("visible"));
+
+        let with_muted = db.recent_messages(None, None, 100, true, true).unwrap();
+        assert_eq!(with_muted.len(), 2);
+    }
+
+    #[test]
+    fn search_messages_excludes_muted_conversations() {
+        let db = test_db();
+        let c1 = make_conversation("c1", "test", "E1");
+        db.upsert_conversation(&c1).unwrap();
+        let c2 = make_conversation("c2", "test", "E2");
+        db.upsert_conversation(&c2).unwrap();
+
+        db.upsert_message(&make_message("m1", "c1", "test", "hello world", 1_000))
+            .unwrap();
+        db.upsert_message(&make_message("m2", "c2", "test", "hello muted", 2_000))
+            .unwrap();
+
+        db.update_conversation_mute("c2", true).unwrap();
+
+        let without_muted = db.search_messages("hello", None, None, 100, false).unwrap();
+        assert_eq!(without_muted.len(), 1);
+        assert_eq!(without_muted[0].conversation_id, "c1");
+
+        let with_muted = db.search_messages("hello", None, None, 100, true).unwrap();
+        assert_eq!(with_muted.len(), 2);
+    }
+
+    #[test]
+    fn list_channels_excludes_muted_by_default() {
+        let db = test_db();
+        let mut g1 = make_conversation("g1", "test", "G1");
+        g1.kind = ConversationKind::Group;
+        db.upsert_conversation(&g1).unwrap();
+
+        let mut g2 = make_conversation("g2", "test", "G2");
+        g2.kind = ConversationKind::Group;
+        db.upsert_conversation(&g2).unwrap();
+
+        db.update_conversation_mute("g2", true).unwrap();
+
+        let without_muted = db.list_channels(None, None, None, 100, false).unwrap();
+        assert_eq!(without_muted.len(), 1);
+        assert_eq!(without_muted[0].id, "g1");
+
+        let with_muted = db.list_channels(None, None, None, 100, true).unwrap();
+        assert_eq!(with_muted.len(), 2);
     }
 }

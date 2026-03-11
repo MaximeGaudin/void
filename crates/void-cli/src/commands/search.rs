@@ -18,6 +18,9 @@ pub struct SearchArgs {
     /// Maximum number of results to return
     #[arg(short = 'n', long, default_value = "50")]
     pub size: i64,
+    /// Include results from muted conversations
+    #[arg(long)]
+    pub include_muted: bool,
 }
 
 pub fn run(args: &SearchArgs, json: bool) -> anyhow::Result<()> {
@@ -31,6 +34,7 @@ pub fn run(args: &SearchArgs, json: bool) -> anyhow::Result<()> {
         args.account.as_deref(),
         args.connector.as_deref(),
         args.size,
+        args.include_muted,
     )?;
     formatter.print_messages(&messages)
 }

@@ -19,6 +19,9 @@ pub struct ChannelsArgs {
     /// Maximum number of results to return
     #[arg(short = 'n', long, default_value = "100")]
     pub size: i64,
+    /// Include muted channels/groups
+    #[arg(long)]
+    pub include_muted: bool,
 }
 
 pub fn run(args: &ChannelsArgs, json: bool) -> anyhow::Result<()> {
@@ -32,6 +35,7 @@ pub fn run(args: &ChannelsArgs, json: bool) -> anyhow::Result<()> {
         args.connector.as_deref(),
         args.search.as_deref(),
         args.size,
+        args.include_muted,
     )?;
     formatter.print_conversations(&channels)
 }

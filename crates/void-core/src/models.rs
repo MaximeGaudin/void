@@ -63,6 +63,7 @@ pub struct Conversation {
     pub kind: ConversationKind,
     pub last_message_at: Option<i64>,
     pub unread_count: i64,
+    pub is_muted: bool,
     pub metadata: Option<serde_json::Value>,
 }
 

@@ -28,7 +28,8 @@ pub(crate) fn row_to_conversation(row: &Row) -> rusqlite::Result<Conversation> {
         kind: parse_kind(&row.get::<_, String>(5)?),
         last_message_at: row.get(6)?,
         unread_count: row.get(7)?,
-        metadata: parse_json_opt(row.get(8)?),
+        is_muted: row.get::<_, i32>(8)? != 0,
+        metadata: parse_json_opt(row.get(9)?),
     })
 }
 

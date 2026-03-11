@@ -184,6 +184,7 @@ impl GmailChannel {
                 .and_then(|d| d.parse().ok())
                 .map(|ms: i64| ms / 1000),
             unread_count: 0,
+            is_muted: false,
             metadata: None,
         };
         db.upsert_conversation(&conversation)?;

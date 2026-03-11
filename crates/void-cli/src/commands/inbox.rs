@@ -19,6 +19,9 @@ pub struct InboxArgs {
     /// Include archived messages
     #[arg(long)]
     pub all: bool,
+    /// Include messages from muted conversations
+    #[arg(long)]
+    pub include_muted: bool,
 }
 
 pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
@@ -32,6 +35,7 @@ pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
         args.connector.as_deref(),
         args.size,
         args.all,
+        args.include_muted,
     )?;
     messages.reverse();
     formatter.print_messages(&messages)
@@ -47,6 +51,7 @@ pub fn run_conversations(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
         args.account.as_deref(),
         args.connector.as_deref(),
         args.size,
+        args.include_muted,
     )?;
     formatter.print_conversations(&conversations)
 }

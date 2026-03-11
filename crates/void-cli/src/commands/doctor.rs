@@ -58,11 +58,11 @@ pub fn run() -> anyhow::Result<()> {
     if let Some(ref db) = db {
         eprintln!();
         let conv_count = db
-            .list_conversations(None, None, 10000)
+            .list_conversations(None, None, 10000, true)
             .map(|c| c.len())
             .unwrap_or(0);
         let msg_count = db
-            .recent_messages(None, None, 1, true)
+            .recent_messages(None, None, 1, true, true)
             .map(|m| m.len())
             .unwrap_or(0);
         let event_count = db
