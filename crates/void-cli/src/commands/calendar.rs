@@ -10,6 +10,9 @@ use crate::output::OutputFormatter;
 pub struct CalendarArgs {
     #[command(subcommand)]
     pub command: Option<CalendarCommand>,
+    /// Show events for a specific day (YYYY-MM-DD, "today", "tomorrow", "yesterday")
+    #[arg(long, short)]
+    pub day: Option<String>,
     /// Start date filter (YYYY-MM-DD)
     #[arg(long)]
     pub from: Option<String>,
@@ -79,24 +82,34 @@ fn run_list(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
 
-    let from = args.from.as_deref().and_then(parse_date_to_ts).or_else(|| {
-        Some(
-            chrono::Utc::now()
-                .date_naive()
-                .and_hms_opt(0, 0, 0)?
-                .and_utc()
-                .timestamp(),
-        )
-    });
+    let (from, to) = if let Some(day) = &args.day {
+        let date = parse_day_spec(day)?;
+        let start = date.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp());
+        let end = (date + chrono::Duration::days(1))
+            .and_hms_opt(0, 0, 0)
+            .map(|dt| dt.and_utc().timestamp());
+        (start, end)
+    } else {
+        let from = args.from.as_deref().and_then(parse_date_to_ts).or_else(|| {
+            Some(
+                chrono::Utc::now()
+                    .date_naive()
+                    .and_hms_opt(0, 0, 0)?
+                    .and_utc()
+                    .timestamp(),
+            )
+        });
 
-    let to = args.to.as_deref().and_then(parse_date_to_ts).or_else(|| {
-        Some(
-            (chrono::Utc::now().date_naive() + chrono::Duration::days(1))
-                .and_hms_opt(0, 0, 0)?
-                .and_utc()
-                .timestamp(),
-        )
-    });
+        let to = args.to.as_deref().and_then(parse_date_to_ts).or_else(|| {
+            Some(
+                (chrono::Utc::now().date_naive() + chrono::Duration::days(1))
+                    .and_hms_opt(0, 0, 0)?
+                    .and_utc()
+                    .timestamp(),
+            )
+        });
+        (from, to)
+    };
 
     let events = db.list_events(
         from,
@@ -127,6 +140,20 @@ fn run_week(json: bool) -> anyhow::Result<()> {
 
     let events = db.list_events(from, to, None, None, 200)?;
     formatter.print_events(&events)
+}
+
+fn parse_day_spec(spec: &str) -> anyhow::Result<chrono::NaiveDate> {
+    let today = chrono::Utc::now().date_naive();
+    match spec.to_lowercase().as_str() {
+        "today" => Ok(today),
+        "tomorrow" => Ok(today + chrono::Duration::days(1)),
+        "yesterday" => Ok(today - chrono::Duration::days(1)),
+        other => chrono::NaiveDate::parse_from_str(other, "%Y-%m-%d").map_err(|_| {
+            anyhow::anyhow!(
+                "Invalid day: \"{other}\". Use YYYY-MM-DD, today, tomorrow, or yesterday."
+            )
+        }),
+    }
 }
 
 fn parse_date_to_ts(date: &str) -> Option<i64> {

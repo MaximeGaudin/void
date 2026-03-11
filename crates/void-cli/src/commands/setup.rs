@@ -34,6 +34,11 @@ fn confirm(label: &str) -> bool {
     matches!(answer.to_lowercase().as_str(), "y" | "yes")
 }
 
+fn confirm_default_yes(label: &str) -> bool {
+    let answer = prompt(&format!("{label} [Y/n]: "));
+    !matches!(answer.to_lowercase().as_str(), "n" | "no")
+}
+
 fn select(label: &str, options: &[&str]) -> usize {
     eprintln!("\n{label}");
     for (i, opt) in options.iter().enumerate() {
@@ -358,7 +363,7 @@ async fn exit_setup(cfg: &VoidConfig) -> anyhow::Result<()> {
             eprintln!("  • {} ({})", acc.id, acc.account_type);
         }
         eprintln!();
-        if confirm("Start syncing now? (`void sync --daemon`)") {
+        if confirm_default_yes("Start syncing now? (`void sync --daemon`)") {
             eprintln!();
             let args = super::sync::SyncArgs {
                 connectors: None,
@@ -451,7 +456,7 @@ async fn setup_gmail(
         },
     };
 
-    if confirm("Authenticate now? (opens browser for Google sign-in)") {
+    if confirm_default_yes("Authenticate now? (opens browser for Google sign-in)") {
         match authenticate_account(&account, store_path).await {
             Ok(()) => eprintln!("  ✓ Gmail authenticated successfully."),
             Err(e) => {
@@ -540,7 +545,7 @@ async fn setup_slack(
         },
     };
 
-    if confirm("Verify tokens now?") {
+    if confirm_default_yes("Verify tokens now?") {
         match authenticate_account(&account, store_path).await {
             Ok(()) => eprintln!("  ✓ Slack tokens verified successfully."),
             Err(e) => {
@@ -603,7 +608,7 @@ async fn setup_whatsapp(
     eprintln!("then scan the code.");
     eprintln!();
 
-    if confirm("Pair now?") {
+    if confirm_default_yes("Pair now?") {
         match authenticate_account(&account, store_path).await {
             Ok(()) => eprintln!("  ✓ WhatsApp paired successfully."),
             Err(e) => {
@@ -676,7 +681,7 @@ async fn setup_calendar(
         eprintln!(" Google Cloud project.)");
         eprintln!();
 
-        if confirm("Reuse this credentials file?") {
+        if confirm_default_yes("Reuse this credentials file?") {
             existing_path.clone()
         } else {
             let path = prompt("Path to Google Cloud credentials JSON: ");
@@ -737,7 +742,7 @@ async fn setup_calendar(
         },
     };
 
-    if confirm("Authenticate now? (opens browser for Google sign-in)") {
+    if confirm_default_yes("Authenticate now? (opens browser for Google sign-in)") {
         match authenticate_account(&account, store_path).await {
             Ok(()) => eprintln!("  ✓ Calendar authenticated successfully."),
             Err(e) => {
