@@ -225,8 +225,25 @@ impl Connector for WhatsAppConnector {
                                 .expect("mutex")
                                 .clone()
                                 .unwrap_or_else(|| config_id.clone());
-                            if let Err(e) = handle_message(&db, &account_id, &msg, &info) {
-                                warn!("Failed to store WA message: {e}");
+                            match handle_message(&db, &account_id, &msg, &info) {
+                                Ok(()) => {
+                                    let sender = if info.source.is_from_me {
+                                        "me".to_string()
+                                    } else {
+                                        info.push_name.clone()
+                                    };
+                                    let preview = extract_text(&msg).unwrap_or_default();
+                                    let preview: String = preview.chars().take(80).collect();
+                                    if !preview.is_empty() {
+                                        eprintln!(
+                                            "[whatsapp:{}] new: {} — {}",
+                                            account_id, sender, preview
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to store WA message: {e}");
+                                }
                             }
                         }
                         Event::MuteUpdate(mute) => {

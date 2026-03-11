@@ -141,6 +141,16 @@ impl GmailConnector {
                     for item in added {
                         match api.get_message(&item.message.id).await {
                             Ok(msg) => {
+                                let from = msg.get_header("From").unwrap_or_default();
+                                let subject = msg
+                                    .get_header("Subject")
+                                    .unwrap_or_else(|| "(no subject)".into());
+                                eprintln!(
+                                    "[gmail:{}] new: {} — {}",
+                                    self.display_account_id(),
+                                    from,
+                                    subject
+                                );
                                 self.store_message(db, &msg)?;
                             }
                             Err(e) => {

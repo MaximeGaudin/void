@@ -135,6 +135,10 @@ impl CalendarConnector {
                     if let Some(events) = &resp.items {
                         for event in events {
                             if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
+                                eprintln!(
+                                    "[calendar:{}] new: {}",
+                                    self.account_id, cal_event.title
+                                );
                                 db.upsert_event(&cal_event)?;
                             }
                         }
