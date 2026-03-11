@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::db::Database;
-use crate::models::{ChannelType, HealthStatus, MessageContent};
+use crate::models::{ConnectorType, HealthStatus, MessageContent};
 
 #[async_trait]
-pub trait Channel: Send + Sync {
-    fn channel_type(&self) -> ChannelType;
+pub trait Connector: Send + Sync {
+    fn connector_type(&self) -> ConnectorType;
     fn account_id(&self) -> &str;
 
     /// Run the interactive authentication flow.

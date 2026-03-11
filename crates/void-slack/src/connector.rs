@@ -5,13 +5,13 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use void_core::channel::Channel;
+use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
 use crate::api::{SlackApiClient, SlackConversation, SlackMessage, SlackReaction};
 
-pub struct SlackChannel {
+pub struct SlackConnector {
     account_id: String,
     api: SlackApiClient,
     /// Reserved for Socket Mode WebSocket connection (future).
@@ -20,7 +20,7 @@ pub struct SlackChannel {
     exclude_channels: Vec<String>,
 }
 
-impl SlackChannel {
+impl SlackConnector {
     pub fn new(
         account_id: &str,
         user_token: &str,
@@ -173,9 +173,9 @@ impl SlackChannel {
 }
 
 #[async_trait]
-impl Channel for SlackChannel {
-    fn channel_type(&self) -> ChannelType {
-        ChannelType::Slack
+impl Connector for SlackConnector {
+    fn connector_type(&self) -> ConnectorType {
+        ConnectorType::Slack
     }
 
     fn account_id(&self) -> &str {
@@ -218,7 +218,7 @@ impl Channel for SlackChannel {
         match self.api.auth_test().await {
             Ok(resp) => Ok(HealthStatus {
                 account_id: self.account_id.clone(),
-                channel_type: ChannelType::Slack,
+                connector_type: ConnectorType::Slack,
                 ok: true,
                 message: format!(
                     "Authenticated as {} in {}",
@@ -232,7 +232,7 @@ impl Channel for SlackChannel {
                 warn!(account_id = %self.account_id, error = %e, "Slack health check failed");
                 Ok(HealthStatus {
                     account_id: self.account_id.clone(),
-                    channel_type: ChannelType::Slack,
+                    connector_type: ConnectorType::Slack,
                     ok: false,
                     message: format!("Auth failed: {e}"),
                     last_sync: None,

@@ -4,48 +4,48 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-use crate::channel::Channel;
+use crate::connector::Connector;
 use crate::db::Database;
 
 pub struct SyncEngine {
-    channels: Vec<Arc<dyn Channel>>,
+    connectors: Vec<Arc<dyn Connector>>,
     db: Arc<Database>,
     lock_path: std::path::PathBuf,
 }
 
 impl SyncEngine {
-    pub fn new(channels: Vec<Arc<dyn Channel>>, db: Arc<Database>, store_path: &Path) -> Self {
+    pub fn new(connectors: Vec<Arc<dyn Connector>>, db: Arc<Database>, store_path: &Path) -> Self {
         Self {
-            channels,
+            connectors,
             db,
             lock_path: store_path.join("LOCK"),
         }
     }
 
-    /// Run all channel syncs concurrently until cancelled or interrupted.
+    /// Run all connector syncs concurrently until cancelled or interrupted.
     pub async fn run(&self, cancel: CancellationToken) -> anyhow::Result<()> {
         let _lock = self.acquire_lock()?;
 
-        if self.channels.is_empty() {
-            warn!("no channels configured, nothing to sync");
+        if self.connectors.is_empty() {
+            warn!("no connectors configured, nothing to sync");
             return Ok(());
         }
 
-        info!("starting sync for {} channel(s)", self.channels.len());
+        info!("starting sync for {} connector(s)", self.connectors.len());
 
         let mut handles = Vec::new();
-        for channel in &self.channels {
+        for conn in &self.connectors {
             let db = Arc::clone(&self.db);
             let cancel = cancel.clone();
-            let channel = Arc::clone(channel);
+            let conn = Arc::clone(conn);
 
             let handle = tokio::spawn(async move {
-                let account_id = channel.account_id().to_string();
-                let channel_type = channel.channel_type();
-                info!(%account_id, %channel_type, "starting sync");
-                match channel.start_sync(db, cancel).await {
-                    Ok(()) => info!(%account_id, %channel_type, "sync stopped"),
-                    Err(e) => error!(%account_id, %channel_type, "sync error: {e}"),
+                let account_id = conn.account_id().to_string();
+                let connector_type = conn.connector_type();
+                info!(%account_id, %connector_type, "starting sync");
+                match conn.start_sync(db, cancel).await {
+                    Ok(()) => info!(%account_id, %connector_type, "sync stopped"),
+                    Err(e) => error!(%account_id, %connector_type, "sync error: {e}"),
                 }
             });
             handles.push(handle);

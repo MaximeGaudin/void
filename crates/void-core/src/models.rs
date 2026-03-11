@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ChannelType {
+pub enum ConnectorType {
     WhatsApp,
     Slack,
     Gmail,
     Calendar,
 }
 
-impl std::fmt::Display for ChannelType {
+impl std::fmt::Display for ConnectorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::WhatsApp => write!(f, "whatsapp"),
@@ -20,7 +20,7 @@ impl std::fmt::Display for ChannelType {
     }
 }
 
-impl ChannelType {
+impl ConnectorType {
     /// Short badge for display in unified views (e.g. "[WA]", "[SL]").
     pub fn badge(&self) -> &'static str {
         match self {
@@ -141,7 +141,7 @@ pub enum MessageContent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthStatus {
     pub account_id: String,
-    pub channel_type: ChannelType,
+    pub connector_type: ConnectorType,
     pub ok: bool,
     pub message: String,
     pub last_sync: Option<i64>,
@@ -153,19 +153,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn channel_type_display() {
-        assert_eq!(ChannelType::WhatsApp.to_string(), "whatsapp");
-        assert_eq!(ChannelType::Slack.to_string(), "slack");
-        assert_eq!(ChannelType::Gmail.to_string(), "gmail");
-        assert_eq!(ChannelType::Calendar.to_string(), "calendar");
+    fn connector_type_display() {
+        assert_eq!(ConnectorType::WhatsApp.to_string(), "whatsapp");
+        assert_eq!(ConnectorType::Slack.to_string(), "slack");
+        assert_eq!(ConnectorType::Gmail.to_string(), "gmail");
+        assert_eq!(ConnectorType::Calendar.to_string(), "calendar");
     }
 
     #[test]
-    fn channel_type_badges() {
-        assert_eq!(ChannelType::WhatsApp.badge(), "WA");
-        assert_eq!(ChannelType::Slack.badge(), "SL");
-        assert_eq!(ChannelType::Gmail.badge(), "GM");
-        assert_eq!(ChannelType::Calendar.badge(), "CA");
+    fn connector_type_badges() {
+        assert_eq!(ConnectorType::WhatsApp.badge(), "WA");
+        assert_eq!(ConnectorType::Slack.badge(), "SL");
+        assert_eq!(ConnectorType::Gmail.badge(), "GM");
+        assert_eq!(ConnectorType::Calendar.badge(), "CA");
     }
 
     #[test]

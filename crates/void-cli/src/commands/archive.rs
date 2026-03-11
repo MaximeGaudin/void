@@ -4,7 +4,7 @@ use tracing::{debug, info, warn};
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 
-use super::channel_factory;
+use super::connector_factory;
 
 #[derive(Debug, Args)]
 pub struct ArchiveArgs {
@@ -35,9 +35,9 @@ pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
             )
         })?;
 
-    let channel = channel_factory::build_channel(account, &cfg.store_path())?;
+    let conn = connector_factory::build_connector(account, &cfg.store_path())?;
 
-    let remote_synced = match channel.archive(&msg.external_id, &conv.external_id).await {
+    let remote_synced = match conn.archive(&msg.external_id, &conv.external_id).await {
         Ok(()) => true,
         Err(e) => {
             warn!(

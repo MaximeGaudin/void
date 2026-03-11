@@ -17,18 +17,18 @@ use wa_rs_sqlite_storage::SqliteStore;
 use wa_rs_tokio_transport::TokioWebSocketTransportFactory;
 use wa_rs_ureq_http::UreqHttpClient;
 
-use void_core::channel::Channel;
+use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
-pub struct WhatsAppChannel {
+pub struct WhatsAppConnector {
     config_id: String,
     session_db_path: String,
     client: Arc<Mutex<Option<Arc<Client>>>>,
     own_jid: Arc<std::sync::Mutex<Option<String>>>,
 }
 
-impl WhatsAppChannel {
+impl WhatsAppConnector {
     pub fn new(account_id: &str, session_db_path: &str) -> Self {
         Self {
             config_id: account_id.to_string(),
@@ -111,9 +111,9 @@ impl WhatsAppChannel {
 }
 
 #[async_trait]
-impl Channel for WhatsAppChannel {
-    fn channel_type(&self) -> ChannelType {
-        ChannelType::WhatsApp
+impl Connector for WhatsAppConnector {
+    fn connector_type(&self) -> ConnectorType {
+        ConnectorType::WhatsApp
     }
 
     fn account_id(&self) -> &str {
@@ -279,7 +279,7 @@ impl Channel for WhatsAppChannel {
         debug!(account_id = %self.config_id, connected, "WhatsApp health check");
         Ok(HealthStatus {
             account_id: self.config_id.clone(),
-            channel_type: ChannelType::WhatsApp,
+            connector_type: ConnectorType::WhatsApp,
             ok: connected,
             message: if connected {
                 "connected".into()

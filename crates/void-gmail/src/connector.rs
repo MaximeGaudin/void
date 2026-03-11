@@ -6,21 +6,21 @@ use base64::Engine;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use void_core::channel::Channel;
+use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
 use crate::api::{GmailApiClient, GmailMessage};
 use crate::auth;
 
-pub struct GmailChannel {
+pub struct GmailConnector {
     config_id: String,
     credentials_file: String,
     store_path: std::path::PathBuf,
     my_email: std::sync::Mutex<Option<String>>,
 }
 
-impl GmailChannel {
+impl GmailConnector {
     pub fn new(account_id: &str, credentials_file: &str, store_path: &std::path::Path) -> Self {
         Self {
             config_id: account_id.to_string(),
@@ -247,9 +247,9 @@ impl GmailChannel {
 }
 
 #[async_trait]
-impl Channel for GmailChannel {
-    fn channel_type(&self) -> ChannelType {
-        ChannelType::Gmail
+impl Connector for GmailConnector {
+    fn connector_type(&self) -> ConnectorType {
+        ConnectorType::Gmail
     }
 
     fn account_id(&self) -> &str {
@@ -301,7 +301,7 @@ impl Channel for GmailChannel {
             Ok(api) => match api.get_profile().await {
                 Ok(profile) => Ok(HealthStatus {
                     account_id: self.config_id.clone(),
-                    channel_type: ChannelType::Gmail,
+                    connector_type: ConnectorType::Gmail,
                     ok: true,
                     message: format!(
                         "Authenticated as {}",
@@ -314,7 +314,7 @@ impl Channel for GmailChannel {
                     warn!(account_id = %self.config_id, error = %e, "Gmail health check API error");
                     Ok(HealthStatus {
                         account_id: self.config_id.clone(),
-                        channel_type: ChannelType::Gmail,
+                        connector_type: ConnectorType::Gmail,
                         ok: false,
                         message: format!("API error: {e}"),
                         last_sync: None,
@@ -326,7 +326,7 @@ impl Channel for GmailChannel {
                 warn!(account_id = %self.config_id, error = %e, "Gmail health check auth error");
                 Ok(HealthStatus {
                     account_id: self.config_id.clone(),
-                    channel_type: ChannelType::Gmail,
+                    connector_type: ConnectorType::Gmail,
                     ok: false,
                     message: format!("Auth error: {e}"),
                     last_sync: None,

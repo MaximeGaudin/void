@@ -1,7 +1,9 @@
 use chrono::{Local, TimeZone};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
-use void_core::models::{CalendarEvent, ChannelType, Contact, Conversation, HealthStatus, Message};
+use void_core::models::{
+    CalendarEvent, ConnectorType, Contact, Conversation, HealthStatus, Message,
+};
 
 pub struct OutputFormatter {
     json: bool,
@@ -250,7 +252,7 @@ struct HealthRow {
     #[tabled(rename = "Account")]
     account: String,
     #[tabled(rename = "Type")]
-    channel_type: String,
+    connector_type: String,
     #[tabled(rename = "Status")]
     status: String,
     #[tabled(rename = "Message")]
@@ -261,19 +263,19 @@ impl From<&HealthStatus> for HealthRow {
     fn from(h: &HealthStatus) -> Self {
         Self {
             account: h.account_id.clone(),
-            channel_type: format!("[{}]", h.channel_type.badge()),
+            connector_type: format!("[{}]", h.connector_type.badge()),
             status: if h.ok { "OK".into() } else { "ERROR".into() },
             message: h.message.clone(),
         }
     }
 }
 
-pub fn parse_channel_type(s: &str) -> Option<ChannelType> {
+pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {
     match s.to_lowercase().as_str() {
-        "whatsapp" | "wa" => Some(ChannelType::WhatsApp),
-        "slack" | "sl" => Some(ChannelType::Slack),
-        "gmail" | "gm" | "email" => Some(ChannelType::Gmail),
-        "calendar" | "cal" | "ca" => Some(ChannelType::Calendar),
+        "whatsapp" | "wa" => Some(ConnectorType::WhatsApp),
+        "slack" | "sl" => Some(ConnectorType::Slack),
+        "gmail" | "gm" | "email" => Some(ConnectorType::Gmail),
+        "calendar" | "cal" | "ca" => Some(ConnectorType::Calendar),
         _ => None,
     }
 }
@@ -349,35 +351,41 @@ mod tests {
     }
 
     #[test]
-    fn parse_channel_type_whatsapp() {
-        assert_eq!(parse_channel_type("whatsapp"), Some(ChannelType::WhatsApp));
-        assert_eq!(parse_channel_type("wa"), Some(ChannelType::WhatsApp));
-        assert_eq!(parse_channel_type("WA"), Some(ChannelType::WhatsApp));
+    fn parse_connector_type_whatsapp() {
+        assert_eq!(
+            parse_connector_type("whatsapp"),
+            Some(ConnectorType::WhatsApp)
+        );
+        assert_eq!(parse_connector_type("wa"), Some(ConnectorType::WhatsApp));
+        assert_eq!(parse_connector_type("WA"), Some(ConnectorType::WhatsApp));
     }
 
     #[test]
-    fn parse_channel_type_slack() {
-        assert_eq!(parse_channel_type("slack"), Some(ChannelType::Slack));
-        assert_eq!(parse_channel_type("sl"), Some(ChannelType::Slack));
+    fn parse_connector_type_slack() {
+        assert_eq!(parse_connector_type("slack"), Some(ConnectorType::Slack));
+        assert_eq!(parse_connector_type("sl"), Some(ConnectorType::Slack));
     }
 
     #[test]
-    fn parse_channel_type_gmail() {
-        assert_eq!(parse_channel_type("gmail"), Some(ChannelType::Gmail));
-        assert_eq!(parse_channel_type("gm"), Some(ChannelType::Gmail));
-        assert_eq!(parse_channel_type("email"), Some(ChannelType::Gmail));
+    fn parse_connector_type_gmail() {
+        assert_eq!(parse_connector_type("gmail"), Some(ConnectorType::Gmail));
+        assert_eq!(parse_connector_type("gm"), Some(ConnectorType::Gmail));
+        assert_eq!(parse_connector_type("email"), Some(ConnectorType::Gmail));
     }
 
     #[test]
-    fn parse_channel_type_calendar() {
-        assert_eq!(parse_channel_type("calendar"), Some(ChannelType::Calendar));
-        assert_eq!(parse_channel_type("cal"), Some(ChannelType::Calendar));
-        assert_eq!(parse_channel_type("ca"), Some(ChannelType::Calendar));
+    fn parse_connector_type_calendar() {
+        assert_eq!(
+            parse_connector_type("calendar"),
+            Some(ConnectorType::Calendar)
+        );
+        assert_eq!(parse_connector_type("cal"), Some(ConnectorType::Calendar));
+        assert_eq!(parse_connector_type("ca"), Some(ConnectorType::Calendar));
     }
 
     #[test]
-    fn parse_channel_type_unknown_returns_none() {
-        assert_eq!(parse_channel_type("unknown"), None);
-        assert_eq!(parse_channel_type(""), None);
+    fn parse_connector_type_unknown_returns_none() {
+        assert_eq!(parse_connector_type("unknown"), None);
+        assert_eq!(parse_connector_type(""), None);
     }
 }

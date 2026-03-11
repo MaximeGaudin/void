@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use void_core::channel::Channel;
+use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
@@ -13,14 +13,14 @@ use crate::api::{
     CreateConferenceRequest, EventDateTimeRequest, GoogleCalendarEvent, InsertEventRequest,
 };
 
-pub struct CalendarChannel {
+pub struct CalendarConnector {
     account_id: String,
     credentials_file: String,
     calendar_ids: Vec<String>,
     store_path: std::path::PathBuf,
 }
 
-impl CalendarChannel {
+impl CalendarConnector {
     pub fn new(
         account_id: &str,
         credentials_file: &str,
@@ -232,9 +232,9 @@ impl CalendarChannel {
 }
 
 #[async_trait]
-impl Channel for CalendarChannel {
-    fn channel_type(&self) -> ChannelType {
-        ChannelType::Calendar
+impl Connector for CalendarConnector {
+    fn connector_type(&self) -> ConnectorType {
+        ConnectorType::Calendar
     }
 
     fn account_id(&self) -> &str {
@@ -282,7 +282,7 @@ impl Channel for CalendarChannel {
                     let count = cals.items.as_ref().map(|i| i.len()).unwrap_or(0);
                     Ok(HealthStatus {
                         account_id: self.account_id.clone(),
-                        channel_type: ChannelType::Calendar,
+                        connector_type: ConnectorType::Calendar,
                         ok: true,
                         message: format!("{count} calendar(s) accessible"),
                         last_sync: None,
@@ -293,7 +293,7 @@ impl Channel for CalendarChannel {
                     warn!(account_id = %self.account_id, error = %e, "Calendar health check API error");
                     Ok(HealthStatus {
                         account_id: self.account_id.clone(),
-                        channel_type: ChannelType::Calendar,
+                        connector_type: ConnectorType::Calendar,
                         ok: false,
                         message: format!("API error: {e}"),
                         last_sync: None,
@@ -305,7 +305,7 @@ impl Channel for CalendarChannel {
                 warn!(account_id = %self.account_id, error = %e, "Calendar health check auth error");
                 Ok(HealthStatus {
                     account_id: self.account_id.clone(),
-                    channel_type: ChannelType::Calendar,
+                    connector_type: ConnectorType::Calendar,
                     ok: false,
                     message: format!("Auth error: {e}"),
                     last_sync: None,

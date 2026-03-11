@@ -8,13 +8,13 @@ use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 use void_core::sync::SyncEngine;
 
-use crate::commands::channel_factory;
+use crate::commands::connector_factory;
 
 #[derive(Debug, Args)]
 pub struct SyncArgs {
-    /// Sync only specific channels (comma-separated: whatsapp,slack,gmail,calendar)
+    /// Sync only specific connectors (comma-separated: whatsapp,slack,gmail,calendar)
     #[arg(long)]
-    pub channels: Option<String>,
+    pub connectors: Option<String>,
     /// Detach and run as a background daemon
     #[arg(long)]
     pub daemon: bool,
@@ -138,7 +138,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
 
     // We're now in the detached child process -- build a fresh tokio runtime
     let rt = tokio::runtime::Runtime::new()?;
-    let channels_clone = args.channels.clone();
+    let connectors_clone = args.connectors.clone();
     let clear = args.clear;
     rt.block_on(async move {
         let log_level = if verbose { "debug" } else { "info" };
@@ -153,7 +153,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
         info!(log_path = %log_path.display(), "daemon started");
 
         let inner_args = SyncArgs {
-            channels: channels_clone,
+            connectors: connectors_clone,
             daemon: false,
             restart: false,
             clear,
@@ -178,8 +178,8 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         anyhow::bail!("No accounts configured. Add accounts to your config.toml first.");
     }
 
-    let channel_filter: Option<Vec<String>> = args
-        .channels
+    let connector_filter: Option<Vec<String>> = args
+        .connectors
         .as_ref()
         .map(|c| c.split(',').map(|s| s.trim().to_lowercase()).collect());
 
@@ -203,18 +203,18 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     }
 
     let db = Arc::new(Database::open(&cfg.db_path())?);
-    let mut channels: Vec<Arc<dyn void_core::channel::Channel>> = Vec::new();
+    let mut connectors: Vec<Arc<dyn void_core::connector::Connector>> = Vec::new();
 
     for account in &cfg.accounts {
-        if let Some(ref filter) = channel_filter {
+        if let Some(ref filter) = connector_filter {
             let type_str = account.account_type.to_string();
             if !filter.iter().any(|f| type_str.contains(f)) {
                 continue;
             }
         }
 
-        match channel_factory::build_channel(account, &store_path) {
-            Ok(channel) => channels.push(channel),
+        match connector_factory::build_connector(account, &store_path) {
+            Ok(conn) => connectors.push(conn),
             Err(e) => {
                 eprintln!(
                     "[warn] Skipping account '{}' ({}): {e}",
@@ -224,16 +224,16 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         }
     }
 
-    if channels.is_empty() {
-        anyhow::bail!("No channels to sync (check your config and --channels filter).");
+    if connectors.is_empty() {
+        anyhow::bail!("No connectors to sync (check your config and --connectors filter).");
     }
 
     eprintln!(
-        "Starting sync for {} channel(s)... (Ctrl+C to stop)",
-        channels.len()
+        "Starting sync for {} connector(s)... (Ctrl+C to stop)",
+        connectors.len()
     );
 
     let cancel = CancellationToken::new();
-    let engine = SyncEngine::new(channels, db, &store_path);
+    let engine = SyncEngine::new(connectors, db, &store_path);
     engine.run(cancel).await
 }

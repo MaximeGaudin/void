@@ -2,14 +2,14 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::debug;
 
-use void_core::channel::Channel;
 use void_core::config::{expand_tilde, AccountConfig, AccountSettings, AccountType};
+use void_core::connector::Connector;
 
-pub fn build_channel(
+pub fn build_connector(
     account: &AccountConfig,
     store_path: &Path,
-) -> anyhow::Result<Arc<dyn Channel>> {
-    debug!(account_id = %account.id, type = %account.account_type, "building channel");
+) -> anyhow::Result<Arc<dyn Connector>> {
+    debug!(account_id = %account.id, type = %account.account_type, "building connector");
     match (&account.account_type, &account.settings) {
         (
             AccountType::Slack,
@@ -18,7 +18,7 @@ pub fn build_channel(
                 app_token,
                 exclude_channels,
             },
-        ) => Ok(Arc::new(void_slack::channel::SlackChannel::new(
+        ) => Ok(Arc::new(void_slack::connector::SlackConnector::new(
             &account.id,
             user_token,
             app_token,
@@ -26,7 +26,7 @@ pub fn build_channel(
         ))),
         (AccountType::Gmail, AccountSettings::Gmail { credentials_file }) => {
             let cred_path = expand_tilde(credentials_file);
-            Ok(Arc::new(void_gmail::channel::GmailChannel::new(
+            Ok(Arc::new(void_gmail::connector::GmailConnector::new(
                 &account.id,
                 cred_path.to_str().unwrap_or(""),
                 store_path,
@@ -40,7 +40,7 @@ pub fn build_channel(
             },
         ) => {
             let cred_path = expand_tilde(credentials_file);
-            Ok(Arc::new(void_calendar::channel::CalendarChannel::new(
+            Ok(Arc::new(void_calendar::connector::CalendarConnector::new(
                 &account.id,
                 cred_path.to_str().unwrap_or(""),
                 calendar_ids.clone(),
@@ -49,7 +49,7 @@ pub fn build_channel(
         }
         (AccountType::WhatsApp, AccountSettings::WhatsApp {}) => {
             let session_db = store_path.join(format!("whatsapp-{}.db", account.id));
-            Ok(Arc::new(void_whatsapp::channel::WhatsAppChannel::new(
+            Ok(Arc::new(void_whatsapp::connector::WhatsAppConnector::new(
                 &account.id,
                 session_db.to_str().unwrap_or(""),
             )))

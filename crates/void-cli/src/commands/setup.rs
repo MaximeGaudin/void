@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use void_core::config::{self, AccountConfig, AccountSettings, AccountType, VoidConfig};
 
-use super::channel_factory;
+use super::connector_factory;
 
 // ── Prompt helpers ──────────────────────────────────────────────────────────
 
@@ -105,7 +105,7 @@ pub async fn run() -> anyhow::Result<()> {
         if confirm("Start syncing now? (`void sync --daemon`)") {
             eprintln!();
             let args = super::sync::SyncArgs {
-                channels: None,
+                connectors: None,
                 daemon: true,
                 restart: false,
                 clear: false,
@@ -534,7 +534,7 @@ fn pick_connector_action(
 }
 
 async fn authenticate_account(account: &AccountConfig, store_path: &Path) -> anyhow::Result<()> {
-    let mut channel = channel_factory::build_channel(account, store_path)?;
+    let mut channel = connector_factory::build_connector(account, store_path)?;
     let channel_mut = Arc::get_mut(&mut channel)
         .ok_or_else(|| anyhow::anyhow!("internal error: could not get mutable channel ref"))?;
     channel_mut.authenticate().await

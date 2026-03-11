@@ -4,18 +4,18 @@ use tracing::{debug, info};
 use void_core::config::{self, VoidConfig};
 use void_core::models::MessageContent;
 
-use crate::commands::channel_factory;
-use crate::output::parse_channel_type;
+use crate::commands::connector_factory;
+use crate::output::parse_connector_type;
 
 #[derive(Debug, Args)]
 pub struct SendArgs {
     /// Recipient (phone number, channel name, email)
     #[arg(long)]
     pub to: String,
-    /// Channel to send via: whatsapp, slack, gmail
+    /// Connector to send via: whatsapp, slack, gmail
     #[arg(long)]
     pub via: String,
-    /// Account to use (for multi-account channels)
+    /// Account to use (for multi-account connectors)
     #[arg(long)]
     pub account: Option<String>,
     /// Message text
@@ -31,14 +31,14 @@ pub struct SendArgs {
 
 pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
     info!(via = %args.via, to = %args.to, "send");
-    let channel_type = parse_channel_type(&args.via)
-        .ok_or_else(|| anyhow::anyhow!("Unknown channel type: {}", args.via))?;
+    let connector_type = parse_connector_type(&args.via)
+        .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", args.via))?;
 
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void config init` first."))?;
 
-    let target_type = channel_type.to_string();
+    let target_type = connector_type.to_string();
     let account = cfg
         .accounts
         .iter()
@@ -50,8 +50,8 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("No {target_type} account found in config.toml"))?;
 
     let store_path = cfg.store_path();
-    let channel = channel_factory::build_channel(account, &store_path)?;
-    debug!("channel built");
+    let conn = connector_factory::build_connector(account, &store_path)?;
+    debug!("connector built");
 
     let content = if let Some(ref path) = args.file {
         MessageContent::File {
@@ -63,7 +63,7 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         MessageContent::Text(args.message.clone())
     };
 
-    let msg_id = channel.send_message(&args.to, content).await?;
+    let msg_id = conn.send_message(&args.to, content).await?;
     eprintln!("Message sent (id: {msg_id})");
     Ok(())
 }

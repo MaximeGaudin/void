@@ -12,8 +12,8 @@ pub enum AccountsCommand {
     List,
     /// Add a new account
     Add {
-        /// Channel type: whatsapp, slack, gmail, calendar
-        channel_type: String,
+        /// Connector type: whatsapp, slack, gmail, calendar
+        connector_type: String,
         /// Account name
         name: Option<String>,
     },
@@ -27,10 +27,13 @@ pub enum AccountsCommand {
 pub fn run(args: &AccountsArgs) -> anyhow::Result<()> {
     match &args.command {
         AccountsCommand::List => eprintln!("void accounts list: not yet implemented"),
-        AccountsCommand::Add { channel_type, name } => {
+        AccountsCommand::Add {
+            connector_type,
+            name,
+        } => {
             eprintln!(
                 "void accounts add {}{}: not yet implemented",
-                channel_type,
+                connector_type,
                 name.as_deref().map(|n| format!(" {n}")).unwrap_or_default()
             );
         }

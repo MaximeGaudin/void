@@ -27,7 +27,7 @@ struct Cli {
 enum Command {
     /// Interactive setup wizard — configure all connectors
     Setup,
-    /// Authenticate a channel
+    /// Authenticate a connector
     Auth(commands::auth::AuthArgs),
     /// Start background sync
     Sync(commands::sync::SyncArgs),
@@ -35,7 +35,7 @@ enum Command {
     Stop,
     /// Check configuration and connectivity
     Doctor,
-    /// Show recent messages across all channels
+    /// Show recent messages across all connectors
     Inbox(commands::inbox::InboxArgs),
     /// List conversations
     Conversations(commands::inbox::InboxArgs),
