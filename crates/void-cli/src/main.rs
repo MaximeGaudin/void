@@ -71,9 +71,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     if let Some(Command::Sync(ref args)) = cli.command {
-        if args.stop {
-            return commands::sync::stop_daemon();
-        }
         if args.daemon {
             return commands::sync::daemonize(args, cli.verbose);
         }

@@ -109,7 +109,7 @@ pub async fn run() -> anyhow::Result<()> {
             let args = super::sync::SyncArgs {
                 channels: None,
                 daemon: true,
-                stop: false,
+                restart: false,
                 clear: false,
             };
             super::sync::daemonize(&args, false)?;

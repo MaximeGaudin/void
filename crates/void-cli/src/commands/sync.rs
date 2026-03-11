@@ -18,9 +18,9 @@ pub struct SyncArgs {
     /// Detach and run as a background daemon
     #[arg(long)]
     pub daemon: bool,
-    /// Stop a running sync daemon
+    /// Stop any existing sync before starting this one
     #[arg(long)]
-    pub stop: bool,
+    pub restart: bool,
     /// Clear the database before syncing (fresh start)
     #[arg(long)]
     pub clear: bool,
@@ -114,11 +114,15 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
 
     let lock_path = store_path.join("LOCK");
     if lock_path.exists() {
-        let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
-        anyhow::bail!(
-            "Sync daemon already running ({}).\nStop it first with: void sync --stop",
-            content.trim()
-        );
+        if args.restart {
+            stop_daemon().ok();
+        } else {
+            let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
+            anyhow::bail!(
+                "Sync daemon already running ({}).\nUse --restart to stop it and start a new one, or `void stop` to stop it.",
+                content.trim()
+            );
+        }
     }
 
     eprintln!("Starting sync daemon... logs at {}", log_path.display());
@@ -151,7 +155,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
         let inner_args = SyncArgs {
             channels: channels_clone,
             daemon: false,
-            stop: false,
+            restart: false,
             clear,
         };
         if let Err(e) = run(&inner_args).await {
@@ -181,6 +185,13 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
 
     let store_path = cfg.store_path();
     std::fs::create_dir_all(&store_path)?;
+
+    if args.restart {
+        let lock_path = store_path.join("LOCK");
+        if lock_path.exists() {
+            stop_daemon().ok();
+        }
+    }
 
     if args.clear {
         let db_path = cfg.db_path();
