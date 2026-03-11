@@ -289,8 +289,8 @@ impl CalendarConnector {
         let resp = api
             .update_event(cal_id, event_id, &update, send_updates)
             .await?;
-        let cal_event = map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| {
-            CalendarEvent {
+        let cal_event =
+            map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| CalendarEvent {
                 id: format!("{}-{}", self.account_id, event_id),
                 account_id: self.account_id.clone(),
                 connector: "calendar".into(),
@@ -306,8 +306,7 @@ impl CalendarConnector {
                 calendar_name: Some(cal_id.into()),
                 meet_link: None,
                 metadata: None,
-            }
-        });
+            });
         db.upsert_event(&cal_event)?;
         Ok(cal_event)
     }
@@ -385,8 +384,8 @@ impl CalendarConnector {
         let resp = api
             .update_event(cal_id, event_id, &update, Some("all"))
             .await?;
-        let cal_event = map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| {
-            CalendarEvent {
+        let cal_event =
+            map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| CalendarEvent {
                 id: format!("{}-{}", self.account_id, event_id),
                 account_id: self.account_id.clone(),
                 connector: "calendar".into(),
@@ -402,8 +401,7 @@ impl CalendarConnector {
                 calendar_name: Some(cal_id.into()),
                 meet_link: None,
                 metadata: None,
-            }
-        });
+            });
         db.upsert_event(&cal_event)?;
         Ok(cal_event)
     }
@@ -419,9 +417,7 @@ impl CalendarConnector {
         let mut results = Vec::new();
 
         for cal_id in &self.calendar_ids {
-            let resp = api
-                .search_events(cal_id, query, time_min, time_max)
-                .await?;
+            let resp = api.search_events(cal_id, query, time_min, time_max).await?;
             if let Some(events) = &resp.items {
                 for event in events {
                     if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
@@ -433,6 +429,12 @@ impl CalendarConnector {
         }
 
         Ok(results)
+    }
+
+    pub async fn list_calendars(&self) -> anyhow::Result<Vec<crate::api::CalendarListEntry>> {
+        let api = self.get_client().await?;
+        let resp = api.list_calendars().await?;
+        Ok(resp.items.unwrap_or_default())
     }
 }
 

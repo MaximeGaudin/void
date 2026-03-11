@@ -260,10 +260,7 @@ impl CalendarApiClient {
             urlencoded(calendar_id),
             urlencoded(event_id)
         );
-        let mut req = self
-            .http
-            .delete(&url)
-            .bearer_auth(&self.access_token);
+        let mut req = self.http.delete(&url).bearer_auth(&self.access_token);
         if let Some(su) = send_updates {
             req = req.query(&[("sendUpdates", su)]);
         }

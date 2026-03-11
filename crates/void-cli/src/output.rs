@@ -193,6 +193,8 @@ struct EventRow {
     location: String,
     #[tabled(rename = "Meet")]
     meet: String,
+    #[tabled(rename = "Event ID")]
+    event_id: String,
 }
 
 impl From<&CalendarEvent> for EventRow {
@@ -211,6 +213,7 @@ impl From<&CalendarEvent> for EventRow {
                 .as_deref()
                 .map(|l| truncate(l, 30))
                 .unwrap_or_default(),
+            event_id: truncate(&e.external_id, 30),
         }
     }
 }
