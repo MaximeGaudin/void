@@ -256,8 +256,7 @@ impl Database {
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1",
         );
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(escaped)];
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(escaped)];
 
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
@@ -652,10 +651,7 @@ mod tests {
 
     #[test]
     fn fts5_escape_at_symbol_multi_term() {
-        assert_eq!(
-            fts5_escape("@MadMax hello"),
-            "\"@MadMax\" \"hello\""
-        );
+        assert_eq!(fts5_escape("@MadMax hello"), "\"@MadMax\" \"hello\"");
     }
 
     #[test]
@@ -688,17 +684,15 @@ mod tests {
 
     #[test]
     fn fts5_escape_boolean_in_phrase() {
-        assert_eq!(
-            fts5_escape("this AND that"),
-            "\"this\" \"AND\" \"that\""
-        );
+        assert_eq!(fts5_escape("this AND that"), "\"this\" \"AND\" \"that\"");
     }
 
     #[test]
     fn fts5_escape_parentheses() {
         assert_eq!(
             fts5_escape("(hello OR world)"),
-            "\"(hello\" \"OR\" \"world)\"");
+            "\"(hello\" \"OR\" \"world)\""
+        );
     }
 
     #[test]
@@ -751,18 +745,12 @@ mod tests {
 
     #[test]
     fn fts5_escape_fts5_injection_via_quotes() {
-        assert_eq!(
-            fts5_escape(r#"" OR body:*"#),
-            "\"\"\"\" \"OR\" \"body:*\""
-        );
+        assert_eq!(fts5_escape(r#"" OR body:*"#), "\"\"\"\" \"OR\" \"body:*\"");
     }
 
     #[test]
     fn fts5_escape_near_with_distance() {
-        assert_eq!(
-            fts5_escape("NEAR(a b, 5)"),
-            "\"NEAR(a\" \"b,\" \"5)\""
-        );
+        assert_eq!(fts5_escape("NEAR(a b, 5)"), "\"NEAR(a\" \"b,\" \"5)\"");
     }
 
     #[test]
@@ -922,30 +910,64 @@ mod tests {
         db.upsert_conversation(&conv2).unwrap();
 
         db.upsert_message(&make_message(
-            "m1", "c1", "test-slack", "hello @MadMax how are you?", 1_000,
-        )).unwrap();
+            "m1",
+            "c1",
+            "test-slack",
+            "hello @MadMax how are you?",
+            1_000,
+        ))
+        .unwrap();
         db.upsert_message(&make_message(
-            "m2", "c1", "test-slack", "meeting with @alice tomorrow", 2_000,
-        )).unwrap();
+            "m2",
+            "c1",
+            "test-slack",
+            "meeting with @alice tomorrow",
+            2_000,
+        ))
+        .unwrap();
         db.upsert_message(&make_message(
-            "m3", "c1", "test-slack", "the C++ compiler is broken", 3_000,
-        )).unwrap();
+            "m3",
+            "c1",
+            "test-slack",
+            "the C++ compiler is broken",
+            3_000,
+        ))
+        .unwrap();
         db.upsert_message(&make_message(
-            "m4", "c1", "test-slack", "file: budget-report-2024.xlsx", 4_000,
-        )).unwrap();
+            "m4",
+            "c1",
+            "test-slack",
+            "file: budget-report-2024.xlsx",
+            4_000,
+        ))
+        .unwrap();
         db.upsert_message(&make_message(
-            "m5", "c1", "test-slack", "say \"hello\" to everyone", 5_000,
-        )).unwrap();
+            "m5",
+            "c1",
+            "test-slack",
+            "say \"hello\" to everyone",
+            5_000,
+        ))
+        .unwrap();
         db.upsert_message(&make_message(
-            "m6", "c1", "test-slack", "NOT a problem AND it works OR fails", 6_000,
-        )).unwrap();
+            "m6",
+            "c1",
+            "test-slack",
+            "NOT a problem AND it works OR fails",
+            6_000,
+        ))
+        .unwrap();
         db.upsert_message(&make_message(
-            "m7", "c1", "test-slack", "user:admin password:secret", 7_000,
-        )).unwrap();
+            "m7",
+            "c1",
+            "test-slack",
+            "user:admin password:secret",
+            7_000,
+        ))
+        .unwrap();
 
-        let mut gmail_msg = make_message(
-            "m8", "c2", "me@gmail.com", "invoice from @accounts", 8_000,
-        );
+        let mut gmail_msg =
+            make_message("m8", "c2", "me@gmail.com", "invoice from @accounts", 8_000);
         gmail_msg.connector = "gmail".into();
         db.upsert_message(&gmail_msg).unwrap();
 
@@ -957,13 +979,17 @@ mod tests {
         let db = seed_search_db();
         let results = db.search_messages("@MadMax", None, None, 50).unwrap();
         assert!(!results.is_empty());
-        assert!(results.iter().any(|m| m.body.as_deref().unwrap().contains("@MadMax")));
+        assert!(results
+            .iter()
+            .any(|m| m.body.as_deref().unwrap().contains("@MadMax")));
     }
 
     #[test]
     fn search_at_symbol_with_connector_filter() {
         let db = seed_search_db();
-        let results = db.search_messages("@accounts", None, Some("gmail"), 50).unwrap();
+        let results = db
+            .search_messages("@accounts", None, Some("gmail"), 50)
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].connector, "gmail");
     }
@@ -971,7 +997,9 @@ mod tests {
     #[test]
     fn search_at_symbol_wrong_connector_returns_empty() {
         let db = seed_search_db();
-        let results = db.search_messages("@accounts", None, Some("whatsapp"), 50).unwrap();
+        let results = db
+            .search_messages("@accounts", None, Some("whatsapp"), 50)
+            .unwrap();
         assert!(results.is_empty());
     }
 
@@ -1045,7 +1073,9 @@ mod tests {
     #[test]
     fn search_parentheses_do_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("(hello OR world)", None, None, 50).unwrap();
+        let results = db
+            .search_messages("(hello OR world)", None, None, 50)
+            .unwrap();
         let _ = results;
     }
 
@@ -1066,7 +1096,10 @@ mod tests {
 
         // Verify the messages table still exists and has data
         let all = db.recent_messages(None, None, 100, true).unwrap();
-        assert!(!all.is_empty(), "messages table must survive injection attempt");
+        assert!(
+            !all.is_empty(),
+            "messages table must survive injection attempt"
+        );
     }
 
     #[test]
@@ -1132,7 +1165,9 @@ mod tests {
     #[test]
     fn search_unicode_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages("café résumé 会議", None, None, 50).unwrap();
+        let results = db
+            .search_messages("café résumé 会議", None, None, 50)
+            .unwrap();
         let _ = results;
     }
 
@@ -1146,7 +1181,9 @@ mod tests {
     #[test]
     fn search_backslash_does_not_crash() {
         let db = seed_search_db();
-        let results = db.search_messages(r"C:\Users\admin", None, None, 50).unwrap();
+        let results = db
+            .search_messages(r"C:\Users\admin", None, None, 50)
+            .unwrap();
         let _ = results;
     }
 

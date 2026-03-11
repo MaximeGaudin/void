@@ -28,58 +28,21 @@ impl SlackChannel {
         }
     }
 
-    async fn backfill(&self, db: &Database) -> anyhow::Result<()> {
-        info!(account_id = %self.account_id, "starting Slack backfill (last 7 days)");
-
-        let oldest_ts = chrono::Utc::now()
-            .checked_sub_signed(chrono::Duration::days(7))
-            .unwrap_or_else(chrono::Utc::now)
-            .timestamp()
-            .to_string();
-
-        let mut user_cache: HashMap<String, String> = HashMap::new();
+    async fn prefetch_users(&self) -> anyhow::Result<HashMap<String, String>> {
+        info!(account_id = %self.account_id, "prefetching Slack users");
+        let mut cache = HashMap::new();
         let mut cursor: Option<String> = None;
-        let mut total_convs = 0u32;
-        let mut total_msgs = 0u32;
 
         loop {
-            let resp = self.api.conversations_list(cursor.as_deref(), 200).await?;
-            for conv in &resp.channels {
-                let conversation = map_conversation(conv, &self.account_id);
-                db.upsert_conversation(&conversation)?;
-                total_convs += 1;
-
-                match self
-                    .api
-                    .conversations_history(&conv.id, 100, Some(&oldest_ts))
-                    .await
-                {
-                    Ok(history) => {
-                        for msg in &history.messages {
-                            if let Some(message) = map_message(
-                                msg,
-                                conv,
-                                &conversation.id,
-                                &self.account_id,
-                                &mut user_cache,
-                                &self.api,
-                            )
-                            .await
-                            {
-                                db.upsert_message(&message)?;
-                                total_msgs += 1;
-                            }
-                        }
-                        if let Some(last) = history.messages.first() {
-                            let mut conv_update = conversation.clone();
-                            conv_update.last_message_at = parse_ts(&last.ts);
-                            db.upsert_conversation(&conv_update)?;
-                        }
-                    }
-                    Err(e) => {
-                        warn!(channel_id = %conv.id, "failed to fetch history: {e}");
-                    }
-                }
+            let resp = self.api.users_list(cursor.as_deref(), 200).await?;
+            for user in &resp.members {
+                let name = user
+                    .profile
+                    .as_ref()
+                    .and_then(|p| p.display_name.clone().filter(|n| !n.is_empty()))
+                    .or_else(|| user.real_name.clone())
+                    .unwrap_or_else(|| user.name.clone());
+                cache.insert(user.id.clone(), name);
             }
 
             cursor = resp
@@ -91,7 +54,93 @@ impl SlackChannel {
             }
         }
 
-        info!(account_id = %self.account_id, conversations = total_convs, messages = total_msgs, "backfill complete");
+        info!(account_id = %self.account_id, users = cache.len(), "user prefetch complete");
+        Ok(cache)
+    }
+
+    async fn list_all_conversations(&self) -> anyhow::Result<Vec<SlackConversation>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let resp = self.api.conversations_list(cursor.as_deref(), 200).await?;
+            all.extend(resp.channels);
+
+            cursor = resp
+                .response_metadata
+                .and_then(|m| m.next_cursor)
+                .filter(|c| !c.is_empty());
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        Ok(all)
+    }
+
+    async fn backfill(&self, db: &Database) -> anyhow::Result<()> {
+        info!(account_id = %self.account_id, "starting Slack backfill (last 7 days)");
+
+        let user_cache = self.prefetch_users().await?;
+        let conversations = self.list_all_conversations().await?;
+
+        eprintln!(
+            "[slack] found {} conversations, fetching history…",
+            conversations.len()
+        );
+
+        let oldest_ts = chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::days(7))
+            .unwrap_or_else(chrono::Utc::now)
+            .timestamp()
+            .to_string();
+
+        let mut progress = void_core::progress::BackfillProgress::new("slack", "conversations")
+            .with_secondary("messages");
+        progress.set_items_total(conversations.len() as u64);
+
+        for conv in &conversations {
+            let conversation = map_conversation(conv, &self.account_id);
+            db.upsert_conversation(&conversation)?;
+            progress.inc(1);
+
+            match self
+                .api
+                .conversations_history(&conv.id, 100, Some(&oldest_ts))
+                .await
+            {
+                Ok(history) => {
+                    for msg in &history.messages {
+                        if let Some(message) = map_message_cached(
+                            msg,
+                            conv,
+                            &conversation.id,
+                            &self.account_id,
+                            &user_cache,
+                        ) {
+                            db.upsert_message(&message)?;
+                            progress.inc_secondary(1);
+                        }
+                    }
+                    if let Some(last) = history.messages.first() {
+                        let mut conv_update = conversation.clone();
+                        conv_update.last_message_at = parse_ts(&last.ts);
+                        db.upsert_conversation(&conv_update)?;
+                    }
+                }
+                Err(e) => {
+                    warn!(channel_id = %conv.id, "failed to fetch history: {e}");
+                }
+            }
+        }
+
+        progress.finish();
+        info!(
+            account_id = %self.account_id,
+            conversations = progress.items,
+            messages = progress.secondary,
+            "backfill complete"
+        );
         Ok(())
     }
 }
@@ -249,20 +298,22 @@ fn map_conversation(conv: &SlackConversation, account_id: &str) -> Conversation 
     }
 }
 
-async fn map_message(
+fn map_message_cached(
     msg: &SlackMessage,
     conv: &SlackConversation,
     conversation_id: &str,
     account_id: &str,
-    user_cache: &mut HashMap<String, String>,
-    api: &SlackApiClient,
+    user_cache: &HashMap<String, String>,
 ) -> Option<Message> {
     if msg.subtype.is_some() {
         return None;
     }
 
     let sender = msg.user.clone().unwrap_or_else(|| "unknown".into());
-    let sender_name = resolve_user_name(&sender, user_cache, api).await;
+    let sender_name = user_cache
+        .get(&sender)
+        .cloned()
+        .unwrap_or_else(|| sender.clone());
 
     let metadata = build_metadata(conv, &msg.reactions);
 
@@ -319,38 +370,6 @@ fn build_metadata(
     }
 
     Some(meta)
-}
-
-async fn resolve_user_name(
-    user_id: &str,
-    cache: &mut HashMap<String, String>,
-    api: &SlackApiClient,
-) -> String {
-    if let Some(name) = cache.get(user_id) {
-        return name.clone();
-    }
-    match api.users_info(user_id).await {
-        Ok(resp) => {
-            let name = resp
-                .user
-                .as_ref()
-                .and_then(|u| {
-                    u.profile
-                        .as_ref()
-                        .and_then(|p| p.display_name.clone().filter(|n| !n.is_empty()))
-                        .or_else(|| u.real_name.clone())
-                        .or(Some(u.name.clone()))
-                })
-                .unwrap_or_else(|| user_id.to_string());
-            cache.insert(user_id.to_string(), name.clone());
-            name
-        }
-        Err(e) => {
-            warn!(user_id = %user_id, error = %e, "Slack user lookup failed, falling back to user_id");
-            cache.insert(user_id.to_string(), user_id.to_string());
-            user_id.to_string()
-        }
-    }
 }
 
 fn parse_ts(ts: &str) -> Option<i64> {

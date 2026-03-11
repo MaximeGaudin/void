@@ -174,6 +174,19 @@ impl SlackApiClient {
         Ok(result)
     }
 
+    pub async fn users_list(
+        &self,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> anyhow::Result<UsersListResponse> {
+        let mut params: Vec<(&str, String)> = vec![("limit", limit.to_string())];
+        if let Some(c) = cursor {
+            params.push(("cursor", c.to_string()));
+        }
+        self.get_with_retry("https://slack.com/api/users.list", &params, "users.list")
+            .await
+    }
+
     pub async fn conversations_mark(&self, channel: &str, ts: &str) -> anyhow::Result<()> {
         debug!(channel, ts, "slack: conversations.mark");
         let body = serde_json::json!({
@@ -302,6 +315,12 @@ pub struct SlackReaction {
 #[derive(Debug, Deserialize)]
 pub struct UserInfoResponse {
     pub user: Option<SlackUser>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsersListResponse {
+    pub members: Vec<SlackUser>,
+    pub response_metadata: Option<ResponseMetadata>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

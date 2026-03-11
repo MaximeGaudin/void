@@ -85,9 +85,10 @@ impl GmailChannel {
         }
 
         let mut page_token: Option<String> = None;
-        let mut total = 0u32;
-        let max_pages = 5;
-        let mut pages = 0;
+        let max_pages: u64 = 5;
+
+        let mut progress = void_core::progress::BackfillProgress::new("gmail", "messages");
+        progress.set_pages(max_pages);
 
         loop {
             let resp = api
@@ -98,12 +99,14 @@ impl GmailChannel {
                     Some("newer_than:7d"),
                 )
                 .await?;
+            progress.inc_page();
+
             if let Some(msgs) = resp.messages {
                 for msg_ref in &msgs {
                     match api.get_message(&msg_ref.id).await {
                         Ok(msg) => {
                             self.store_message(db, &msg)?;
-                            total += 1;
+                            progress.inc(1);
                         }
                         Err(e) => {
                             warn!(message_id = %msg_ref.id, "failed to fetch message: {e}");
@@ -112,14 +115,14 @@ impl GmailChannel {
                 }
             }
 
-            pages += 1;
             page_token = resp.next_page_token;
-            if page_token.is_none() || pages >= max_pages {
+            if page_token.is_none() || progress.pages_done >= max_pages {
                 break;
             }
         }
 
-        info!(config_id = %self.config_id, messages = total, "Gmail initial sync complete");
+        progress.finish();
+        info!(config_id = %self.config_id, messages = progress.items, "Gmail initial sync complete");
         Ok(())
     }
 

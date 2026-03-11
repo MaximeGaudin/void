@@ -75,17 +75,20 @@ impl CalendarChannel {
         let time_min = (now - chrono::Duration::days(30)).to_rfc3339();
         let time_max = (now + chrono::Duration::days(90)).to_rfc3339();
 
-        let mut total = 0u32;
+        let mut progress = void_core::progress::BackfillProgress::new("calendar", "events");
+        progress.set_pages(self.calendar_ids.len() as u64);
+
         for cal_id in &self.calendar_ids {
             let resp = api
                 .list_events(cal_id, Some(&time_min), Some(&time_max), None)
                 .await?;
+            progress.inc_page();
 
             if let Some(events) = &resp.items {
                 for event in events {
                     if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
                         db.upsert_event(&cal_event)?;
-                        total += 1;
+                        progress.inc(1);
                     }
                 }
             }
@@ -95,7 +98,8 @@ impl CalendarChannel {
             }
         }
 
-        info!(account_id = %self.account_id, events = total, "Calendar initial sync complete");
+        progress.finish();
+        info!(account_id = %self.account_id, events = progress.items, "Calendar initial sync complete");
         Ok(())
     }
 
