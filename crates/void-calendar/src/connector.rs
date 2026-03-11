@@ -436,6 +436,16 @@ impl CalendarConnector {
         let resp = api.list_calendars().await?;
         Ok(resp.items.unwrap_or_default())
     }
+
+    pub async fn check_availability(
+        &self,
+        time_min: &str,
+        time_max: &str,
+        emails: &[String],
+    ) -> anyhow::Result<crate::api::FreeBusyResponse> {
+        let api = self.get_client().await?;
+        api.freebusy(time_min, time_max, emails).await
+    }
 }
 
 #[async_trait]

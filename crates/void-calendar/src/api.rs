@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -247,6 +249,44 @@ impl CalendarApiClient {
         Ok(resp)
     }
 
+    pub async fn freebusy(
+        &self,
+        time_min: &str,
+        time_max: &str,
+        emails: &[String],
+    ) -> anyhow::Result<FreeBusyResponse> {
+        debug!(
+            time_min,
+            time_max,
+            attendees = emails.len(),
+            "calendar: freebusy"
+        );
+        let items: Vec<serde_json::Value> = emails
+            .iter()
+            .map(|e| serde_json::json!({ "id": e }))
+            .collect();
+        let body = serde_json::json!({
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "items": items,
+        });
+        let url = format!("{}/calendar/v3/freeBusy", self.base_url);
+        let resp: FreeBusyResponse = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("calendar: failed to query freebusy")?;
+        debug!(calendars = resp.calendars.len(), "calendar: freebusy ok");
+        Ok(resp)
+    }
+
     pub async fn delete_event(
         &self,
         calendar_id: &str,
@@ -339,6 +379,37 @@ pub struct ConferenceData {
 pub struct EntryPoint {
     pub entry_point_type: Option<String>,
     pub uri: Option<String>,
+}
+
+// -- FreeBusy types --
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeBusyResponse {
+    pub time_min: Option<String>,
+    pub time_max: Option<String>,
+    #[serde(default)]
+    pub calendars: HashMap<String, FreeBusyCalendar>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FreeBusyCalendar {
+    #[serde(default)]
+    pub busy: Vec<FreeBusySlot>,
+    #[serde(default)]
+    pub errors: Vec<FreeBusyError>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FreeBusySlot {
+    pub start: String,
+    pub end: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FreeBusyError {
+    pub domain: Option<String>,
+    pub reason: Option<String>,
 }
 
 // -- Request types --

@@ -44,6 +44,8 @@ pub enum CalendarCommand {
     Respond(RespondEventArgs),
     /// Delete an event
     Delete(DeleteEventArgs),
+    /// Check attendees' availability (free/busy)
+    Availability(AvailabilityArgs),
 }
 
 #[derive(Debug, Args)]
@@ -126,6 +128,22 @@ pub struct RespondEventArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct AvailabilityArgs {
+    /// Comma-separated email addresses to check
+    #[arg(long)]
+    pub attendees: String,
+    /// Start of time window (YYYY-MM-DD or RFC 3339)
+    #[arg(long)]
+    pub from: String,
+    /// End of time window (YYYY-MM-DD or RFC 3339)
+    #[arg(long)]
+    pub to: String,
+    /// Calendar account to use
+    #[arg(long)]
+    pub account: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct DeleteEventArgs {
     /// Event ID to delete
     pub event_id: String,
@@ -144,6 +162,7 @@ pub async fn run(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
         Some(CalendarCommand::Update(_)) => "update",
         Some(CalendarCommand::Respond(_)) => "respond",
         Some(CalendarCommand::Delete(_)) => "delete",
+        Some(CalendarCommand::Availability(_)) => "availability",
     };
     debug!(subcommand, "calendar");
     match &args.command {
@@ -154,6 +173,7 @@ pub async fn run(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
         Some(CalendarCommand::Update(update_args)) => run_update(update_args, json).await,
         Some(CalendarCommand::Respond(respond_args)) => run_respond(respond_args, json).await,
         Some(CalendarCommand::Delete(delete_args)) => run_delete(delete_args).await,
+        Some(CalendarCommand::Availability(avail_args)) => run_availability(avail_args, json).await,
         None => run_list(args, json),
     }
 }
@@ -378,6 +398,96 @@ async fn run_delete(args: &DeleteEventArgs) -> anyhow::Result<()> {
 
     eprintln!("Event {} deleted.", args.event_id);
     Ok(())
+}
+
+async fn run_availability(args: &AvailabilityArgs, json: bool) -> anyhow::Result<()> {
+    let (connector, _cfg) = build_calendar_connector(args.account.as_deref())?;
+
+    let emails: Vec<String> = args
+        .attendees
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if emails.is_empty() {
+        anyhow::bail!("At least one attendee email is required.");
+    }
+
+    let time_min = parse_datetime_or_date(&args.from)?;
+    let time_max = parse_datetime_or_date(&args.to)?;
+
+    let resp = connector
+        .check_availability(&time_min, &time_max, &emails)
+        .await?;
+
+    if json {
+        let mut data = serde_json::Map::new();
+        for (email, cal) in &resp.calendars {
+            if !cal.errors.is_empty() {
+                let reasons: Vec<&str> = cal
+                    .errors
+                    .iter()
+                    .filter_map(|e| e.reason.as_deref())
+                    .collect();
+                data.insert(
+                    email.clone(),
+                    serde_json::json!({ "error": reasons.join(", ") }),
+                );
+            } else {
+                data.insert(email.clone(), serde_json::json!({ "busy": cal.busy }));
+            }
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({ "data": data, "error": null }))?
+        );
+    } else {
+        for email in &emails {
+            if let Some(cal) = resp.calendars.get(email) {
+                if !cal.errors.is_empty() {
+                    let reasons: Vec<&str> = cal
+                        .errors
+                        .iter()
+                        .filter_map(|e| e.reason.as_deref())
+                        .collect();
+                    eprintln!("  {} — error: {}", email, reasons.join(", "));
+                } else if cal.busy.is_empty() {
+                    eprintln!("  {} — free (no busy slots)", email);
+                } else {
+                    eprintln!("  {} — {} busy slot(s):", email, cal.busy.len());
+                    for slot in &cal.busy {
+                        let start = format_freebusy_time(&slot.start);
+                        let end = format_freebusy_time(&slot.end);
+                        eprintln!("    {} — {}", start, end);
+                    }
+                }
+            } else {
+                eprintln!("  {} — no data returned", email);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_datetime_or_date(s: &str) -> anyhow::Result<String> {
+    if chrono::DateTime::parse_from_rfc3339(s).is_ok() {
+        return Ok(s.to_string());
+    }
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        let dt = date
+            .and_hms_opt(0, 0, 0)
+            .and_then(|ndt| ndt.and_local_timezone(Local).single())
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert date to local timezone"))?;
+        return Ok(dt.to_rfc3339());
+    }
+    anyhow::bail!("Invalid date/time: \"{s}\". Use YYYY-MM-DD or RFC 3339 format.")
+}
+
+fn format_freebusy_time(rfc3339: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(rfc3339)
+        .map(|dt| dt.with_timezone(&Local).format("%H:%M").to_string())
+        .unwrap_or_else(|_| rfc3339.to_string())
 }
 
 fn build_calendar_connector(
