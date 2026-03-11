@@ -239,7 +239,15 @@ impl Connector for CalendarConnector {
     }
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
-        let api = self.get_client().await?;
+        let creds = void_gmail::auth::load_client_credentials(&self.credentials_file)?;
+        let token_path = void_gmail::auth::token_cache_path(&self.store_path, &self.account_id);
+
+        let scopes = "https://www.googleapis.com/auth/calendar.readonly \
+                      https://www.googleapis.com/auth/calendar.events";
+        let cache = void_gmail::auth::authorize_interactive(&creds, Some(scopes)).await?;
+        cache.save(&token_path)?;
+
+        let api = CalendarApiClient::new(&cache.access_token);
         let cals = api.list_calendars().await?;
         let count = cals.items.as_ref().map(|i| i.len()).unwrap_or(0);
         let calendar_list: Vec<&str> = cals

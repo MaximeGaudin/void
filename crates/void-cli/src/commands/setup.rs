@@ -327,7 +327,7 @@ async fn run_full_wizard(
 ) -> anyhow::Result<()> {
     eprintln!();
     eprintln!("This wizard will guide you through connecting your");
-    eprintln!("communication channels (Gmail, Slack, WhatsApp,");
+    eprintln!("communication services (Gmail, Slack, WhatsApp,");
     eprintln!("Google Calendar) to Void.");
     eprintln!();
 
@@ -411,7 +411,8 @@ async fn setup_gmail(
     }
 
     eprintln!();
-    eprintln!("To connect Gmail, you need a Google OAuth credentials file.");
+    eprintln!("To connect Gmail, you need a Google Cloud OAuth credentials file.");
+    eprintln!("This is the same file used for all Google services (Gmail, Calendar).");
     eprintln!("If you don't have one yet, follow these steps:");
     eprintln!();
     eprintln!("  1. Go to https://console.cloud.google.com/apis/credentials");
@@ -423,10 +424,10 @@ async fn setup_gmail(
     eprintln!("  5. Go to Credentials > Create Credentials > OAuth client ID");
     eprintln!("     - Application type: Desktop app");
     eprintln!("     - Download the JSON file");
-    eprintln!("  6. Save it somewhere safe, e.g. ~/.config/void/gmail.json");
+    eprintln!("  6. Save it somewhere safe, e.g. ~/.config/void/google-credentials.json");
     eprintln!();
 
-    let creds = prompt("Path to credentials JSON file: ");
+    let creds = prompt("Path to Google Cloud credentials JSON: ");
     if creds.is_empty() {
         eprintln!("  Skipped (no path provided).");
         return Ok(());
@@ -652,26 +653,33 @@ async fn setup_calendar(
 
     eprintln!();
 
-    let gmail_creds = cfg.accounts.iter().find_map(|a| {
-        if a.account_type == AccountType::Gmail {
-            if let AccountSettings::Gmail { credentials_file } = &a.settings {
-                return Some(credentials_file.clone());
+    let google_creds = cfg
+        .accounts
+        .iter()
+        .find_map(|a| match (&a.account_type, &a.settings) {
+            (AccountType::Gmail, AccountSettings::Gmail { credentials_file }) => {
+                Some(credentials_file.clone())
             }
-        }
-        None
-    });
+            (
+                AccountType::Calendar,
+                AccountSettings::Calendar {
+                    credentials_file, ..
+                },
+            ) => Some(credentials_file.clone()),
+            _ => None,
+        });
 
-    let creds = if let Some(ref gmail_path) = gmail_creds {
-        eprintln!("You have a Gmail credentials file configured: {gmail_path}");
-        eprintln!("Google Calendar can reuse the same credentials file.");
-        eprintln!("(If you do, you need to also enable the \"Google Calendar API\"");
-        eprintln!(" in the same Google Cloud project.)");
+    let creds = if let Some(ref existing_path) = google_creds {
+        eprintln!("You have a Google Cloud credentials file configured: {existing_path}");
+        eprintln!("Google Calendar uses the same credentials file as Gmail.");
+        eprintln!("(Make sure the \"Google Calendar API\" is enabled in the same");
+        eprintln!(" Google Cloud project.)");
         eprintln!();
 
-        if confirm("Reuse Gmail credentials?") {
-            gmail_path.clone()
+        if confirm("Reuse this credentials file?") {
+            existing_path.clone()
         } else {
-            let path = prompt("Path to Calendar credentials JSON: ");
+            let path = prompt("Path to Google Cloud credentials JSON: ");
             if path.is_empty() {
                 eprintln!("  Skipped (no path provided).");
                 return Ok(());
@@ -679,8 +687,8 @@ async fn setup_calendar(
             path
         }
     } else {
-        eprintln!("To connect Google Calendar, you need a Google OAuth credentials");
-        eprintln!("file, similar to Gmail setup:");
+        eprintln!("To connect Google Calendar, you need a Google Cloud OAuth");
+        eprintln!("credentials file (the same file used for Gmail):");
         eprintln!();
         eprintln!("  1. Go to https://console.cloud.google.com/apis/credentials");
         eprintln!("  2. Create a project (or select an existing one)");
@@ -691,7 +699,7 @@ async fn setup_calendar(
         eprintln!("     - Download the JSON file");
         eprintln!();
 
-        let path = prompt("Path to credentials JSON file: ");
+        let path = prompt("Path to Google Cloud credentials JSON: ");
         if path.is_empty() {
             eprintln!("  Skipped (no path provided).");
             return Ok(());
