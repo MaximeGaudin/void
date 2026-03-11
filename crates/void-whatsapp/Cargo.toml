@@ -19,4 +19,6 @@ wa-rs-sqlite-storage = "0.2"
 wa-rs-tokio-transport = "0.2"
 wa-rs-ureq-http = "0.2"
 wa-rs-proto = "0.2"
+wa-rs-core = "0.2"
 qr2term = "0.3"
+base64 = { workspace = true }

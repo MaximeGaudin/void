@@ -108,6 +108,53 @@ impl WhatsAppConnector {
 
         Ok(())
     }
+
+    pub async fn download_media(
+        &self,
+        direct_path: &str,
+        media_key_b64: &str,
+        file_sha256_b64: &str,
+        file_enc_sha256_b64: &str,
+        file_length: u64,
+        media_type_str: &str,
+    ) -> anyhow::Result<Vec<u8>> {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+        use wa_rs::download::MediaType as WaMediaType;
+
+        self.ensure_connected().await?;
+        let guard = self.client.lock().await;
+        let client = guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WhatsApp not connected"))?;
+
+        let media_key = STANDARD.decode(media_key_b64)?;
+        let file_sha256 = STANDARD.decode(file_sha256_b64)?;
+        let file_enc_sha256 = STANDARD.decode(file_enc_sha256_b64)?;
+
+        let media_type = match media_type_str {
+            "image" => WaMediaType::Image,
+            "video" => WaMediaType::Video,
+            "audio" => WaMediaType::Audio,
+            "document" => WaMediaType::Document,
+            "sticker" => WaMediaType::Sticker,
+            other => anyhow::bail!("unsupported media type: {other}"),
+        };
+
+        let data = client
+            .download_from_params(
+                direct_path,
+                &media_key,
+                &file_sha256,
+                &file_enc_sha256,
+                file_length,
+                media_type,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("download failed: {e}"))?;
+
+        Ok(data)
+    }
 }
 
 #[async_trait]
@@ -677,6 +724,32 @@ fn extract_media_type(msg: &WaMessage) -> Option<String> {
     None
 }
 
+fn insert_download_fields(
+    meta: &mut serde_json::Map<String, serde_json::Value>,
+    media_key: &Option<Vec<u8>>,
+    file_sha256: &Option<Vec<u8>>,
+    file_enc_sha256: &Option<Vec<u8>>,
+) {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+
+    if let Some(ref key) = media_key {
+        meta.insert("media_key".into(), serde_json::json!(STANDARD.encode(key)));
+    }
+    if let Some(ref sha) = file_sha256 {
+        meta.insert(
+            "file_sha256".into(),
+            serde_json::json!(STANDARD.encode(sha)),
+        );
+    }
+    if let Some(ref sha) = file_enc_sha256 {
+        meta.insert(
+            "file_enc_sha256".into(),
+            serde_json::json!(STANDARD.encode(sha)),
+        );
+    }
+}
+
 fn extract_media_metadata(msg: &WaMessage) -> Option<serde_json::Value> {
     let base = msg.get_base_message();
 
@@ -700,6 +773,13 @@ fn extract_media_metadata(msg: &WaMessage) -> Option<serde_json::Value> {
         if let Some(ref path) = doc.direct_path {
             meta.insert("direct_path".into(), serde_json::json!(path));
         }
+        meta.insert("media_type".into(), serde_json::json!("document"));
+        insert_download_fields(
+            &mut meta,
+            &doc.media_key,
+            &doc.file_sha256,
+            &doc.file_enc_sha256,
+        );
         if !meta.is_empty() {
             return Some(serde_json::Value::Object(meta));
         }
@@ -722,6 +802,13 @@ fn extract_media_metadata(msg: &WaMessage) -> Option<serde_json::Value> {
         if let Some(ref path) = img.direct_path {
             meta.insert("direct_path".into(), serde_json::json!(path));
         }
+        meta.insert("media_type".into(), serde_json::json!("image"));
+        insert_download_fields(
+            &mut meta,
+            &img.media_key,
+            &img.file_sha256,
+            &img.file_enc_sha256,
+        );
         if !meta.is_empty() {
             return Some(serde_json::Value::Object(meta));
         }
@@ -747,6 +834,13 @@ fn extract_media_metadata(msg: &WaMessage) -> Option<serde_json::Value> {
         if let Some(ref path) = vid.direct_path {
             meta.insert("direct_path".into(), serde_json::json!(path));
         }
+        meta.insert("media_type".into(), serde_json::json!("video"));
+        insert_download_fields(
+            &mut meta,
+            &vid.media_key,
+            &vid.file_sha256,
+            &vid.file_enc_sha256,
+        );
         if !meta.is_empty() {
             return Some(serde_json::Value::Object(meta));
         }
@@ -769,6 +863,13 @@ fn extract_media_metadata(msg: &WaMessage) -> Option<serde_json::Value> {
         if let Some(ref path) = aud.direct_path {
             meta.insert("direct_path".into(), serde_json::json!(path));
         }
+        meta.insert("media_type".into(), serde_json::json!("audio"));
+        insert_download_fields(
+            &mut meta,
+            &aud.media_key,
+            &aud.file_sha256,
+            &aud.file_enc_sha256,
+        );
         if !meta.is_empty() {
             return Some(serde_json::Value::Object(meta));
         }

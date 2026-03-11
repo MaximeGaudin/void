@@ -3488,6 +3488,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "qr2term",
  "serde_json",
  "tokio",
@@ -3495,6 +3496,7 @@ dependencies = [
  "tracing",
  "void-core",
  "wa-rs",
+ "wa-rs-core",
  "wa-rs-proto",
  "wa-rs-sqlite-storage",
  "wa-rs-tokio-transport",

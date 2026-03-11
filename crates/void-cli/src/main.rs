@@ -53,6 +53,8 @@ enum Command {
     Archive(commands::archive::ArchiveArgs),
     /// Gmail-specific operations (search, threads, drafts, labels, attachments)
     Gmail(commands::gmail::GmailArgs),
+    /// WhatsApp-specific operations (media download)
+    Whatsapp(commands::whatsapp::WhatsAppArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
     /// Install the void binary into your PATH
@@ -100,6 +102,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Read(args)) => commands::read::run(args).await,
         Some(Command::Archive(args)) => commands::archive::run(args).await,
         Some(Command::Gmail(args)) => commands::gmail::run(args, !cli.pretty).await,
+        Some(Command::Whatsapp(args)) => commands::whatsapp::run(args, !cli.pretty).await,
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
         Some(Command::Install(args)) => commands::install::run(args),
         None => {

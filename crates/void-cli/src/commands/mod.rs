@@ -15,3 +15,4 @@ pub mod send;
 pub mod setup;
 pub mod status;
 pub mod sync;
+pub mod whatsapp;
