@@ -13,6 +13,24 @@ use crate::models::{CalendarEvent, Contact, Conversation, Message};
 
 pub use schema::SCHEMA_VERSION;
 
+/// Escape a user query for FTS5 MATCH by quoting each term.
+/// Characters like `@`, `-`, `*` are FTS5 operators and cause syntax errors
+/// if passed raw.
+fn fts5_escape(query: &str) -> String {
+    let terms: Vec<&str> = query.split_whitespace().collect();
+    if terms.is_empty() {
+        return "\"\"".to_string();
+    }
+    terms
+        .iter()
+        .map(|t| {
+            let escaped = t.replace('"', "\"\"");
+            format!("\"{escaped}\"")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -231,6 +249,7 @@ impl Database {
         connector_filter: Option<&str>,
         limit: i64,
     ) -> anyhow::Result<Vec<Message>> {
+        let escaped = fts5_escape(query);
         let mut sql = String::from(
             "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_from_me, m.is_read, m.is_archived, m.reply_to_id, m.media_type, m.metadata
              FROM messages_fts fts
@@ -238,7 +257,7 @@ impl Database {
              WHERE messages_fts MATCH ?1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(query.to_string())];
+            vec![Box::new(escaped)];
 
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
@@ -614,6 +633,143 @@ mod tests {
         }
     }
 
+    // ---- fts5_escape unit tests ----
+
+    #[test]
+    fn fts5_escape_simple_word() {
+        assert_eq!(fts5_escape("hello"), "\"hello\"");
+    }
+
+    #[test]
+    fn fts5_escape_multiple_words() {
+        assert_eq!(fts5_escape("hello world"), "\"hello\" \"world\"");
+    }
+
+    #[test]
+    fn fts5_escape_at_symbol() {
+        assert_eq!(fts5_escape("@MadMax"), "\"@MadMax\"");
+    }
+
+    #[test]
+    fn fts5_escape_at_symbol_multi_term() {
+        assert_eq!(
+            fts5_escape("@MadMax hello"),
+            "\"@MadMax\" \"hello\""
+        );
+    }
+
+    #[test]
+    fn fts5_escape_double_quotes_in_input() {
+        assert_eq!(fts5_escape(r#"say "hi""#), "\"say\" \"\"\"hi\"\"\"");
+    }
+
+    #[test]
+    fn fts5_escape_asterisk_wildcard() {
+        assert_eq!(fts5_escape("test*"), "\"test*\"");
+    }
+
+    #[test]
+    fn fts5_escape_dash_negation() {
+        assert_eq!(fts5_escape("-excluded"), "\"-excluded\"");
+    }
+
+    #[test]
+    fn fts5_escape_plus_operator() {
+        assert_eq!(fts5_escape("+required"), "\"+required\"");
+    }
+
+    #[test]
+    fn fts5_escape_fts5_boolean_operators() {
+        assert_eq!(fts5_escape("NOT"), "\"NOT\"");
+        assert_eq!(fts5_escape("AND"), "\"AND\"");
+        assert_eq!(fts5_escape("OR"), "\"OR\"");
+        assert_eq!(fts5_escape("NEAR"), "\"NEAR\"");
+    }
+
+    #[test]
+    fn fts5_escape_boolean_in_phrase() {
+        assert_eq!(
+            fts5_escape("this AND that"),
+            "\"this\" \"AND\" \"that\""
+        );
+    }
+
+    #[test]
+    fn fts5_escape_parentheses() {
+        assert_eq!(
+            fts5_escape("(hello OR world)"),
+            "\"(hello\" \"OR\" \"world)\"");
+    }
+
+    #[test]
+    fn fts5_escape_colon_column_syntax() {
+        assert_eq!(fts5_escape("body:secret"), "\"body:secret\"");
+    }
+
+    #[test]
+    fn fts5_escape_empty_string() {
+        assert_eq!(fts5_escape(""), "\"\"");
+    }
+
+    #[test]
+    fn fts5_escape_whitespace_only() {
+        assert_eq!(fts5_escape("   "), "\"\"");
+    }
+
+    #[test]
+    fn fts5_escape_unicode() {
+        assert_eq!(fts5_escape("café résumé"), "\"café\" \"résumé\"");
+    }
+
+    #[test]
+    fn fts5_escape_cjk() {
+        assert_eq!(fts5_escape("会議"), "\"会議\"");
+    }
+
+    #[test]
+    fn fts5_escape_emoji() {
+        assert_eq!(fts5_escape("📄 report"), "\"📄\" \"report\"");
+    }
+
+    #[test]
+    fn fts5_escape_curly_braces() {
+        assert_eq!(fts5_escape("{hello}"), "\"{hello}\"");
+    }
+
+    #[test]
+    fn fts5_escape_carets() {
+        assert_eq!(fts5_escape("^prefix"), "\"^prefix\"");
+    }
+
+    #[test]
+    fn fts5_escape_sql_injection_attempt() {
+        assert_eq!(
+            fts5_escape("'; DROP TABLE messages; --"),
+            "\"';\" \"DROP\" \"TABLE\" \"messages;\" \"--\""
+        );
+    }
+
+    #[test]
+    fn fts5_escape_fts5_injection_via_quotes() {
+        assert_eq!(
+            fts5_escape(r#"" OR body:*"#),
+            "\"\"\"\" \"OR\" \"body:*\""
+        );
+    }
+
+    #[test]
+    fn fts5_escape_near_with_distance() {
+        assert_eq!(
+            fts5_escape("NEAR(a b, 5)"),
+            "\"NEAR(a\" \"b,\" \"5)\""
+        );
+    }
+
+    #[test]
+    fn fts5_escape_preserves_multiple_spaces_as_single_separator() {
+        assert_eq!(fts5_escape("hello    world"), "\"hello\" \"world\"");
+    }
+
     #[test]
     fn migration_runs() {
         let db = test_db();
@@ -752,6 +908,262 @@ mod tests {
 
         let results = db.search_messages("meeting", None, None, 10).unwrap();
         assert_eq!(results.len(), 2);
+    }
+
+    // ---- search_messages integration: special characters ----
+
+    fn seed_search_db() -> Database {
+        let db = test_db();
+        let conv = make_conversation("c1", "test-slack", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        let mut conv2 = make_conversation("c2", "me@gmail.com", "G456");
+        conv2.connector = "gmail".into();
+        db.upsert_conversation(&conv2).unwrap();
+
+        db.upsert_message(&make_message(
+            "m1", "c1", "test-slack", "hello @MadMax how are you?", 1_000,
+        )).unwrap();
+        db.upsert_message(&make_message(
+            "m2", "c1", "test-slack", "meeting with @alice tomorrow", 2_000,
+        )).unwrap();
+        db.upsert_message(&make_message(
+            "m3", "c1", "test-slack", "the C++ compiler is broken", 3_000,
+        )).unwrap();
+        db.upsert_message(&make_message(
+            "m4", "c1", "test-slack", "file: budget-report-2024.xlsx", 4_000,
+        )).unwrap();
+        db.upsert_message(&make_message(
+            "m5", "c1", "test-slack", "say \"hello\" to everyone", 5_000,
+        )).unwrap();
+        db.upsert_message(&make_message(
+            "m6", "c1", "test-slack", "NOT a problem AND it works OR fails", 6_000,
+        )).unwrap();
+        db.upsert_message(&make_message(
+            "m7", "c1", "test-slack", "user:admin password:secret", 7_000,
+        )).unwrap();
+
+        let mut gmail_msg = make_message(
+            "m8", "c2", "me@gmail.com", "invoice from @accounts", 8_000,
+        );
+        gmail_msg.connector = "gmail".into();
+        db.upsert_message(&gmail_msg).unwrap();
+
+        db
+    }
+
+    #[test]
+    fn search_at_symbol_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("@MadMax", None, None, 50).unwrap();
+        assert!(!results.is_empty());
+        assert!(results.iter().any(|m| m.body.as_deref().unwrap().contains("@MadMax")));
+    }
+
+    #[test]
+    fn search_at_symbol_with_connector_filter() {
+        let db = seed_search_db();
+        let results = db.search_messages("@accounts", None, Some("gmail"), 50).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].connector, "gmail");
+    }
+
+    #[test]
+    fn search_at_symbol_wrong_connector_returns_empty() {
+        let db = seed_search_db();
+        let results = db.search_messages("@accounts", None, Some("whatsapp"), 50).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_double_quotes_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages(r#""hello""#, None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_dash_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("-report", None, None, 50).unwrap();
+        // Should not error — the dash is escaped
+        let _ = results;
+    }
+
+    #[test]
+    fn search_asterisk_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("budget*", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_plus_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("+required", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_boolean_operators_treated_as_literals() {
+        let db = seed_search_db();
+        let results = db.search_messages("NOT", None, None, 50).unwrap();
+        // Should return results containing "NOT" as a word rather than treating it as boolean op
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn search_and_operator_literal() {
+        let db = seed_search_db();
+        let results = db.search_messages("AND", None, None, 50).unwrap();
+        let _ = results; // Must not crash
+    }
+
+    #[test]
+    fn search_or_operator_literal() {
+        let db = seed_search_db();
+        let results = db.search_messages("OR", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_near_operator_literal() {
+        let db = seed_search_db();
+        let results = db.search_messages("NEAR", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_colon_column_syntax_does_not_leak() {
+        let db = seed_search_db();
+        // In raw FTS5 "body:secret" would search column "body" for "secret".
+        // Our escaping should prevent column-targeted search.
+        let results = db.search_messages("body:secret", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_parentheses_do_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("(hello OR world)", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_curly_braces_do_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("{test}", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_sql_injection_attempt() {
+        let db = seed_search_db();
+        let results = db
+            .search_messages("'; DROP TABLE messages; --", None, None, 50)
+            .unwrap();
+        let _ = results;
+
+        // Verify the messages table still exists and has data
+        let all = db.recent_messages(None, None, 100, true).unwrap();
+        assert!(!all.is_empty(), "messages table must survive injection attempt");
+    }
+
+    #[test]
+    fn search_fts5_injection_via_double_quotes() {
+        let db = seed_search_db();
+        // An attacker might try to break out of quoting to inject FTS5 operators
+        let results = db
+            .search_messages(r#"" OR body:*"#, None, None, 50)
+            .unwrap();
+        let _ = results;
+
+        let all = db.recent_messages(None, None, 100, true).unwrap();
+        assert!(!all.is_empty());
+    }
+
+    #[test]
+    fn search_empty_query_does_not_crash() {
+        let db = seed_search_db();
+        // Empty query should not cause a panic or SQL error
+        let result = db.search_messages("", None, None, 50);
+        // It's acceptable for this to return an error or empty results, but not panic
+        let _ = result;
+    }
+
+    #[test]
+    fn search_whitespace_only_query_does_not_crash() {
+        let db = seed_search_db();
+        let result = db.search_messages("   ", None, None, 50);
+        let _ = result;
+    }
+
+    #[test]
+    fn search_with_account_filter_and_special_chars() {
+        let db = seed_search_db();
+        let results = db
+            .search_messages("@MadMax", Some("test-slack"), None, 50)
+            .unwrap();
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn search_with_both_filters_and_special_chars() {
+        let db = seed_search_db();
+        let results = db
+            .search_messages("@MadMax", Some("test-slack"), Some("slack"), 50)
+            .unwrap();
+        assert!(!results.is_empty());
+
+        let no_results = db
+            .search_messages("@MadMax", Some("test-slack"), Some("gmail"), 50)
+            .unwrap();
+        assert!(no_results.is_empty());
+    }
+
+    #[test]
+    fn search_limit_is_respected() {
+        let db = seed_search_db();
+        // All messages contain common words — search for something broad
+        let results = db.search_messages("the", None, None, 1).unwrap();
+        assert!(results.len() <= 1);
+    }
+
+    #[test]
+    fn search_unicode_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("café résumé 会議", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_emoji_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages("📄", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_backslash_does_not_crash() {
+        let db = seed_search_db();
+        let results = db.search_messages(r"C:\Users\admin", None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_very_long_query_does_not_crash() {
+        let db = seed_search_db();
+        let long_query = "word ".repeat(200);
+        let results = db.search_messages(&long_query, None, None, 50).unwrap();
+        let _ = results;
+    }
+
+    #[test]
+    fn search_null_byte_does_not_crash() {
+        let db = seed_search_db();
+        let result = db.search_messages("hello\0world", None, None, 50);
+        // May error but must not panic
+        let _ = result;
     }
 
     #[test]
