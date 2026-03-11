@@ -15,13 +15,13 @@ pub struct MessagesArgs {
     /// Show messages until this date (YYYY-MM-DD)
     #[arg(long)]
     pub until: Option<String>,
-    /// Maximum number of messages
-    #[arg(long, default_value = "100")]
-    pub limit: i64,
+    /// Maximum number of results to return
+    #[arg(short = 'n', long, default_value = "100")]
+    pub size: i64,
 }
 
 pub fn run(args: &MessagesArgs, json: bool) -> anyhow::Result<()> {
-    debug!(conversation_id = %args.conversation_id, "messages");
+    debug!(conversation_id = %args.conversation_id, size = args.size, "messages");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
@@ -29,7 +29,7 @@ pub fn run(args: &MessagesArgs, json: bool) -> anyhow::Result<()> {
     let since = args.since.as_deref().and_then(parse_date_to_ts);
     let until = args.until.as_deref().and_then(parse_date_to_ts);
 
-    let messages = db.list_messages(&args.conversation_id, args.limit, since, until)?;
+    let messages = db.list_messages(&args.conversation_id, args.size, since, until)?;
     formatter.print_messages(&messages)
 }
 

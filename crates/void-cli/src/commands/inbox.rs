@@ -13,16 +13,16 @@ pub struct InboxArgs {
     /// Filter by connector (slack, gmail, whatsapp, calendar)
     #[arg(long)]
     pub connector: Option<String>,
-    /// Maximum number of messages to show
-    #[arg(long, default_value = "50")]
-    pub limit: i64,
+    /// Maximum number of results to return
+    #[arg(short = 'n', long, default_value = "50")]
+    pub size: i64,
     /// Include archived messages
     #[arg(long)]
     pub all: bool,
 }
 
 pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
-    debug!(account = ?args.account, connector = ?args.connector, limit = args.limit, all = args.all, "inbox");
+    debug!(account = ?args.account, connector = ?args.connector, size = args.size, all = args.all, "inbox");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
@@ -30,7 +30,7 @@ pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
     let mut messages = db.recent_messages(
         args.account.as_deref(),
         args.connector.as_deref(),
-        args.limit,
+        args.size,
         args.all,
     )?;
     messages.reverse();
@@ -38,7 +38,7 @@ pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
 }
 
 pub fn run_conversations(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
-    debug!(account = ?args.account, connector = ?args.connector, limit = args.limit, "inbox conversations");
+    debug!(account = ?args.account, connector = ?args.connector, size = args.size, "inbox conversations");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
@@ -46,7 +46,7 @@ pub fn run_conversations(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
     let conversations = db.list_conversations(
         args.account.as_deref(),
         args.connector.as_deref(),
-        args.limit,
+        args.size,
     )?;
     formatter.print_conversations(&conversations)
 }

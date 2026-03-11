@@ -16,13 +16,13 @@ pub struct ContactsArgs {
     /// Filter by connector (slack, gmail, whatsapp, calendar)
     #[arg(long)]
     pub connector: Option<String>,
-    /// Maximum number of contacts to show
-    #[arg(long, default_value = "100")]
-    pub limit: i64,
+    /// Maximum number of results to return
+    #[arg(short = 'n', long, default_value = "100")]
+    pub size: i64,
 }
 
 pub fn run(args: &ContactsArgs, json: bool) -> anyhow::Result<()> {
-    debug!(search = ?args.search, account = ?args.account, connector = ?args.connector, limit = args.limit, "contacts");
+    debug!(search = ?args.search, account = ?args.account, connector = ?args.connector, size = args.size, "contacts");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
@@ -31,7 +31,7 @@ pub fn run(args: &ContactsArgs, json: bool) -> anyhow::Result<()> {
         args.account.as_deref(),
         args.connector.as_deref(),
         args.search.as_deref(),
-        args.limit,
+        args.size,
     )?;
     formatter.print_contacts(&contacts)
 }
