@@ -143,6 +143,137 @@ impl CalendarApiClient {
         debug!(event_id, "calendar: insert_event ok");
         Ok(resp)
     }
+
+    pub async fn get_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+    ) -> anyhow::Result<GoogleCalendarEvent> {
+        debug!(calendar_id, event_id, "calendar: get_event");
+        let url = format!(
+            "{}/calendar/v3/calendars/{}/events/{}",
+            self.base_url,
+            urlencoded(calendar_id),
+            urlencoded(event_id)
+        );
+        let resp: GoogleCalendarEvent = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("calendar: failed to get event")?;
+        debug!(event_id, "calendar: get_event ok");
+        Ok(resp)
+    }
+
+    pub async fn search_events(
+        &self,
+        calendar_id: &str,
+        query: &str,
+        time_min: Option<&str>,
+        time_max: Option<&str>,
+    ) -> anyhow::Result<EventListResponse> {
+        debug!(calendar_id, query, "calendar: search_events");
+        let mut params: Vec<(&str, String)> = vec![
+            ("singleEvents", "true".into()),
+            ("orderBy", "startTime".into()),
+            ("maxResults", "2500".into()),
+            ("q", query.into()),
+        ];
+        if let Some(t) = time_min {
+            params.push(("timeMin", t.into()));
+        }
+        if let Some(t) = time_max {
+            params.push(("timeMax", t.into()));
+        }
+        let url = format!(
+            "{}/calendar/v3/calendars/{}/events",
+            self.base_url,
+            urlencoded(calendar_id)
+        );
+        let resp: EventListResponse = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .query(&params)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("calendar: failed to search events")?;
+        let count = resp.items.as_ref().map(|i| i.len()).unwrap_or(0);
+        debug!(count, "calendar: search_events ok");
+        Ok(resp)
+    }
+
+    pub async fn update_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        update: &UpdateEventRequest,
+        send_updates: Option<&str>,
+    ) -> anyhow::Result<GoogleCalendarEvent> {
+        debug!(calendar_id, event_id, "calendar: update_event");
+        let url = format!(
+            "{}/calendar/v3/calendars/{}/events/{}",
+            self.base_url,
+            urlencoded(calendar_id),
+            urlencoded(event_id)
+        );
+        let mut req = self
+            .http
+            .patch(&url)
+            .bearer_auth(&self.access_token)
+            .json(update);
+        if let Some(su) = send_updates {
+            req = req.query(&[("sendUpdates", su)]);
+        }
+        let resp: GoogleCalendarEvent = req
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("calendar: failed to update event")?;
+        debug!(event_id, "calendar: update_event ok");
+        Ok(resp)
+    }
+
+    pub async fn delete_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        send_updates: Option<&str>,
+    ) -> anyhow::Result<()> {
+        debug!(calendar_id, event_id, "calendar: delete_event");
+        let url = format!(
+            "{}/calendar/v3/calendars/{}/events/{}",
+            self.base_url,
+            urlencoded(calendar_id),
+            urlencoded(event_id)
+        );
+        let mut req = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.access_token);
+        if let Some(su) = send_updates {
+            req = req.query(&[("sendUpdates", su)]);
+        }
+        req.send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?;
+        debug!(event_id, "calendar: delete_event ok");
+        Ok(())
+    }
 }
 
 fn urlencoded(s: &str) -> String {
@@ -227,6 +358,33 @@ pub struct InsertEventRequest {
     pub attendees: Option<Vec<AttendeeRequest>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conference_data: Option<ConferenceDataRequest>,
+}
+
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateEventRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<EventDateTimeRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<EventDateTimeRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attendees: Option<Vec<AttendeeResponseRequest>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendeeResponseRequest {
+    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
