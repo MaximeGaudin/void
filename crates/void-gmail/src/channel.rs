@@ -187,6 +187,7 @@ impl GmailChannel {
 
         let my_email = self.my_email.lock().expect("mutex").clone();
         let is_from_me = my_email.as_ref().is_some_and(|e| from.contains(e));
+        let sender_email = parse_email_address(&from);
         let sender_name = parse_email_name(&from);
 
         let text_body = msg.text_body();
@@ -211,7 +212,7 @@ impl GmailChannel {
             account_id: account_id.clone(),
             connector: "gmail".into(),
             external_id: msg_id.to_string(),
-            sender: from.clone(),
+            sender: sender_email,
             sender_name: Some(sender_name),
             body,
             timestamp: msg
@@ -407,6 +408,14 @@ fn compose_rfc2822(to: &str, subject: &str, body: &str) -> String {
     )
 }
 
+fn parse_email_address(from: &str) -> String {
+    if let Some(start) = from.find('<') {
+        from[start + 1..].trim_end_matches('>').trim().to_string()
+    } else {
+        from.trim().to_string()
+    }
+}
+
 fn parse_email_name(from: &str) -> String {
     if let Some(start) = from.find('<') {
         from[..start].trim().trim_matches('"').to_string()
@@ -433,6 +442,22 @@ fn html_to_markdown(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_email_address_extracts_email() {
+        assert_eq!(
+            parse_email_address("Alice <alice@example.com>"),
+            "alice@example.com"
+        );
+        assert_eq!(
+            parse_email_address("\"Bob Smith\" <bob@example.com>"),
+            "bob@example.com"
+        );
+        assert_eq!(
+            parse_email_address("charlie@example.com"),
+            "charlie@example.com"
+        );
+    }
 
     #[test]
     fn parse_email_name_with_brackets() {
