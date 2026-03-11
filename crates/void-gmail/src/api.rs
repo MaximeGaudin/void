@@ -179,6 +179,238 @@ impl GmailApiClient {
         debug!(message_id = ?resp.id, "gmail: sent message");
         Ok(resp)
     }
+
+    pub async fn get_thread(&self, thread_id: &str) -> anyhow::Result<GmailThread> {
+        debug!(thread_id, "gmail: get_thread");
+        let resp: GmailThread = self
+            .http
+            .get(format!(
+                "{}/gmail/v1/users/me/threads/{thread_id}",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .query(&[("format", "full")])
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to get thread")?;
+        let msg_count = resp.messages.as_ref().map(|m| m.len()).unwrap_or(0);
+        debug!(thread_id, msg_count, "gmail: get_thread ok");
+        Ok(resp)
+    }
+
+    pub async fn get_attachment(
+        &self,
+        message_id: &str,
+        attachment_id: &str,
+    ) -> anyhow::Result<AttachmentResponse> {
+        debug!(message_id, attachment_id, "gmail: get_attachment");
+        let resp: AttachmentResponse = self
+            .http
+            .get(format!(
+                "{}/gmail/v1/users/me/messages/{message_id}/attachments/{attachment_id}",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to get attachment")?;
+        debug!(message_id, attachment_id, "gmail: get_attachment ok");
+        Ok(resp)
+    }
+
+    pub async fn list_labels(&self) -> anyhow::Result<LabelListResponse> {
+        debug!("gmail: list_labels");
+        let resp: LabelListResponse = self
+            .http
+            .get(format!("{}/gmail/v1/users/me/labels", self.base_url))
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to list labels")?;
+        let count = resp.labels.as_ref().map(|l| l.len()).unwrap_or(0);
+        debug!(count, "gmail: list_labels ok");
+        Ok(resp)
+    }
+
+    pub async fn modify_thread(
+        &self,
+        thread_id: &str,
+        add_labels: &[&str],
+        remove_labels: &[&str],
+    ) -> anyhow::Result<GmailThread> {
+        debug!(thread_id, ?add_labels, ?remove_labels, "gmail: modify_thread");
+        let body = serde_json::json!({
+            "addLabelIds": add_labels,
+            "removeLabelIds": remove_labels,
+        });
+        let resp: GmailThread = self
+            .http
+            .post(format!(
+                "{}/gmail/v1/users/me/threads/{thread_id}/modify",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to modify thread")?;
+        debug!(thread_id, "gmail: modify_thread ok");
+        Ok(resp)
+    }
+
+    pub async fn batch_modify_messages(
+        &self,
+        message_ids: &[&str],
+        add_labels: &[&str],
+        remove_labels: &[&str],
+    ) -> anyhow::Result<()> {
+        debug!(?message_ids, ?add_labels, ?remove_labels, "gmail: batch_modify");
+        let body = serde_json::json!({
+            "ids": message_ids,
+            "addLabelIds": add_labels,
+            "removeLabelIds": remove_labels,
+        });
+        self.http
+            .post(format!(
+                "{}/gmail/v1/users/me/messages/batchModify",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?;
+        debug!("gmail: batch_modify ok");
+        Ok(())
+    }
+
+    pub async fn list_drafts(&self, max_results: u32) -> anyhow::Result<DraftListResponse> {
+        debug!(max_results, "gmail: list_drafts");
+        let resp: DraftListResponse = self
+            .http
+            .get(format!("{}/gmail/v1/users/me/drafts", self.base_url))
+            .bearer_auth(&self.access_token)
+            .query(&[("maxResults", max_results.to_string())])
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to list drafts")?;
+        let count = resp.drafts.as_ref().map(|d| d.len()).unwrap_or(0);
+        debug!(count, "gmail: list_drafts ok");
+        Ok(resp)
+    }
+
+    pub async fn get_draft(&self, draft_id: &str) -> anyhow::Result<GmailDraft> {
+        debug!(draft_id, "gmail: get_draft");
+        let resp: GmailDraft = self
+            .http
+            .get(format!(
+                "{}/gmail/v1/users/me/drafts/{draft_id}",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .query(&[("format", "full")])
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to get draft")?;
+        debug!(draft_id, "gmail: get_draft ok");
+        Ok(resp)
+    }
+
+    pub async fn create_draft(
+        &self,
+        raw: &str,
+        thread_id: Option<&str>,
+    ) -> anyhow::Result<GmailDraft> {
+        info!("gmail: create_draft");
+        let mut message = serde_json::json!({ "raw": raw });
+        if let Some(tid) = thread_id {
+            message["threadId"] = serde_json::Value::String(tid.to_string());
+        }
+        let body = serde_json::json!({ "message": message });
+        let resp: GmailDraft = self
+            .http
+            .post(format!("{}/gmail/v1/users/me/drafts", self.base_url))
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to create draft")?;
+        debug!(draft_id = ?resp.id, "gmail: create_draft ok");
+        Ok(resp)
+    }
+
+    pub async fn update_draft(
+        &self,
+        draft_id: &str,
+        raw: &str,
+    ) -> anyhow::Result<GmailDraft> {
+        debug!(draft_id, "gmail: update_draft");
+        let body = serde_json::json!({
+            "message": { "raw": raw }
+        });
+        let resp: GmailDraft = self
+            .http
+            .put(format!(
+                "{}/gmail/v1/users/me/drafts/{draft_id}",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
+            .json()
+            .await
+            .context("gmail: failed to update draft")?;
+        debug!(draft_id, "gmail: update_draft ok");
+        Ok(resp)
+    }
+
+    pub async fn delete_draft(&self, draft_id: &str) -> anyhow::Result<()> {
+        debug!(draft_id, "gmail: delete_draft");
+        self.http
+            .delete(format!(
+                "{}/gmail/v1/users/me/drafts/{draft_id}",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?;
+        debug!(draft_id, "gmail: delete_draft ok");
+        Ok(())
+    }
 }
 
 // -- Gmail API types --
@@ -228,15 +460,18 @@ pub struct MessagePayload {
 #[serde(rename_all = "camelCase")]
 pub struct MessagePart {
     pub mime_type: Option<String>,
+    pub filename: Option<String>,
     pub headers: Option<Vec<MessageHeader>>,
     pub body: Option<MessagePartBody>,
     pub parts: Option<Vec<MessagePart>>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessagePartBody {
     pub data: Option<String>,
     pub size: Option<u64>,
+    pub attachment_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -332,4 +567,56 @@ pub struct HistoryRecord {
 #[derive(Debug, Deserialize)]
 pub struct HistoryMessageAdded {
     pub message: MessageRef,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailThread {
+    pub id: Option<String>,
+    pub snippet: Option<String>,
+    pub messages: Option<Vec<GmailMessage>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentResponse {
+    pub data: Option<String>,
+    pub size: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LabelListResponse {
+    pub labels: Option<Vec<GmailLabel>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailLabel {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub label_type: Option<String>,
+    pub messages_total: Option<u64>,
+    pub messages_unread: Option<u64>,
+    pub threads_total: Option<u64>,
+    pub threads_unread: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DraftListResponse {
+    pub drafts: Option<Vec<DraftRef>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftRef {
+    pub id: String,
+    pub message: Option<MessageRef>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailDraft {
+    pub id: Option<String>,
+    pub message: Option<GmailMessage>,
 }
