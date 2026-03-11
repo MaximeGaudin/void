@@ -45,11 +45,22 @@ Read every `.rs` file and check against [rust-checklist.md](rust-checklist.md). 
 | **Warning** | Anti-pattern or code smell — fix in this pass |
 | **Info** | Style nit or minor improvement — fix if nearby |
 
-### 1.3 File size audit
+### 1.3 Duplication scan
 
-List files exceeding **300 lines** (excluding tests). These are split candidates.
+Look for duplicated code across the workspace. Common patterns to watch for:
 
-### 1.4 Produce findings report
+- **Copy-pasted functions or blocks** — identical or near-identical logic in multiple files/crates
+- **Repeated struct/enum definitions** — the same type defined in more than one crate instead of shared via `void-core`
+- **Boilerplate patterns** — similar error handling, API call wrappers, or mapping code across connectors that could be abstracted into a shared trait or helper
+- **Repeated constants or config strings** — magic values duplicated instead of defined once
+
+For each duplicate found, note the locations and whether it should be extracted to a shared module, generalized with a trait/generic, or consolidated into `void-core`.
+
+### 1.4 File size audit
+
+List files exceeding **400 lines** (excluding tests). These are split candidates.
+
+### 1.5 Produce findings report
 
 Before making any changes, present a summary table to the user:
 
@@ -83,6 +94,7 @@ Work through the findings report, fixing in dependency order (core crates first,
 - Add `#[must_use]` to pure functions returning values
 - Replace manual `impl Display` with `#[derive(Display)]` or `thiserror` where appropriate
 - Use `std::mem::take` / `Option::take` instead of `clone` + reassign
+- Deduplicate copy-pasted code — extract shared logic into functions, traits, or `void-core` modules
 
 ### After each fix
 
