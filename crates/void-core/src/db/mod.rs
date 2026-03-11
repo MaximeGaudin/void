@@ -1,12 +1,17 @@
+//! Database access layer for conversations, messages, events, and sync state.
+
+mod row;
+mod schema;
+
 use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use tracing::{debug, info};
 
-use crate::models::{CalendarEvent, Contact, Conversation, ConversationKind, Message};
+use crate::models::{CalendarEvent, Contact, Conversation, Message};
 
-pub const SCHEMA_VERSION: i32 = 4;
+pub use schema::SCHEMA_VERSION;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -45,175 +50,13 @@ impl Database {
         Ok(db)
     }
 
-    fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().expect("database mutex poisoned")
     }
 
     fn migrate(&self) -> anyhow::Result<()> {
         let conn = self.conn();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);",
-        )?;
-
-        let current: Option<i32> = conn
-            .query_row(
-                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?;
-
-        let version = current.unwrap_or(0);
-        info!(
-            current_version = version,
-            target_version = SCHEMA_VERSION,
-            "running migrations"
-        );
-        if version < 1 {
-            drop(conn);
-            self.migrate_v1()?;
-        } else {
-            drop(conn);
-        }
-        if version < 2 {
-            self.migrate_v2()?;
-        }
-        if version < 3 {
-            self.migrate_v3()?;
-        }
-        if version < 4 {
-            self.migrate_v4()?;
-        }
-        Ok(())
-    }
-
-    fn migrate_v1(&self) -> anyhow::Result<()> {
-        debug!("running migration v1");
-        self.conn().execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS conversations (
-                id              TEXT PRIMARY KEY,
-                account_id      TEXT NOT NULL,
-                external_id     TEXT NOT NULL,
-                name            TEXT,
-                kind            TEXT NOT NULL,
-                last_message_at INTEGER,
-                unread_count    INTEGER NOT NULL DEFAULT 0,
-                metadata        TEXT,
-                UNIQUE(account_id, external_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS messages (
-                id              TEXT PRIMARY KEY,
-                conversation_id TEXT NOT NULL REFERENCES conversations(id),
-                account_id      TEXT NOT NULL,
-                external_id     TEXT NOT NULL,
-                sender          TEXT NOT NULL,
-                sender_name     TEXT,
-                body            TEXT,
-                timestamp       INTEGER NOT NULL,
-                is_from_me      INTEGER NOT NULL DEFAULT 0,
-                reply_to_id     TEXT,
-                media_type      TEXT,
-                metadata        TEXT,
-                UNIQUE(account_id, external_id)
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-                body,
-                sender_name,
-                content=messages,
-                content_rowid=rowid
-            );
-
-            CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-                INSERT INTO messages_fts(rowid, body, sender_name)
-                VALUES (new.rowid, new.body, new.sender_name);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-                INSERT INTO messages_fts(messages_fts, rowid, body, sender_name)
-                VALUES ('delete', old.rowid, old.body, old.sender_name);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-                INSERT INTO messages_fts(messages_fts, rowid, body, sender_name)
-                VALUES ('delete', old.rowid, old.body, old.sender_name);
-                INSERT INTO messages_fts(rowid, body, sender_name)
-                VALUES (new.rowid, new.body, new.sender_name);
-            END;
-
-            CREATE TABLE IF NOT EXISTS events (
-                id              TEXT PRIMARY KEY,
-                account_id      TEXT NOT NULL,
-                external_id     TEXT NOT NULL,
-                title           TEXT NOT NULL,
-                description     TEXT,
-                location        TEXT,
-                start_at        INTEGER NOT NULL,
-                end_at          INTEGER NOT NULL,
-                all_day         INTEGER NOT NULL DEFAULT 0,
-                attendees       TEXT,
-                status          TEXT,
-                calendar_name   TEXT,
-                meet_link       TEXT,
-                metadata        TEXT,
-                UNIQUE(account_id, external_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS sync_state (
-                account_id      TEXT NOT NULL,
-                key             TEXT NOT NULL,
-                value           TEXT NOT NULL,
-                PRIMARY KEY(account_id, key)
-            );
-
-            INSERT INTO schema_version (version) VALUES (1);
-        ",
-        )?;
-        Ok(())
-    }
-
-    fn migrate_v2(&self) -> anyhow::Result<()> {
-        debug!("running migration v2");
-        let conn = self.conn();
-        conn.execute_batch(
-            "
-            ALTER TABLE messages ADD COLUMN synced_at INTEGER;
-            ALTER TABLE events ADD COLUMN synced_at INTEGER;
-
-            INSERT OR REPLACE INTO schema_version (version) VALUES (2);
-        ",
-        )?;
-        Ok(())
-    }
-
-    fn migrate_v3(&self) -> anyhow::Result<()> {
-        debug!("running migration v3");
-        let conn = self.conn();
-        conn.execute_batch(
-            "
-            ALTER TABLE messages ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE messages ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;
-
-            INSERT OR REPLACE INTO schema_version (version) VALUES (3);
-        ",
-        )?;
-        Ok(())
-    }
-
-    fn migrate_v4(&self) -> anyhow::Result<()> {
-        debug!("running migration v4");
-        let conn = self.conn();
-        conn.execute_batch(
-            "
-            ALTER TABLE conversations ADD COLUMN connector TEXT NOT NULL DEFAULT '';
-            ALTER TABLE messages ADD COLUMN connector TEXT NOT NULL DEFAULT '';
-            ALTER TABLE events ADD COLUMN connector TEXT NOT NULL DEFAULT '';
-
-            INSERT OR REPLACE INTO schema_version (version) VALUES (4);
-        ",
-        )?;
+        schema::run_migrations(&conn)?;
         Ok(())
     }
 
@@ -278,7 +121,7 @@ impl Database {
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(params_ref.as_slice(), row_to_conversation)?;
+        let rows = stmt.query_map(params_ref.as_slice(), row::row_to_conversation)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -288,7 +131,7 @@ impl Database {
                 "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata
                  FROM conversations WHERE id = ?1",
                 params![id],
-                row_to_conversation,
+                row::row_to_conversation,
             )
             .optional()
             .map_err(Into::into)
@@ -365,7 +208,7 @@ impl Database {
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(params_ref.as_slice(), row_to_message)?;
+        let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -375,7 +218,7 @@ impl Database {
                 "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
                  FROM messages WHERE id = ?1",
                 params![id],
-                row_to_message,
+                row::row_to_message,
             )
             .optional()
             .map_err(Into::into)
@@ -420,7 +263,7 @@ impl Database {
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(params_ref.as_slice(), row_to_message)?;
+        let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
         let results: Vec<Message> = rows.collect::<Result<_, _>>()?;
         debug!(query, result_count = results.len(), "search messages");
         Ok(results)
@@ -462,7 +305,7 @@ impl Database {
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(params_ref.as_slice(), row_to_message)?;
+        let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -507,7 +350,7 @@ impl Database {
                 "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
                  FROM messages WHERE account_id = ?1 AND external_id = ?2",
                 params![account_id, external_id],
-                row_to_message,
+                row::row_to_message,
             )
             .optional()
             .map_err(Into::into)
@@ -595,7 +438,7 @@ impl Database {
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(params_ref.as_slice(), row_to_event)?;
+        let rows = stmt.query_map(params_ref.as_slice(), row::row_to_event)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -699,7 +542,7 @@ impl Database {
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(params_ref.as_slice(), row_to_conversation)?;
+        let rows = stmt.query_map(params_ref.as_slice(), row::row_to_conversation)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -727,78 +570,10 @@ impl Database {
     }
 }
 
-fn parse_kind(s: &str) -> ConversationKind {
-    match s {
-        "dm" => ConversationKind::Dm,
-        "group" => ConversationKind::Group,
-        "channel" => ConversationKind::Channel,
-        "thread" => ConversationKind::Thread,
-        _ => ConversationKind::Dm,
-    }
-}
-
-fn parse_json_opt(s: Option<String>) -> Option<serde_json::Value> {
-    s.and_then(|v| serde_json::from_str(&v).ok())
-}
-
-fn row_to_conversation(row: &rusqlite::Row) -> rusqlite::Result<Conversation> {
-    Ok(Conversation {
-        id: row.get(0)?,
-        account_id: row.get(1)?,
-        connector: row.get(2)?,
-        external_id: row.get(3)?,
-        name: row.get(4)?,
-        kind: parse_kind(&row.get::<_, String>(5)?),
-        last_message_at: row.get(6)?,
-        unread_count: row.get(7)?,
-        metadata: parse_json_opt(row.get(8)?),
-    })
-}
-
-fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
-    Ok(Message {
-        id: row.get(0)?,
-        conversation_id: row.get(1)?,
-        account_id: row.get(2)?,
-        connector: row.get(3)?,
-        external_id: row.get(4)?,
-        sender: row.get(5)?,
-        sender_name: row.get(6)?,
-        body: row.get(7)?,
-        timestamp: row.get(8)?,
-        synced_at: row.get(9)?,
-        is_from_me: row.get::<_, i32>(10)? != 0,
-        is_read: row.get::<_, i32>(11)? != 0,
-        is_archived: row.get::<_, i32>(12)? != 0,
-        reply_to_id: row.get(13)?,
-        media_type: row.get(14)?,
-        metadata: parse_json_opt(row.get(15)?),
-    })
-}
-
-fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<CalendarEvent> {
-    Ok(CalendarEvent {
-        id: row.get(0)?,
-        account_id: row.get(1)?,
-        connector: row.get(2)?,
-        external_id: row.get(3)?,
-        title: row.get(4)?,
-        description: row.get(5)?,
-        location: row.get(6)?,
-        start_at: row.get(7)?,
-        end_at: row.get(8)?,
-        all_day: row.get::<_, i32>(9)? != 0,
-        attendees: parse_json_opt(row.get(10)?),
-        status: row.get(11)?,
-        calendar_name: row.get(12)?,
-        meet_link: row.get(13)?,
-        metadata: parse_json_opt(row.get(14)?),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::ConversationKind;
 
     fn test_db() -> Database {
         Database::open_in_memory().unwrap()
