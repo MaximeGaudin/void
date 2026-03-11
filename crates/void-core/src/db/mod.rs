@@ -644,6 +644,23 @@ impl Database {
         )?;
         Ok(())
     }
+
+    pub fn rename_account(&self, old_id: &str, new_id: &str) -> anyhow::Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE sync_state SET account_id = ?2 WHERE account_id = ?1",
+            params![old_id, new_id],
+        )?;
+        conn.execute(
+            "UPDATE conversations SET account_id = ?2, id = REPLACE(id, ?1, ?2) WHERE account_id = ?1",
+            params![old_id, new_id],
+        )?;
+        conn.execute(
+            "UPDATE messages SET account_id = ?2, id = REPLACE(id, ?1, ?2) WHERE account_id = ?1",
+            params![old_id, new_id],
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -218,7 +218,21 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         }
 
         match connector_factory::build_connector(account, &store_path) {
-            Ok(conn) => connectors.push(conn),
+            Ok(conn) => match conn.health_check().await {
+                Ok(status) if status.ok => connectors.push(conn),
+                Ok(status) => {
+                    eprintln!(
+                        "[warn] Skipping account '{}' ({}): {}. Run `void setup` to authenticate.",
+                        account.id, account.account_type, status.message
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[warn] Skipping account '{}' ({}): {e}. Run `void setup` to authenticate.",
+                        account.id, account.account_type
+                    );
+                }
+            },
             Err(e) => {
                 eprintln!(
                     "[warn] Skipping account '{}' ({}): {e}",

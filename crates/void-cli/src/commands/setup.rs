@@ -134,7 +134,7 @@ pub async fn run() -> anyhow::Result<()> {
                 eprintln!("\nAccount removed. Configuration saved.");
             }
             3 => {
-                rename_account(&mut cfg)?;
+                rename_account(&mut cfg, &store_path)?;
                 cfg.save(&config_path)?;
                 eprintln!("\nAccount renamed. Configuration saved.");
             }
@@ -215,7 +215,7 @@ fn remove_account(cfg: &mut VoidConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn rename_account(cfg: &mut VoidConfig) -> anyhow::Result<()> {
+fn rename_account(cfg: &mut VoidConfig, store_path: &std::path::Path) -> anyhow::Result<()> {
     if cfg.accounts.is_empty() {
         eprintln!("No accounts to rename.");
         return Ok(());
@@ -230,9 +230,48 @@ fn rename_account(cfg: &mut VoidConfig) -> anyhow::Result<()> {
 
     let choice = select("Which account would you like to rename?", &options_refs);
     let new_name = prompt("New account name: ");
-    if !new_name.is_empty() {
-        cfg.accounts[choice].id = new_name;
+    if new_name.is_empty() {
+        return Ok(());
     }
+
+    let old_name = cfg.accounts[choice].id.clone();
+    let account_type = &cfg.accounts[choice].account_type;
+
+    // Rename token files (Gmail / Calendar)
+    let old_token = store_path.join(format!("{old_name}-token.json"));
+    let new_token = store_path.join(format!("{new_name}-token.json"));
+    if old_token.exists() {
+        std::fs::rename(&old_token, &new_token)?;
+        eprintln!(
+            "  Renamed token: {} → {}",
+            old_token.display(),
+            new_token.display()
+        );
+    }
+
+    // Rename WhatsApp session DB
+    if account_type.to_string() == "whatsapp" {
+        let old_wa = store_path.join(format!("whatsapp-{old_name}.db"));
+        let new_wa = store_path.join(format!("whatsapp-{new_name}.db"));
+        if old_wa.exists() {
+            std::fs::rename(&old_wa, &new_wa)?;
+            eprintln!(
+                "  Renamed session: {} → {}",
+                old_wa.display(),
+                new_wa.display()
+            );
+        }
+    }
+
+    // Update DB references (sync_state, conversations, messages)
+    let db_path = cfg.db_path();
+    if db_path.exists() {
+        let db = void_core::db::Database::open(&db_path)?;
+        db.rename_account(&old_name, &new_name)?;
+        eprintln!("  Updated database references.");
+    }
+
+    cfg.accounts[choice].id = new_name;
     Ok(())
 }
 
