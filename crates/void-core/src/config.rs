@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_CONFIG_DIR: &str = ".config/void";
@@ -59,13 +60,67 @@ fn default_calendar_poll() -> u64 {
     60
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AccountConfig {
     pub id: String,
     #[serde(rename = "type")]
     pub account_type: AccountType,
     #[serde(flatten)]
     pub settings: AccountSettings,
+}
+
+/// Custom deserializer that uses the `type` field to drive which
+/// `AccountSettings` variant to parse, avoiding the ambiguity of
+/// `#[serde(untagged)]` (Gmail and Calendar share `credentials_file`).
+impl<'de> Deserialize<'de> for AccountConfig {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw: RawAccountConfig = RawAccountConfig::deserialize(deserializer)?;
+        let settings = match raw.account_type {
+            AccountType::Slack => AccountSettings::Slack {
+                app_token: raw
+                    .app_token
+                    .ok_or_else(|| serde::de::Error::missing_field("app_token"))?,
+                user_token: raw
+                    .user_token
+                    .ok_or_else(|| serde::de::Error::missing_field("user_token"))?,
+                exclude_channels: raw.exclude_channels.unwrap_or_default(),
+            },
+            AccountType::Gmail => AccountSettings::Gmail {
+                credentials_file: raw
+                    .credentials_file
+                    .ok_or_else(|| serde::de::Error::missing_field("credentials_file"))?,
+            },
+            AccountType::Calendar => AccountSettings::Calendar {
+                credentials_file: raw
+                    .credentials_file
+                    .ok_or_else(|| serde::de::Error::missing_field("credentials_file"))?,
+                calendar_ids: raw.calendar_ids.unwrap_or_default(),
+            },
+            AccountType::WhatsApp => AccountSettings::WhatsApp {},
+        };
+        Ok(AccountConfig {
+            id: raw.id,
+            account_type: raw.account_type,
+            settings,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct RawAccountConfig {
+    id: String,
+    #[serde(rename = "type")]
+    account_type: AccountType,
+    #[serde(default)]
+    app_token: Option<String>,
+    #[serde(default)]
+    user_token: Option<String>,
+    #[serde(default)]
+    exclude_channels: Option<Vec<String>>,
+    #[serde(default)]
+    credentials_file: Option<String>,
+    #[serde(default)]
+    calendar_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -376,6 +431,47 @@ calendar_ids = ["primary", "holidays"]
         assert_eq!(loaded.store.path, "~/test-store");
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn parse_calendar_not_confused_with_gmail() {
+        let toml = r#"
+[[accounts]]
+id = "my-calendar"
+type = "calendar"
+credentials_file = "~/.config/void/google-creds.json"
+calendar_ids = ["primary"]
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.accounts[0].account_type, AccountType::Calendar);
+        match &config.accounts[0].settings {
+            AccountSettings::Calendar {
+                credentials_file,
+                calendar_ids,
+            } => {
+                assert_eq!(credentials_file, "~/.config/void/google-creds.json");
+                assert_eq!(calendar_ids, &["primary"]);
+            }
+            other => panic!("expected Calendar settings, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_calendar_without_calendar_ids() {
+        let toml = r#"
+[[accounts]]
+id = "cal"
+type = "calendar"
+credentials_file = "creds.json"
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.accounts[0].account_type, AccountType::Calendar);
+        match &config.accounts[0].settings {
+            AccountSettings::Calendar { calendar_ids, .. } => {
+                assert!(calendar_ids.is_empty());
+            }
+            other => panic!("expected Calendar settings, got {other:?}"),
+        }
     }
 
     #[test]
