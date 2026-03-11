@@ -9,8 +9,9 @@ use void_core::db::Database;
 use void_core::models::*;
 
 use crate::api::{
-    AttendeeRequest, CalendarApiClient, ConferenceDataRequest, ConferenceSolutionKey,
-    CreateConferenceRequest, EventDateTimeRequest, GoogleCalendarEvent, InsertEventRequest,
+    AttendeeRequest, AttendeeResponseRequest, CalendarApiClient, ConferenceDataRequest,
+    ConferenceSolutionKey, CreateConferenceRequest, EventDateTimeRequest, GoogleCalendarEvent,
+    InsertEventRequest, UpdateEventRequest,
 };
 
 pub struct CalendarConnector {
@@ -163,6 +164,7 @@ impl CalendarConnector {
     pub async fn create_event(
         &self,
         title: &str,
+        description: Option<&str>,
         start: &str,
         end: &str,
         meet: bool,
@@ -202,7 +204,7 @@ impl CalendarConnector {
 
         let request = InsertEventRequest {
             summary: title.to_string(),
-            description: None,
+            description: description.map(|d| d.to_string()),
             start: EventDateTimeRequest {
                 date_time: start.to_string(),
                 time_zone: timezone.clone(),
@@ -234,7 +236,7 @@ impl CalendarConnector {
                 connector: "calendar".into(),
                 external_id: resp.id.clone().unwrap_or_default(),
                 title: title.to_string(),
-                description: None,
+                description: description.map(|d| d.to_string()),
                 location: None,
                 start_at: 0,
                 end_at: 0,
@@ -248,6 +250,189 @@ impl CalendarConnector {
 
         db.upsert_event(&cal_event)?;
         Ok(cal_event)
+    }
+
+    pub async fn update_event(
+        &self,
+        event_id: &str,
+        title: Option<&str>,
+        description: Option<&str>,
+        start: Option<&str>,
+        end: Option<&str>,
+        send_updates: Option<&str>,
+        db: &Database,
+    ) -> anyhow::Result<CalendarEvent> {
+        let api = self.get_client().await?;
+        let cal_id = self
+            .calendar_ids
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("primary");
+        info!(account_id = %self.account_id, event_id, "updating Calendar event");
+
+        let timezone = "UTC".to_string();
+        let update = UpdateEventRequest {
+            summary: title.map(|s| s.to_string()),
+            description: description.map(|s| s.to_string()),
+            location: None,
+            start: start.map(|s| EventDateTimeRequest {
+                date_time: s.to_string(),
+                time_zone: timezone.clone(),
+            }),
+            end: end.map(|s| EventDateTimeRequest {
+                date_time: s.to_string(),
+                time_zone: timezone,
+            }),
+            attendees: None,
+        };
+
+        let resp = api
+            .update_event(cal_id, event_id, &update, send_updates)
+            .await?;
+        let cal_event = map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| {
+            CalendarEvent {
+                id: format!("{}-{}", self.account_id, event_id),
+                account_id: self.account_id.clone(),
+                connector: "calendar".into(),
+                external_id: event_id.to_string(),
+                title: title.unwrap_or("(updated)").to_string(),
+                description: description.map(|s| s.to_string()),
+                location: None,
+                start_at: 0,
+                end_at: 0,
+                all_day: false,
+                attendees: None,
+                status: Some("confirmed".into()),
+                calendar_name: Some(cal_id.into()),
+                meet_link: None,
+                metadata: None,
+            }
+        });
+        db.upsert_event(&cal_event)?;
+        Ok(cal_event)
+    }
+
+    pub async fn delete_event(
+        &self,
+        event_id: &str,
+        send_updates: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let api = self.get_client().await?;
+        let cal_id = self
+            .calendar_ids
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("primary");
+        info!(account_id = %self.account_id, event_id, "deleting Calendar event");
+        api.delete_event(cal_id, event_id, send_updates).await
+    }
+
+    pub async fn respond_to_event(
+        &self,
+        event_id: &str,
+        email: &str,
+        status: &str,
+        comment: Option<&str>,
+        db: &Database,
+    ) -> anyhow::Result<CalendarEvent> {
+        let api = self.get_client().await?;
+        let cal_id = self
+            .calendar_ids
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("primary");
+        info!(account_id = %self.account_id, event_id, status, "responding to Calendar event");
+
+        let event = api.get_event(cal_id, event_id).await?;
+        let mut attendees_req: Vec<AttendeeResponseRequest> = event
+            .attendees
+            .as_ref()
+            .map(|atts| {
+                atts.iter()
+                    .map(|a| {
+                        let is_me = a.email.as_deref() == Some(email);
+                        AttendeeResponseRequest {
+                            email: a.email.clone().unwrap_or_default(),
+                            response_status: if is_me {
+                                Some(status.to_string())
+                            } else {
+                                a.response_status.clone()
+                            },
+                            comment: if is_me {
+                                comment.map(|c| c.to_string())
+                            } else {
+                                None
+                            },
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if !attendees_req.iter().any(|a| a.email == email) {
+            attendees_req.push(AttendeeResponseRequest {
+                email: email.to_string(),
+                response_status: Some(status.to_string()),
+                comment: comment.map(|c| c.to_string()),
+            });
+        }
+
+        let update = UpdateEventRequest {
+            attendees: Some(attendees_req),
+            ..Default::default()
+        };
+
+        let resp = api
+            .update_event(cal_id, event_id, &update, Some("all"))
+            .await?;
+        let cal_event = map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| {
+            CalendarEvent {
+                id: format!("{}-{}", self.account_id, event_id),
+                account_id: self.account_id.clone(),
+                connector: "calendar".into(),
+                external_id: event_id.to_string(),
+                title: event.summary.unwrap_or_default(),
+                description: None,
+                location: None,
+                start_at: 0,
+                end_at: 0,
+                all_day: false,
+                attendees: None,
+                status: Some("confirmed".into()),
+                calendar_name: Some(cal_id.into()),
+                meet_link: None,
+                metadata: None,
+            }
+        });
+        db.upsert_event(&cal_event)?;
+        Ok(cal_event)
+    }
+
+    pub async fn search_events(
+        &self,
+        query: &str,
+        time_min: Option<&str>,
+        time_max: Option<&str>,
+        db: &Database,
+    ) -> anyhow::Result<Vec<CalendarEvent>> {
+        let api = self.get_client().await?;
+        let mut results = Vec::new();
+
+        for cal_id in &self.calendar_ids {
+            let resp = api
+                .search_events(cal_id, query, time_min, time_max)
+                .await?;
+            if let Some(events) = &resp.items {
+                for event in events {
+                    if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
+                        db.upsert_event(&cal_event)?;
+                        results.push(cal_event);
+                    }
+                }
+            }
+        }
+
+        Ok(results)
     }
 }
 
