@@ -57,46 +57,302 @@ fn separator() {
 // ── Main entry point ────────────────────────────────────────────────────────
 
 pub async fn run() -> anyhow::Result<()> {
-    eprintln!("╔══════════════════════════════════════════════╗");
-    eprintln!("║            Void — Setup Wizard               ║");
-    eprintln!("╚══════════════════════════════════════════════╝");
-    eprintln!();
-    eprintln!("This wizard will guide you through connecting your");
-    eprintln!("communication channels (Gmail, Slack, WhatsApp,");
-    eprintln!("Google Calendar) to Void.");
-    eprintln!();
-    eprintln!("You can run this wizard again at any time with `void setup`.");
-
     let config_path = config::default_config_path();
+
+    // If no config exists, create default and enter menu
+    if !config_path.exists() {
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&config_path, config::default_config())?;
+        eprintln!("Created default config at {}", config_path.display());
+        eprintln!();
+    }
+
     let mut cfg = VoidConfig::load_or_default(&config_path);
     let store_path = cfg.store_path();
     std::fs::create_dir_all(&store_path)?;
 
-    if !cfg.accounts.is_empty() {
+    loop {
+        show_menu_header(&cfg);
+
+        let options = if cfg.accounts.is_empty() {
+            vec![
+                "Run full setup wizard",
+                "Add a connector account",
+                "Show configuration",
+                "Edit config file",
+                "Done",
+            ]
+        } else {
+            vec![
+                "Add a connector account",
+                "Remove an account",
+                "Rename an account",
+                "Re-authenticate an account",
+                "Show configuration",
+                "Edit config file",
+                "Run full setup wizard",
+                "Done",
+            ]
+        };
+
+        if cfg.accounts.is_empty() {
+            eprintln!("No accounts configured yet. Run the full setup wizard to get started.");
+            eprintln!();
+        }
+
+        let choice = select("What would you like to do?", &options);
+
+        let action_idx = if cfg.accounts.is_empty() {
+            match choice {
+                0 => 7, // Wizard
+                1 => 1, // Add
+                2 => 5, // Show
+                3 => 6, // Edit
+                4 => 8, // Done
+                _ => continue,
+            }
+        } else {
+            choice + 1
+        };
+
+        match action_idx {
+            1 => {
+                add_connector_account(&mut cfg, &store_path).await?;
+                cfg.save(&config_path)?;
+                eprintln!("\nConfiguration saved.");
+            }
+            2 => {
+                remove_account(&mut cfg)?;
+                cfg.save(&config_path)?;
+                eprintln!("\nAccount removed. Configuration saved.");
+            }
+            3 => {
+                rename_account(&mut cfg)?;
+                cfg.save(&config_path)?;
+                eprintln!("\nAccount renamed. Configuration saved.");
+            }
+            4 => {
+                reauthenticate_account(&cfg, &store_path).await?;
+            }
+            5 => {
+                show_configuration(&config_path, &cfg);
+            }
+            6 => {
+                edit_config_file(&config_path)?;
+                // Reload config after edit
+                cfg = VoidConfig::load_or_default(&config_path);
+            }
+            7 => {
+                run_full_wizard(&mut cfg, &store_path, &config_path).await?;
+                // Wizard saves and may prompt for sync; loop continues
+            }
+            8 => {
+                return exit_setup(&cfg).await;
+            }
+            _ => {}
+        }
+
         eprintln!();
+    }
+}
+
+fn show_menu_header(cfg: &VoidConfig) {
+    eprintln!("╔══════════════════════════════════════════════╗");
+    eprintln!("║              Void — Setup                    ║");
+    eprintln!("╚══════════════════════════════════════════════╝");
+    eprintln!();
+
+    if cfg.accounts.is_empty() {
+        eprintln!("Current accounts: (none)");
+    } else {
         eprintln!("Current accounts:");
         for acc in &cfg.accounts {
             eprintln!("  • {} ({})", acc.id, acc.account_type);
         }
     }
-
-    separator();
-    setup_gmail(&mut cfg, &store_path).await?;
-    separator();
-    setup_slack(&mut cfg, &store_path).await?;
-    separator();
-    setup_whatsapp(&mut cfg, &store_path).await?;
-    separator();
-    setup_calendar(&mut cfg, &store_path).await?;
-    separator();
-
-    cfg.save(&config_path)?;
-    eprintln!("Configuration saved to {}", config_path.display());
-
     eprintln!();
+}
+
+async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+    let choice = select(
+        "Which connector type?",
+        &["Gmail", "Slack", "WhatsApp", "Google Calendar"],
+    );
+
+    separator();
+    match choice {
+        0 => setup_gmail(cfg, store_path, true).await?,
+        1 => setup_slack(cfg, store_path, true).await?,
+        2 => setup_whatsapp(cfg, store_path, true).await?,
+        3 => setup_calendar(cfg, store_path, true).await?,
+        _ => {}
+    }
+    Ok(())
+}
+
+fn remove_account(cfg: &mut VoidConfig) -> anyhow::Result<()> {
+    if cfg.accounts.is_empty() {
+        eprintln!("No accounts to remove.");
+        return Ok(());
+    }
+
+    let options: Vec<String> = cfg
+        .accounts
+        .iter()
+        .map(|a| format!("{} ({})", a.id, a.account_type))
+        .collect();
+    let options_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+
+    let choice = select("Which account would you like to remove?", &options_refs);
+    cfg.accounts.remove(choice);
+    Ok(())
+}
+
+fn rename_account(cfg: &mut VoidConfig) -> anyhow::Result<()> {
+    if cfg.accounts.is_empty() {
+        eprintln!("No accounts to rename.");
+        return Ok(());
+    }
+
+    let options: Vec<String> = cfg
+        .accounts
+        .iter()
+        .map(|a| format!("{} ({})", a.id, a.account_type))
+        .collect();
+    let options_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+
+    let choice = select("Which account would you like to rename?", &options_refs);
+    let new_name = prompt("New account name: ");
+    if !new_name.is_empty() {
+        cfg.accounts[choice].id = new_name;
+    }
+    Ok(())
+}
+
+async fn reauthenticate_account(cfg: &VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+    if cfg.accounts.is_empty() {
+        eprintln!("No accounts to re-authenticate.");
+        return Ok(());
+    }
+
+    let options: Vec<String> = cfg
+        .accounts
+        .iter()
+        .map(|a| format!("{} ({})", a.id, a.account_type))
+        .collect();
+    let options_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+
+    let choice = select(
+        "Which account would you like to re-authenticate?",
+        &options_refs,
+    );
+    let account = &cfg.accounts[choice];
+
+    match authenticate_account(account, store_path).await {
+        Ok(()) => eprintln!("  ✓ Re-authentication successful."),
+        Err(e) => eprintln!("  ✗ Re-authentication failed: {e}"),
+    }
+    Ok(())
+}
+
+fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
+    eprintln!("Config file: {}", config_path.display());
+    eprintln!("Store path:  {}", cfg.store_path().display());
+    eprintln!();
+
+    eprintln!("[sync]");
+    eprintln!(
+        "  gmail_poll_interval_secs    = {}",
+        cfg.sync.gmail_poll_interval_secs
+    );
+    eprintln!(
+        "  calendar_poll_interval_secs = {}",
+        cfg.sync.calendar_poll_interval_secs
+    );
+    eprintln!();
+
+    if cfg.accounts.is_empty() {
+        eprintln!("No accounts configured.");
+    } else {
+        eprintln!("Accounts ({}):", cfg.accounts.len());
+        for acc in &cfg.accounts {
+            eprintln!("  - {} ({})", acc.id, acc.account_type);
+            match &acc.settings {
+                config::AccountSettings::Slack {
+                    app_token,
+                    user_token,
+                    exclude_channels,
+                } => {
+                    eprintln!("    app_token:  {}", config::redact_token(app_token));
+                    eprintln!("    user_token: {}", config::redact_token(user_token));
+                    if !exclude_channels.is_empty() {
+                        eprintln!("    exclude:    {}", exclude_channels.join(", "));
+                    }
+                }
+                config::AccountSettings::Gmail { credentials_file } => {
+                    eprintln!("    credentials: {credentials_file}");
+                }
+                config::AccountSettings::Calendar {
+                    credentials_file,
+                    calendar_ids,
+                } => {
+                    eprintln!("    credentials:  {credentials_file}");
+                    eprintln!("    calendar_ids: {calendar_ids:?}");
+                }
+                config::AccountSettings::WhatsApp {} => {}
+            }
+        }
+    }
+}
+
+fn edit_config_file(config_path: &Path) -> anyhow::Result<()> {
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".into());
+    let status = std::process::Command::new(&editor)
+        .arg(config_path)
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("{editor} exited with status {status}");
+    }
+    Ok(())
+}
+
+async fn run_full_wizard(
+    cfg: &mut VoidConfig,
+    store_path: &Path,
+    config_path: &Path,
+) -> anyhow::Result<()> {
+    eprintln!();
+    eprintln!("This wizard will guide you through connecting your");
+    eprintln!("communication channels (Gmail, Slack, WhatsApp,");
+    eprintln!("Google Calendar) to Void.");
+    eprintln!();
+
+    separator();
+    setup_gmail(cfg, store_path, false).await?;
+    separator();
+    setup_slack(cfg, store_path, false).await?;
+    separator();
+    setup_whatsapp(cfg, store_path, false).await?;
+    separator();
+    setup_calendar(cfg, store_path, false).await?;
+    separator();
+
+    cfg.save(config_path)?;
+    eprintln!("Configuration saved to {}", config_path.display());
+    Ok(())
+}
+
+async fn exit_setup(cfg: &VoidConfig) -> anyhow::Result<()> {
+    eprintln!("Setup complete.");
+
     if cfg.accounts.is_empty() {
         eprintln!("No connectors configured. Run `void setup` again when ready.");
     } else {
+        eprintln!();
         eprintln!("Configured accounts:");
         for acc in &cfg.accounts {
             eprintln!("  • {} ({})", acc.id, acc.account_type);
@@ -109,6 +365,7 @@ pub async fn run() -> anyhow::Result<()> {
                 daemon: true,
                 restart: false,
                 clear: false,
+                stop: false,
             };
             super::sync::daemonize(&args, false)?;
         } else {
@@ -118,34 +375,39 @@ pub async fn run() -> anyhow::Result<()> {
     }
 
     eprintln!();
-    eprintln!("Setup complete.");
     Ok(())
 }
 
 // ── Gmail ───────────────────────────────────────────────────────────────────
 
-async fn setup_gmail(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+async fn setup_gmail(
+    cfg: &mut VoidConfig,
+    store_path: &Path,
+    add_only: bool,
+) -> anyhow::Result<()> {
     eprintln!("📧  GMAIL");
     eprintln!();
     eprintln!("Connects your Gmail inbox. Void syncs your recent emails and");
     eprintln!("lets you search, read, reply, and archive from the CLI.");
 
-    let existing: Vec<usize> = cfg
-        .accounts
-        .iter()
-        .enumerate()
-        .filter(|(_, a)| a.account_type == AccountType::Gmail)
-        .map(|(i, _)| i)
-        .collect();
+    if !add_only {
+        let existing: Vec<usize> = cfg
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.account_type == AccountType::Gmail)
+            .map(|(i, _)| i)
+            .collect();
 
-    let action = pick_connector_action("Gmail", &existing, cfg);
-    match action {
-        ConnectorAction::Skip => return Ok(()),
-        ConnectorAction::Keep => return Ok(()),
-        ConnectorAction::Replace(idx) => {
-            cfg.accounts.remove(idx);
+        let action = pick_connector_action("Gmail", &existing, cfg);
+        match action {
+            ConnectorAction::Skip => return Ok(()),
+            ConnectorAction::Keep => return Ok(()),
+            ConnectorAction::Replace(idx) => {
+                cfg.accounts.remove(idx);
+            }
+            ConnectorAction::Add => {}
         }
-        ConnectorAction::Add => {}
     }
 
     eprintln!();
@@ -193,11 +455,11 @@ async fn setup_gmail(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<
             Ok(()) => eprintln!("  ✓ Gmail authenticated successfully."),
             Err(e) => {
                 eprintln!("  ✗ Authentication failed: {e}");
-                eprintln!("    You can retry later with: void auth gmail {account_id}");
+                eprintln!("    You can retry later with: void setup");
             }
         }
     } else {
-        eprintln!("  You can authenticate later with: void auth gmail {account_id}");
+        eprintln!("  You can authenticate later with: void setup");
     }
 
     cfg.accounts.push(account);
@@ -206,28 +468,34 @@ async fn setup_gmail(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<
 
 // ── Slack ───────────────────────────────────────────────────────────────────
 
-async fn setup_slack(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+async fn setup_slack(
+    cfg: &mut VoidConfig,
+    store_path: &Path,
+    add_only: bool,
+) -> anyhow::Result<()> {
     eprintln!("💬  SLACK");
     eprintln!();
     eprintln!("Connects a Slack workspace. Void syncs your channels, DMs,");
     eprintln!("and lets you search and reply from the CLI.");
 
-    let existing: Vec<usize> = cfg
-        .accounts
-        .iter()
-        .enumerate()
-        .filter(|(_, a)| a.account_type == AccountType::Slack)
-        .map(|(i, _)| i)
-        .collect();
+    if !add_only {
+        let existing: Vec<usize> = cfg
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.account_type == AccountType::Slack)
+            .map(|(i, _)| i)
+            .collect();
 
-    let action = pick_connector_action("Slack", &existing, cfg);
-    match action {
-        ConnectorAction::Skip => return Ok(()),
-        ConnectorAction::Keep => return Ok(()),
-        ConnectorAction::Replace(idx) => {
-            cfg.accounts.remove(idx);
+        let action = pick_connector_action("Slack", &existing, cfg);
+        match action {
+            ConnectorAction::Skip => return Ok(()),
+            ConnectorAction::Keep => return Ok(()),
+            ConnectorAction::Replace(idx) => {
+                cfg.accounts.remove(idx);
+            }
+            ConnectorAction::Add => {}
         }
-        ConnectorAction::Add => {}
     }
 
     eprintln!();
@@ -276,11 +544,11 @@ async fn setup_slack(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<
             Ok(()) => eprintln!("  ✓ Slack tokens verified successfully."),
             Err(e) => {
                 eprintln!("  ✗ Verification failed: {e}");
-                eprintln!("    Check your tokens and retry with: void auth slack {account_id}");
+                eprintln!("    Check your tokens and retry with: void setup");
             }
         }
     } else {
-        eprintln!("  You can verify later with: void auth slack {account_id}");
+        eprintln!("  You can verify later with: void setup");
     }
 
     cfg.accounts.push(account);
@@ -289,28 +557,34 @@ async fn setup_slack(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<
 
 // ── WhatsApp ────────────────────────────────────────────────────────────────
 
-async fn setup_whatsapp(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+async fn setup_whatsapp(
+    cfg: &mut VoidConfig,
+    store_path: &Path,
+    add_only: bool,
+) -> anyhow::Result<()> {
     eprintln!("📱  WHATSAPP");
     eprintln!();
     eprintln!("Connects your WhatsApp account via QR code (like WhatsApp Web).");
     eprintln!("No credentials or API keys needed.");
 
-    let existing: Vec<usize> = cfg
-        .accounts
-        .iter()
-        .enumerate()
-        .filter(|(_, a)| a.account_type == AccountType::WhatsApp)
-        .map(|(i, _)| i)
-        .collect();
+    if !add_only {
+        let existing: Vec<usize> = cfg
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.account_type == AccountType::WhatsApp)
+            .map(|(i, _)| i)
+            .collect();
 
-    let action = pick_connector_action("WhatsApp", &existing, cfg);
-    match action {
-        ConnectorAction::Skip => return Ok(()),
-        ConnectorAction::Keep => return Ok(()),
-        ConnectorAction::Replace(idx) => {
-            cfg.accounts.remove(idx);
+        let action = pick_connector_action("WhatsApp", &existing, cfg);
+        match action {
+            ConnectorAction::Skip => return Ok(()),
+            ConnectorAction::Keep => return Ok(()),
+            ConnectorAction::Replace(idx) => {
+                cfg.accounts.remove(idx);
+            }
+            ConnectorAction::Add => {}
         }
-        ConnectorAction::Add => {}
     }
 
     let account_id = prompt_default("\nAccount name", "whatsapp");
@@ -333,11 +607,11 @@ async fn setup_whatsapp(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Resu
             Ok(()) => eprintln!("  ✓ WhatsApp paired successfully."),
             Err(e) => {
                 eprintln!("  ✗ Pairing failed: {e}");
-                eprintln!("    You can retry later with: void auth whatsapp {account_id}");
+                eprintln!("    You can retry later with: void setup");
             }
         }
     } else {
-        eprintln!("  You can pair later with: void auth whatsapp {account_id}");
+        eprintln!("  You can pair later with: void setup");
     }
 
     cfg.accounts.push(account);
@@ -346,28 +620,34 @@ async fn setup_whatsapp(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Resu
 
 // ── Google Calendar ─────────────────────────────────────────────────────────
 
-async fn setup_calendar(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+async fn setup_calendar(
+    cfg: &mut VoidConfig,
+    store_path: &Path,
+    add_only: bool,
+) -> anyhow::Result<()> {
     eprintln!("📅  GOOGLE CALENDAR");
     eprintln!();
     eprintln!("Syncs your Google Calendar events. Lets you view today's agenda,");
     eprintln!("this week's schedule, and upcoming events from the CLI.");
 
-    let existing: Vec<usize> = cfg
-        .accounts
-        .iter()
-        .enumerate()
-        .filter(|(_, a)| a.account_type == AccountType::Calendar)
-        .map(|(i, _)| i)
-        .collect();
+    if !add_only {
+        let existing: Vec<usize> = cfg
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.account_type == AccountType::Calendar)
+            .map(|(i, _)| i)
+            .collect();
 
-    let action = pick_connector_action("Google Calendar", &existing, cfg);
-    match action {
-        ConnectorAction::Skip => return Ok(()),
-        ConnectorAction::Keep => return Ok(()),
-        ConnectorAction::Replace(idx) => {
-            cfg.accounts.remove(idx);
+        let action = pick_connector_action("Google Calendar", &existing, cfg);
+        match action {
+            ConnectorAction::Skip => return Ok(()),
+            ConnectorAction::Keep => return Ok(()),
+            ConnectorAction::Replace(idx) => {
+                cfg.accounts.remove(idx);
+            }
+            ConnectorAction::Add => {}
         }
-        ConnectorAction::Add => {}
     }
 
     eprintln!();
@@ -454,11 +734,11 @@ async fn setup_calendar(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Resu
             Ok(()) => eprintln!("  ✓ Calendar authenticated successfully."),
             Err(e) => {
                 eprintln!("  ✗ Authentication failed: {e}");
-                eprintln!("    You can retry later with: void auth calendar {account_id}");
+                eprintln!("    You can retry later with: void setup");
             }
         }
     } else {
-        eprintln!("  You can authenticate later with: void auth calendar {account_id}");
+        eprintln!("  You can authenticate later with: void setup");
     }
 
     cfg.accounts.push(account);
@@ -534,8 +814,8 @@ fn pick_connector_action(
 }
 
 async fn authenticate_account(account: &AccountConfig, store_path: &Path) -> anyhow::Result<()> {
-    let mut channel = connector_factory::build_connector(account, store_path)?;
-    let channel_mut = Arc::get_mut(&mut channel)
-        .ok_or_else(|| anyhow::anyhow!("internal error: could not get mutable channel ref"))?;
-    channel_mut.authenticate().await
+    let mut conn = connector_factory::build_connector(account, store_path)?;
+    let conn_mut = Arc::get_mut(&mut conn)
+        .ok_or_else(|| anyhow::anyhow!("internal error: could not get mutable connector ref"))?;
+    conn_mut.authenticate().await
 }

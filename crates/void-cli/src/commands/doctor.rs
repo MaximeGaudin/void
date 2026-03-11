@@ -9,7 +9,7 @@ pub fn run() -> anyhow::Result<()> {
         eprintln!("[OK] Config file: {}", config_path.display());
     } else {
         eprintln!("[!!] No config file found at {}", config_path.display());
-        eprintln!("     Run `void config init` to create one.");
+        eprintln!("     Run `void setup` to create one.");
         return Ok(());
     }
 

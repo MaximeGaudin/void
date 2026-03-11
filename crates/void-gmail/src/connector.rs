@@ -59,10 +59,7 @@ impl GmailConnector {
                 cache = auth::refresh_access_token(&http, &creds, refresh_token).await?;
                 cache.save(&token_path)?;
             } else {
-                anyhow::bail!(
-                    "token expired and no refresh token available. Run `void auth gmail {}`",
-                    self.config_id
-                );
+                anyhow::bail!("token expired and no refresh token available. Run `void setup`");
             }
         } else {
             debug!(config_id = %self.config_id, "token fresh, reusing");

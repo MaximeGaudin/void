@@ -24,7 +24,7 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
     info!(message_id = %args.message_id, "reply");
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void config init` first."))?;
+        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 
     let db = Database::open(&cfg.db_path())?;
 

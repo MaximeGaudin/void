@@ -1,9 +1,6 @@
-pub mod accounts;
 pub mod archive;
-pub mod auth;
 pub mod calendar;
 pub mod channels;
-pub mod config;
 pub mod connector_factory;
 pub mod contacts;
 pub mod doctor;

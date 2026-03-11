@@ -88,11 +88,11 @@ impl WhatsAppConnector {
                         }
                         Some(Event::PairError(e)) => {
                             error!(account_id = %self.config_id, error = ?e, "WhatsApp PairError");
-                            return Err(anyhow::anyhow!("Auth error: {:?}. Run `void auth whatsapp` first.", e));
+                            return Err(anyhow::anyhow!("Auth error: {:?}. Run `void setup` first.", e));
                         }
                         Some(Event::LoggedOut(_)) => {
                             error!(account_id = %self.config_id, "WhatsApp LoggedOut");
-                            return Err(anyhow::anyhow!("Session expired. Run `void auth whatsapp` to re-authenticate."));
+                            return Err(anyhow::anyhow!("Session expired. Run `void setup` to re-authenticate."));
                         }
                         None => {
                             error!(account_id = %self.config_id, "WhatsApp connection closed unexpectedly");

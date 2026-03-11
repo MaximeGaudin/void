@@ -24,6 +24,9 @@ pub struct SyncArgs {
     /// Clear the database before syncing (fresh start)
     #[arg(long)]
     pub clear: bool,
+    /// Stop the running sync daemon
+    #[arg(long)]
+    pub stop: bool,
 }
 
 /// Stop a running sync daemon by reading its PID from the lock file, sending
@@ -94,7 +97,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path).map_err(|e| {
         anyhow::anyhow!(
-            "Cannot load config from {}: {e}\nRun `void config init` first.",
+            "Cannot load config from {}: {e}\nRun `void setup` first.",
             config_path.display()
         )
     })?;
@@ -119,7 +122,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
         } else {
             let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
             anyhow::bail!(
-                "Sync daemon already running ({}).\nUse --restart to stop it and start a new one, or `void stop` to stop it.",
+                "Sync daemon already running ({}).\nUse --restart to stop it and start a new one, or `void sync --stop` to stop it.",
                 content.trim()
             );
         }
@@ -157,6 +160,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
             daemon: false,
             restart: false,
             clear,
+            stop: false,
         };
         if let Err(e) = run(&inner_args).await {
             tracing::error!("sync daemon error: {e}");
@@ -169,7 +173,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path).map_err(|e| {
         anyhow::anyhow!(
-            "Cannot load config from {}: {e}\nRun `void config init` first.",
+            "Cannot load config from {}: {e}\nRun `void setup` first.",
             config_path.display()
         )
     })?;

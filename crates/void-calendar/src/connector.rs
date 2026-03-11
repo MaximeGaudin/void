@@ -57,10 +57,7 @@ impl CalendarConnector {
                     void_gmail::auth::refresh_access_token(&http, &creds, refresh_token).await?;
                 cache.save(&token_path)?;
             } else {
-                anyhow::bail!(
-                    "token expired and no refresh token. Run `void auth calendar {}`",
-                    self.account_id
-                );
+                anyhow::bail!("token expired and no refresh token. Run `void setup`");
             }
         }
 

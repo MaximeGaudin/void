@@ -36,7 +36,7 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
 
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void config init` first."))?;
+        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 
     let target_type = connector_type.to_string();
     let account = cfg

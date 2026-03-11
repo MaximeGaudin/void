@@ -27,12 +27,8 @@ struct Cli {
 enum Command {
     /// Interactive setup wizard — configure all connectors
     Setup,
-    /// Authenticate a connector
-    Auth(commands::auth::AuthArgs),
     /// Start background sync
     Sync(commands::sync::SyncArgs),
-    /// Stop the running sync daemon
-    Stop,
     /// Check configuration and connectivity
     Doctor,
     /// Show recent messages across all connectors
@@ -41,7 +37,7 @@ enum Command {
     Conversations(commands::inbox::InboxArgs),
     /// Show messages in a conversation
     Messages(commands::messages::MessagesArgs),
-    /// List contacts across all channels
+    /// List contacts across all connectors
     Contacts(commands::contacts::ContactsArgs),
     /// List channels and groups (excluding DMs)
     Channels(commands::channels::ChannelsArgs),
@@ -57,10 +53,6 @@ enum Command {
     Archive(commands::archive::ArchiveArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
-    /// Manage accounts
-    Accounts(commands::accounts::AccountsArgs),
-    /// Configuration management
-    Config(commands::config::ConfigArgs),
     /// Install the void binary into your PATH
     Install(commands::install::InstallArgs),
 }
@@ -68,11 +60,10 @@ enum Command {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    if matches!(cli.command, Some(Command::Stop)) {
-        return commands::sync::stop_daemon();
-    }
-
     if let Some(Command::Sync(ref args)) = cli.command {
+        if args.stop {
+            return commands::sync::stop_daemon();
+        }
         if args.daemon {
             return commands::sync::daemonize(args, cli.verbose);
         }
@@ -94,9 +85,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
 
     match &cli.command {
         Some(Command::Setup) => commands::setup::run().await,
-        Some(Command::Auth(args)) => commands::auth::run(args).await,
         Some(Command::Sync(args)) => commands::sync::run(args).await,
-        Some(Command::Stop) => commands::sync::stop_daemon(),
         Some(Command::Doctor) => commands::doctor::run(),
         Some(Command::Inbox(args)) => commands::inbox::run(args, !cli.pretty),
         Some(Command::Conversations(args)) => commands::inbox::run_conversations(args, !cli.pretty),
@@ -109,8 +98,6 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Read(args)) => commands::read::run(args).await,
         Some(Command::Archive(args)) => commands::archive::run(args).await,
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty),
-        Some(Command::Accounts(args)) => commands::accounts::run(args),
-        Some(Command::Config(args)) => commands::config::run(args),
         Some(Command::Install(args)) => commands::install::run(args),
         None => {
             commands::status::run();

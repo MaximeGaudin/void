@@ -8,7 +8,7 @@ pub fn run() {
     let cfg = match VoidConfig::load(&config_path) {
         Ok(c) => c,
         Err(_) => {
-            eprintln!("No config found. Run `void config init` to get started.");
+            eprintln!("No config found. Run `void setup` to get started.");
             eprintln!("Then add accounts and run `void sync` to start syncing.\n");
             eprintln!("Usage: void <command> [options]");
             eprintln!("       void --help for all commands");
