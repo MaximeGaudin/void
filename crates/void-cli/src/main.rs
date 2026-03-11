@@ -47,9 +47,9 @@ enum Command {
     Send(commands::send::SendArgs),
     /// Reply to a message
     Reply(commands::reply::ReplyArgs),
-    /// Mark a message as read
+    /// Mark one or more messages as read
     Read(commands::read::ReadArgs),
-    /// Archive a message (e.g., remove from Gmail inbox)
+    /// Archive one or more messages (e.g., remove from Gmail inbox)
     Archive(commands::archive::ArchiveArgs),
     /// Gmail-specific operations (search, threads, drafts, labels, attachments)
     Gmail(commands::gmail::GmailArgs),
@@ -101,8 +101,8 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Search(args)) => commands::search::run(args, !cli.pretty),
         Some(Command::Send(args)) => commands::send::run(args).await,
         Some(Command::Reply(args)) => commands::reply::run(args).await,
-        Some(Command::Read(args)) => commands::read::run(args).await,
-        Some(Command::Archive(args)) => commands::archive::run(args).await,
+        Some(Command::Read(args)) => commands::read::run(args, !cli.pretty).await,
+        Some(Command::Archive(args)) => commands::archive::run(args, !cli.pretty).await,
         Some(Command::Gmail(args)) => commands::gmail::run(args, !cli.pretty).await,
         Some(Command::Slack(args)) => commands::slack::run(args, !cli.pretty).await,
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args, !cli.pretty).await,
