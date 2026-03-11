@@ -110,6 +110,7 @@ pub async fn run() -> anyhow::Result<()> {
                 channels: None,
                 daemon: true,
                 stop: false,
+                clear: false,
             };
             super::sync::daemonize(&args, false)?;
         } else {

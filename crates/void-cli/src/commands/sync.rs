@@ -21,6 +21,9 @@ pub struct SyncArgs {
     /// Stop a running sync daemon
     #[arg(long)]
     pub stop: bool,
+    /// Clear the database before syncing (fresh start)
+    #[arg(long)]
+    pub clear: bool,
 }
 
 /// Stop a running sync daemon by reading its PID from the lock file, sending
@@ -132,6 +135,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
     // We're now in the detached child process -- build a fresh tokio runtime
     let rt = tokio::runtime::Runtime::new()?;
     let channels_clone = args.channels.clone();
+    let clear = args.clear;
     rt.block_on(async move {
         let log_level = if verbose { "debug" } else { "info" };
         tracing_subscriber::fmt()
@@ -148,6 +152,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
             channels: channels_clone,
             daemon: false,
             stop: false,
+            clear,
         };
         if let Err(e) = run(&inner_args).await {
             tracing::error!("sync daemon error: {e}");
@@ -176,6 +181,15 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
 
     let store_path = cfg.store_path();
     std::fs::create_dir_all(&store_path)?;
+
+    if args.clear {
+        let db_path = cfg.db_path();
+        if db_path.exists() {
+            std::fs::remove_file(&db_path)?;
+            eprintln!("Database cleared: {}", db_path.display());
+            info!(path = %db_path.display(), "database cleared");
+        }
+    }
 
     let db = Arc::new(Database::open(&cfg.db_path())?);
     let mut channels: Vec<Arc<dyn void_core::channel::Channel>> = Vec::new();
