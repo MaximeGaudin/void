@@ -54,8 +54,20 @@ impl SyncEngine {
         let cancel_on_signal = cancel.clone();
         tokio::spawn(async move {
             wait_for_shutdown_signal().await;
+            eprintln!("\nShutting down gracefully... (press Ctrl+C again to force quit)");
             info!("received shutdown signal, shutting down...");
             cancel_on_signal.cancel();
+
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    eprintln!("\nForce exiting.");
+                    std::process::exit(1);
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+                    eprintln!("Graceful shutdown timed out, force exiting.");
+                    std::process::exit(1);
+                }
+            }
         });
 
         for handle in handles {
