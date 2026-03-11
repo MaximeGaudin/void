@@ -51,6 +51,8 @@ enum Command {
     Read(commands::read::ReadArgs),
     /// Archive a message (e.g., remove from Gmail inbox)
     Archive(commands::archive::ArchiveArgs),
+    /// Gmail-specific operations (search, threads, drafts, labels, attachments)
+    Gmail(commands::gmail::GmailArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
     /// Install the void binary into your PATH
@@ -97,6 +99,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Reply(args)) => commands::reply::run(args).await,
         Some(Command::Read(args)) => commands::read::run(args).await,
         Some(Command::Archive(args)) => commands::archive::run(args).await,
+        Some(Command::Gmail(args)) => commands::gmail::run(args, !cli.pretty).await,
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
         Some(Command::Install(args)) => commands::install::run(args),
         None => {

@@ -4,6 +4,7 @@ pub mod channels;
 pub mod connector_factory;
 pub mod contacts;
 pub mod doctor;
+pub mod gmail;
 pub mod inbox;
 pub mod install;
 pub mod messages;

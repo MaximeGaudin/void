@@ -250,7 +250,12 @@ impl GmailApiClient {
         add_labels: &[&str],
         remove_labels: &[&str],
     ) -> anyhow::Result<GmailThread> {
-        debug!(thread_id, ?add_labels, ?remove_labels, "gmail: modify_thread");
+        debug!(
+            thread_id,
+            ?add_labels,
+            ?remove_labels,
+            "gmail: modify_thread"
+        );
         let body = serde_json::json!({
             "addLabelIds": add_labels,
             "removeLabelIds": remove_labels,
@@ -280,7 +285,12 @@ impl GmailApiClient {
         add_labels: &[&str],
         remove_labels: &[&str],
     ) -> anyhow::Result<()> {
-        debug!(?message_ids, ?add_labels, ?remove_labels, "gmail: batch_modify");
+        debug!(
+            ?message_ids,
+            ?add_labels,
+            ?remove_labels,
+            "gmail: batch_modify"
+        );
         let body = serde_json::json!({
             "ids": message_ids,
             "addLabelIds": add_labels,
@@ -368,11 +378,7 @@ impl GmailApiClient {
         Ok(resp)
     }
 
-    pub async fn update_draft(
-        &self,
-        draft_id: &str,
-        raw: &str,
-    ) -> anyhow::Result<GmailDraft> {
+    pub async fn update_draft(&self, draft_id: &str, raw: &str) -> anyhow::Result<GmailDraft> {
         debug!(draft_id, "gmail: update_draft");
         let body = serde_json::json!({
             "message": { "raw": raw }
