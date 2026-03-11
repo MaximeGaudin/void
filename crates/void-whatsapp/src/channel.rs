@@ -387,6 +387,7 @@ fn handle_message(
 
     let body = extract_text(msg);
     let media_type = extract_media_type(msg);
+    let media_metadata = extract_media_metadata(msg);
 
     if body.is_none() && media_type.is_none() {
         debug!(msg_id = %info.id, "skipping message with no extractable content");
@@ -413,7 +414,7 @@ fn handle_message(
         is_archived: false,
         reply_to_id: extract_quoted_id(msg),
         media_type,
-        metadata: None,
+        metadata: media_metadata,
     };
     db.upsert_message(&message)?;
 
@@ -579,8 +580,13 @@ fn extract_text(msg: &WaMessage) -> Option<String> {
     if base.video_message.is_some() {
         return Some("🎬 Video".to_string());
     }
-    if base.document_message.is_some() {
-        return Some("📄 Document".to_string());
+    if let Some(ref doc) = base.document_message {
+        let name = doc
+            .file_name
+            .as_deref()
+            .or(doc.title.as_deref())
+            .unwrap_or("Document");
+        return Some(format!("📄 {name}"));
     }
 
     None
@@ -626,6 +632,106 @@ fn extract_media_type(msg: &WaMessage) -> Option<String> {
     if base.event_message.is_some() {
         return Some("event".into());
     }
+    None
+}
+
+fn extract_media_metadata(msg: &WaMessage) -> Option<serde_json::Value> {
+    let base = msg.get_base_message();
+
+    if let Some(ref doc) = base.document_message {
+        let mut meta = serde_json::Map::new();
+        if let Some(ref name) = doc.file_name {
+            meta.insert("file_name".into(), serde_json::json!(name));
+        }
+        if let Some(ref mime) = doc.mimetype {
+            meta.insert("mimetype".into(), serde_json::json!(mime));
+        }
+        if let Some(size) = doc.file_length {
+            meta.insert("file_size".into(), serde_json::json!(size));
+        }
+        if let Some(ref title) = doc.title {
+            meta.insert("title".into(), serde_json::json!(title));
+        }
+        if let Some(pages) = doc.page_count {
+            meta.insert("page_count".into(), serde_json::json!(pages));
+        }
+        if let Some(ref path) = doc.direct_path {
+            meta.insert("direct_path".into(), serde_json::json!(path));
+        }
+        if !meta.is_empty() {
+            return Some(serde_json::Value::Object(meta));
+        }
+    }
+
+    if let Some(ref img) = base.image_message {
+        let mut meta = serde_json::Map::new();
+        if let Some(ref mime) = img.mimetype {
+            meta.insert("mimetype".into(), serde_json::json!(mime));
+        }
+        if let Some(size) = img.file_length {
+            meta.insert("file_size".into(), serde_json::json!(size));
+        }
+        if let Some(w) = img.width {
+            meta.insert("width".into(), serde_json::json!(w));
+        }
+        if let Some(h) = img.height {
+            meta.insert("height".into(), serde_json::json!(h));
+        }
+        if let Some(ref path) = img.direct_path {
+            meta.insert("direct_path".into(), serde_json::json!(path));
+        }
+        if !meta.is_empty() {
+            return Some(serde_json::Value::Object(meta));
+        }
+    }
+
+    if let Some(ref vid) = base.video_message {
+        let mut meta = serde_json::Map::new();
+        if let Some(ref mime) = vid.mimetype {
+            meta.insert("mimetype".into(), serde_json::json!(mime));
+        }
+        if let Some(size) = vid.file_length {
+            meta.insert("file_size".into(), serde_json::json!(size));
+        }
+        if let Some(secs) = vid.seconds {
+            meta.insert("duration_secs".into(), serde_json::json!(secs));
+        }
+        if let Some(w) = vid.width {
+            meta.insert("width".into(), serde_json::json!(w));
+        }
+        if let Some(h) = vid.height {
+            meta.insert("height".into(), serde_json::json!(h));
+        }
+        if let Some(ref path) = vid.direct_path {
+            meta.insert("direct_path".into(), serde_json::json!(path));
+        }
+        if !meta.is_empty() {
+            return Some(serde_json::Value::Object(meta));
+        }
+    }
+
+    if let Some(ref aud) = base.audio_message {
+        let mut meta = serde_json::Map::new();
+        if let Some(ref mime) = aud.mimetype {
+            meta.insert("mimetype".into(), serde_json::json!(mime));
+        }
+        if let Some(size) = aud.file_length {
+            meta.insert("file_size".into(), serde_json::json!(size));
+        }
+        if let Some(secs) = aud.seconds {
+            meta.insert("duration_secs".into(), serde_json::json!(secs));
+        }
+        if let Some(ptt) = aud.ptt {
+            meta.insert("voice_note".into(), serde_json::json!(ptt));
+        }
+        if let Some(ref path) = aud.direct_path {
+            meta.insert("direct_path".into(), serde_json::json!(path));
+        }
+        if !meta.is_empty() {
+            return Some(serde_json::Value::Object(meta));
+        }
+    }
+
     None
 }
 
@@ -1034,6 +1140,68 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(extract_text(&msg), Some("📄 Document".into()));
+    }
+
+    #[test]
+    fn extract_text_document_with_filename() {
+        use wa_rs_proto::whatsapp::message::DocumentMessage;
+        let msg = WaMessage {
+            document_message: Some(Box::new(DocumentMessage {
+                file_name: Some("report.pdf".into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert_eq!(extract_text(&msg), Some("📄 report.pdf".into()));
+    }
+
+    #[test]
+    fn extract_media_metadata_document() {
+        use wa_rs_proto::whatsapp::message::DocumentMessage;
+        let msg = WaMessage {
+            document_message: Some(Box::new(DocumentMessage {
+                file_name: Some("report.pdf".into()),
+                mimetype: Some("application/pdf".into()),
+                file_length: Some(102400),
+                page_count: Some(5),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let meta = extract_media_metadata(&msg).unwrap();
+        assert_eq!(meta["file_name"], "report.pdf");
+        assert_eq!(meta["mimetype"], "application/pdf");
+        assert_eq!(meta["file_size"], 102400);
+        assert_eq!(meta["page_count"], 5);
+    }
+
+    #[test]
+    fn extract_media_metadata_image() {
+        use wa_rs_proto::whatsapp::message::ImageMessage;
+        let msg = WaMessage {
+            image_message: Some(Box::new(ImageMessage {
+                mimetype: Some("image/jpeg".into()),
+                file_length: Some(50000),
+                width: Some(1920),
+                height: Some(1080),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let meta = extract_media_metadata(&msg).unwrap();
+        assert_eq!(meta["mimetype"], "image/jpeg");
+        assert_eq!(meta["file_size"], 50000);
+        assert_eq!(meta["width"], 1920);
+        assert_eq!(meta["height"], 1080);
+    }
+
+    #[test]
+    fn extract_media_metadata_none_for_text() {
+        let msg = WaMessage {
+            conversation: Some("just text".into()),
+            ..Default::default()
+        };
+        assert!(extract_media_metadata(&msg).is_none());
     }
 
     #[test]
