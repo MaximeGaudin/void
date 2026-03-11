@@ -12,17 +12,25 @@ pub struct SearchArgs {
     /// Filter by account (partial match on account_id)
     #[arg(long)]
     pub account: Option<String>,
+    /// Filter by connector (slack, gmail, whatsapp, calendar)
+    #[arg(long)]
+    pub connector: Option<String>,
     /// Maximum results
     #[arg(long, default_value = "50")]
     pub limit: i64,
 }
 
 pub fn run(args: &SearchArgs, json: bool) -> anyhow::Result<()> {
-    debug!(query = %args.query, "search");
+    debug!(query = %args.query, account = ?args.account, connector = ?args.connector, "search");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
 
-    let messages = db.search_messages(&args.query, args.limit)?;
+    let messages = db.search_messages(
+        &args.query,
+        args.account.as_deref(),
+        args.connector.as_deref(),
+        args.limit,
+    )?;
     formatter.print_messages(&messages)
 }

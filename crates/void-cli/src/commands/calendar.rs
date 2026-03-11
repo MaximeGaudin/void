@@ -19,6 +19,9 @@ pub struct CalendarArgs {
     /// Filter by calendar account
     #[arg(long)]
     pub account: Option<String>,
+    /// Filter by connector (slack, gmail, whatsapp, calendar)
+    #[arg(long)]
+    pub connector: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -95,7 +98,13 @@ fn run_list(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
         )
     });
 
-    let events = db.list_events(from, to, 200)?;
+    let events = db.list_events(
+        from,
+        to,
+        args.account.as_deref(),
+        args.connector.as_deref(),
+        200,
+    )?;
     formatter.print_events(&events)
 }
 
@@ -116,7 +125,7 @@ fn run_week(json: bool) -> anyhow::Result<()> {
         .and_hms_opt(0, 0, 0)
         .map(|dt| dt.and_utc().timestamp());
 
-    let events = db.list_events(from, to, 200)?;
+    let events = db.list_events(from, to, None, None, 200)?;
     formatter.print_events(&events)
 }
 

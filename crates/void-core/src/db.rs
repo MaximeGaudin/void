@@ -249,26 +249,37 @@ impl Database {
     pub fn list_conversations(
         &self,
         account_filter: Option<&str>,
+        connector_filter: Option<&str>,
         limit: i64,
     ) -> anyhow::Result<Vec<Conversation>> {
-        let conn = self.conn();
+        let mut sql = String::from(
+            "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata
+             FROM conversations WHERE 1=1",
+        );
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
-            let mut stmt = conn.prepare(
-                "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata
-                 FROM conversations WHERE account_id LIKE ?1
-                 ORDER BY last_message_at DESC NULLS LAST LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![pattern, limit], row_to_conversation)?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-        } else {
-            let mut stmt = conn.prepare(
-                "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, metadata
-                 FROM conversations ORDER BY last_message_at DESC NULLS LAST LIMIT ?1",
-            )?;
-            let rows = stmt.query_map(params![limit], row_to_conversation)?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            param_values.push(Box::new(pattern));
         }
+        if let Some(conn_type) = connector_filter {
+            sql.push_str(&format!(" AND connector = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(conn_type.to_string()));
+        }
+
+        sql.push_str(&format!(
+            " ORDER BY last_message_at DESC NULLS LAST LIMIT ?{}",
+            param_values.len() + 1
+        ));
+        param_values.push(Box::new(limit));
+
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&sql)?;
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(params_ref.as_slice(), row_to_conversation)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn get_conversation(&self, id: &str) -> anyhow::Result<Option<Conversation>> {
@@ -370,17 +381,43 @@ impl Database {
             .map_err(Into::into)
     }
 
-    pub fn search_messages(&self, query: &str, limit: i64) -> anyhow::Result<Vec<Message>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
+    pub fn search_messages(
+        &self,
+        query: &str,
+        account_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        limit: i64,
+    ) -> anyhow::Result<Vec<Message>> {
+        let mut sql = String::from(
             "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_from_me, m.is_read, m.is_archived, m.reply_to_id, m.media_type, m.metadata
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
-             WHERE messages_fts MATCH ?1
-             ORDER BY bm25(messages_fts)
-             LIMIT ?2",
-        )?;
-        let rows = stmt.query_map(params![query, limit], row_to_message)?;
+             WHERE messages_fts MATCH ?1",
+        );
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(query.to_string())];
+
+        if let Some(acct) = account_filter {
+            let pattern = format!("%{acct}%");
+            sql.push_str(&format!(" AND m.account_id LIKE ?{}", param_values.len() + 1));
+            param_values.push(Box::new(pattern));
+        }
+        if let Some(conn_type) = connector_filter {
+            sql.push_str(&format!(" AND m.connector = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(conn_type.to_string()));
+        }
+
+        sql.push_str(&format!(
+            " ORDER BY bm25(messages_fts) LIMIT ?{}",
+            param_values.len() + 1
+        ));
+        param_values.push(Box::new(limit));
+
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&sql)?;
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(params_ref.as_slice(), row_to_message)?;
         let results: Vec<Message> = rows.collect::<Result<_, _>>()?;
         debug!(query, result_count = results.len(), "search messages");
         Ok(results)
@@ -389,34 +426,41 @@ impl Database {
     pub fn recent_messages(
         &self,
         account_filter: Option<&str>,
+        connector_filter: Option<&str>,
         limit: i64,
         include_archived: bool,
     ) -> anyhow::Result<Vec<Message>> {
-        let archive_clause = if include_archived {
-            ""
-        } else {
-            " AND is_archived = 0"
-        };
-        let conn = self.conn();
+        let mut sql = String::from(
+            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
+             FROM messages WHERE 1=1",
+        );
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if !include_archived {
+            sql.push_str(" AND is_archived = 0");
+        }
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
-            let sql = format!(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
-                 FROM messages WHERE account_id LIKE ?1{archive_clause}
-                 ORDER BY timestamp DESC LIMIT ?2"
-            );
-            let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(params![pattern, limit], row_to_message)?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-        } else {
-            let sql = format!(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
-                 FROM messages WHERE 1=1{archive_clause} ORDER BY timestamp DESC LIMIT ?1"
-            );
-            let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(params![limit], row_to_message)?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            param_values.push(Box::new(pattern));
         }
+        if let Some(conn_type) = connector_filter {
+            sql.push_str(&format!(" AND connector = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(conn_type.to_string()));
+        }
+
+        sql.push_str(&format!(
+            " ORDER BY timestamp DESC LIMIT ?{}",
+            param_values.len() + 1
+        ));
+        param_values.push(Box::new(limit));
+
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&sql)?;
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(params_ref.as_slice(), row_to_message)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn mark_message_read(&self, id: &str) -> anyhow::Result<bool> {
@@ -511,6 +555,8 @@ impl Database {
         &self,
         from: Option<i64>,
         to: Option<i64>,
+        account_filter: Option<&str>,
+        connector_filter: Option<&str>,
         limit: i64,
     ) -> anyhow::Result<Vec<CalendarEvent>> {
         let mut sql = String::from(
@@ -525,6 +571,15 @@ impl Database {
         if let Some(t) = to {
             sql.push_str(&format!(" AND start_at <= ?{}", param_values.len() + 1));
             param_values.push(Box::new(t));
+        }
+        if let Some(acct) = account_filter {
+            let pattern = format!("%{acct}%");
+            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            param_values.push(Box::new(pattern));
+        }
+        if let Some(conn_type) = connector_filter {
+            sql.push_str(&format!(" AND connector = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(conn_type.to_string()));
         }
 
         sql.push_str(&format!(
@@ -546,6 +601,7 @@ impl Database {
     pub fn list_contacts(
         &self,
         account_filter: Option<&str>,
+        connector_filter: Option<&str>,
         search: Option<&str>,
         limit: i64,
     ) -> anyhow::Result<Vec<Contact>> {
@@ -559,6 +615,10 @@ impl Database {
             let pattern = format!("%{acct}%");
             sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(pattern));
+        }
+        if let Some(conn_type) = connector_filter {
+            sql.push_str(&format!(" AND connector = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(conn_type.to_string()));
         }
 
         if let Some(q) = search {
@@ -600,6 +660,7 @@ impl Database {
     pub fn list_channels(
         &self,
         account_filter: Option<&str>,
+        connector_filter: Option<&str>,
         search: Option<&str>,
         limit: i64,
     ) -> anyhow::Result<Vec<Conversation>> {
@@ -613,6 +674,10 @@ impl Database {
             let pattern = format!("%{acct}%");
             sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(pattern));
+        }
+        if let Some(conn_type) = connector_filter {
+            sql.push_str(&format!(" AND connector = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(conn_type.to_string()));
         }
 
         if let Some(q) = search {
@@ -794,7 +859,7 @@ mod tests {
         let loaded = db.get_conversation("c1").unwrap().unwrap();
         assert_eq!(loaded.name.as_deref(), Some("Conv c1"));
 
-        let list = db.list_conversations(None, 100).unwrap();
+        let list = db.list_conversations(None, None, 100).unwrap();
         assert_eq!(list.len(), 1);
     }
 
@@ -907,7 +972,7 @@ mod tests {
         ))
         .unwrap();
 
-        let results = db.search_messages("meeting", 10).unwrap();
+        let results = db.search_messages("meeting", None, None, 10).unwrap();
         assert_eq!(results.len(), 2);
     }
 
@@ -972,7 +1037,7 @@ mod tests {
 
         db.upsert_event(&event).unwrap();
         let list = db
-            .list_events(Some(1_700_000_000), Some(1_700_002_000), 100)
+            .list_events(Some(1_700_000_000), Some(1_700_002_000), None, None, 100)
             .unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(
@@ -1010,7 +1075,7 @@ mod tests {
         db.upsert_message(&make_message("m3", "c1", "test-slack", "third", 3_000))
             .unwrap();
 
-        let results = db.recent_messages(None, 2, true).unwrap();
+        let results = db.recent_messages(None, None, 2, true).unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "m3");
         assert_eq!(results[1].id, "m2");
@@ -1040,7 +1105,7 @@ mod tests {
         m3.is_from_me = false;
         db.upsert_message(&m3).unwrap();
 
-        let contacts = db.list_contacts(None, None, 100).unwrap();
+        let contacts = db.list_contacts(None, None, None, 100).unwrap();
         assert_eq!(contacts.len(), 2);
         assert_eq!(contacts[0].sender, "bob@test.com");
         assert_eq!(contacts[0].message_count, 1);
@@ -1066,7 +1131,7 @@ mod tests {
         m2.is_from_me = false;
         db.upsert_message(&m2).unwrap();
 
-        let results = db.list_contacts(None, Some("alice"), 100).unwrap();
+        let results = db.list_contacts(None, None, Some("alice"), 100).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].sender, "alice@test.com");
     }
@@ -1091,7 +1156,7 @@ mod tests {
         m2.is_from_me = false;
         db.upsert_message(&m2).unwrap();
 
-        let results = db.list_contacts(Some("gladiaio"), None, 100).unwrap();
+        let results = db.list_contacts(Some("gladiaio"), None, None, 100).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].sender, "alice@slack");
     }
@@ -1107,7 +1172,7 @@ mod tests {
         m1.is_from_me = true;
         db.upsert_message(&m1).unwrap();
 
-        let contacts = db.list_contacts(None, None, 100).unwrap();
+        let contacts = db.list_contacts(None, None, None, 100).unwrap();
         assert!(contacts.is_empty());
     }
 
@@ -1127,7 +1192,7 @@ mod tests {
         let dm = make_conversation("c3", "test-slack", "D789");
         db.upsert_conversation(&dm).unwrap();
 
-        let channels = db.list_channels(None, None, 100).unwrap();
+        let channels = db.list_channels(None, None, None, 100).unwrap();
         assert_eq!(channels.len(), 2);
     }
 
@@ -1144,7 +1209,7 @@ mod tests {
         c2.name = Some("General".into());
         db.upsert_conversation(&c2).unwrap();
 
-        let results = db.list_channels(None, Some("engi"), 100).unwrap();
+        let results = db.list_channels(None, None, Some("engi"), 100).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name.as_deref(), Some("Engineering"));
     }
