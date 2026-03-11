@@ -79,23 +79,37 @@ impl CalendarConnector {
         progress.set_pages(self.calendar_ids.len() as u64);
 
         for cal_id in &self.calendar_ids {
-            let resp = api
-                .list_events(cal_id, Some(&time_min), Some(&time_max), None)
-                .await?;
-            progress.inc_page();
+            let mut page_token: Option<String> = None;
+            loop {
+                let resp = api
+                    .list_events(
+                        cal_id,
+                        Some(&time_min),
+                        Some(&time_max),
+                        None,
+                        page_token.as_deref(),
+                    )
+                    .await?;
 
-            if let Some(events) = &resp.items {
-                for event in events {
-                    if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
-                        db.upsert_event(&cal_event)?;
-                        progress.inc(1);
+                if let Some(events) = &resp.items {
+                    for event in events {
+                        if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
+                            db.upsert_event(&cal_event)?;
+                            progress.inc(1);
+                        }
                     }
                 }
-            }
 
-            if let Some(token) = &resp.next_sync_token {
-                db.set_sync_state(&self.account_id, &format!("sync_token:{cal_id}"), token)?;
+                if let Some(token) = &resp.next_sync_token {
+                    db.set_sync_state(&self.account_id, &format!("sync_token:{cal_id}"), token)?;
+                }
+
+                page_token = resp.next_page_token;
+                if page_token.is_none() {
+                    break;
+                }
             }
+            progress.inc_page();
         }
 
         progress.finish();
@@ -113,7 +127,10 @@ impl CalendarConnector {
                 continue;
             };
 
-            match api.list_events(cal_id, None, None, Some(&sync_token)).await {
+            match api
+                .list_events(cal_id, None, None, Some(&sync_token), None)
+                .await
+            {
                 Ok(resp) => {
                     if let Some(events) = &resp.items {
                         for event in events {
@@ -127,7 +144,6 @@ impl CalendarConnector {
                     }
                 }
                 Err(e) => {
-                    // 410 Gone means syncToken is invalid, need full re-sync
                     if e.to_string().contains("410") {
                         info!(calendar = %cal_id, "syncToken invalidated, re-syncing");
                         self.initial_sync(db).await?;

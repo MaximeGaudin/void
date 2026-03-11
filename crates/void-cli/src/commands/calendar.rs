@@ -1,4 +1,4 @@
-use chrono::Datelike;
+use chrono::{Datelike, Local};
 use clap::{Args, Subcommand};
 use tracing::debug;
 use void_core::config::{self, VoidConfig};
@@ -84,29 +84,29 @@ fn run_list(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
 
     let (from, to) = if let Some(day) = &args.day {
         let date = parse_day_spec(day)?;
-        let start = date.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp());
+        let start = date
+            .and_hms_opt(0, 0, 0)
+            .and_then(|dt| dt.and_local_timezone(Local).single())
+            .map(|dt| dt.timestamp());
         let end = (date + chrono::Duration::days(1))
             .and_hms_opt(0, 0, 0)
-            .map(|dt| dt.and_utc().timestamp());
+            .and_then(|dt| dt.and_local_timezone(Local).single())
+            .map(|dt| dt.timestamp());
         (start, end)
     } else {
+        let today = Local::now().date_naive();
         let from = args.from.as_deref().and_then(parse_date_to_ts).or_else(|| {
-            Some(
-                chrono::Utc::now()
-                    .date_naive()
-                    .and_hms_opt(0, 0, 0)?
-                    .and_utc()
-                    .timestamp(),
-            )
+            today
+                .and_hms_opt(0, 0, 0)
+                .and_then(|dt| dt.and_local_timezone(Local).single())
+                .map(|dt| dt.timestamp())
         });
 
         let to = args.to.as_deref().and_then(parse_date_to_ts).or_else(|| {
-            Some(
-                (chrono::Utc::now().date_naive() + chrono::Duration::days(1))
-                    .and_hms_opt(0, 0, 0)?
-                    .and_utc()
-                    .timestamp(),
-            )
+            (today + chrono::Duration::days(1))
+                .and_hms_opt(0, 0, 0)
+                .and_then(|dt| dt.and_local_timezone(Local).single())
+                .map(|dt| dt.timestamp())
         });
         (from, to)
     };
@@ -126,24 +126,26 @@ fn run_week(json: bool) -> anyhow::Result<()> {
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
 
-    let today = chrono::Utc::now().date_naive();
+    let today = Local::now().date_naive();
     let weekday = today.weekday().num_days_from_monday();
     let monday = today - chrono::Duration::days(weekday as i64);
     let sunday = monday + chrono::Duration::days(7);
 
     let from = monday
         .and_hms_opt(0, 0, 0)
-        .map(|dt| dt.and_utc().timestamp());
+        .and_then(|dt| dt.and_local_timezone(Local).single())
+        .map(|dt| dt.timestamp());
     let to = sunday
         .and_hms_opt(0, 0, 0)
-        .map(|dt| dt.and_utc().timestamp());
+        .and_then(|dt| dt.and_local_timezone(Local).single())
+        .map(|dt| dt.timestamp());
 
     let events = db.list_events(from, to, None, None, 200)?;
     formatter.print_events(&events)
 }
 
 fn parse_day_spec(spec: &str) -> anyhow::Result<chrono::NaiveDate> {
-    let today = chrono::Utc::now().date_naive();
+    let today = Local::now().date_naive();
     match spec.to_lowercase().as_str() {
         "today" => Ok(today),
         "tomorrow" => Ok(today + chrono::Duration::days(1)),
@@ -160,5 +162,6 @@ fn parse_date_to_ts(date: &str) -> Option<i64> {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .ok()
         .and_then(|d| d.and_hms_opt(0, 0, 0))
-        .map(|dt| dt.and_utc().timestamp())
+        .and_then(|dt| dt.and_local_timezone(Local).single())
+        .map(|dt| dt.timestamp())
 }

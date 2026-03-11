@@ -38,6 +38,7 @@ impl CalendarApiClient {
         time_min: Option<&str>,
         time_max: Option<&str>,
         sync_token: Option<&str>,
+        page_token: Option<&str>,
     ) -> anyhow::Result<EventListResponse> {
         debug!(
             calendar_id,
@@ -48,6 +49,7 @@ impl CalendarApiClient {
         let mut params: Vec<(&str, String)> = vec![
             ("singleEvents", "true".into()),
             ("orderBy", "startTime".into()),
+            ("maxResults", "2500".into()),
         ];
         if let Some(t) = time_min {
             params.push(("timeMin", t.into()));
@@ -57,6 +59,9 @@ impl CalendarApiClient {
         }
         if let Some(st) = sync_token {
             params.push(("syncToken", st.into()));
+        }
+        if let Some(pt) = page_token {
+            params.push(("pageToken", pt.into()));
         }
 
         let url = format!(
