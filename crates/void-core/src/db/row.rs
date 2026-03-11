@@ -51,6 +51,8 @@ pub(crate) fn row_to_message(row: &Row) -> rusqlite::Result<Message> {
         reply_to_id: row.get(13)?,
         media_type: row.get(14)?,
         metadata: parse_json_opt(row.get(15)?),
+        context_id: row.get(16)?,
+        context: None,
     })
 }
 

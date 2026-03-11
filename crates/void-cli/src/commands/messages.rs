@@ -20,7 +20,7 @@ pub struct MessagesArgs {
     pub size: i64,
 }
 
-pub fn run(args: &MessagesArgs, json: bool) -> anyhow::Result<()> {
+pub fn run(args: &MessagesArgs, json: bool, enrich_context: bool) -> anyhow::Result<()> {
     debug!(conversation_id = %args.conversation_id, size = args.size, "messages");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
@@ -29,7 +29,10 @@ pub fn run(args: &MessagesArgs, json: bool) -> anyhow::Result<()> {
     let since = args.since.as_deref().and_then(parse_date_to_ts);
     let until = args.until.as_deref().and_then(parse_date_to_ts);
 
-    let messages = db.list_messages(&args.conversation_id, args.size, since, until)?;
+    let mut messages = db.list_messages(&args.conversation_id, args.size, since, until)?;
+    if enrich_context {
+        db.enrich_with_context(&mut messages)?;
+    }
     formatter.print_messages(&messages)
 }
 

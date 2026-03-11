@@ -166,8 +166,8 @@ impl Database {
         debug!(message_id = %msg.id, "upserting message");
         let now = chrono::Utc::now().timestamp();
         self.conn().execute(
-            "INSERT INTO messages (id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            "INSERT INTO messages (id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
                 body = excluded.body,
                 connector = excluded.connector,
@@ -175,7 +175,8 @@ impl Database {
                 is_read = MAX(is_read, excluded.is_read),
                 is_archived = MAX(is_archived, excluded.is_archived),
                 media_type = excluded.media_type,
-                metadata = excluded.metadata",
+                metadata = excluded.metadata,
+                context_id = COALESCE(excluded.context_id, context_id)",
             params![
                 msg.id,
                 msg.conversation_id,
@@ -193,6 +194,7 @@ impl Database {
                 msg.reply_to_id,
                 msg.media_type,
                 msg.metadata.as_ref().map(|v| v.to_string()),
+                msg.context_id,
             ],
         )?;
         Ok(())
@@ -206,7 +208,7 @@ impl Database {
         until: Option<i64>,
     ) -> anyhow::Result<Vec<Message>> {
         let mut sql = String::from(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
+            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE conversation_id = ?1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -238,7 +240,7 @@ impl Database {
     pub fn get_message(&self, id: &str) -> anyhow::Result<Option<Message>> {
         self.conn()
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
+                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE id = ?1",
                 params![id],
                 row::row_to_message,
@@ -257,7 +259,7 @@ impl Database {
     ) -> anyhow::Result<Vec<Message>> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
-            "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_from_me, m.is_read, m.is_archived, m.reply_to_id, m.media_type, m.metadata
+            "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_from_me, m.is_read, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1",
@@ -307,7 +309,7 @@ impl Database {
         include_muted: bool,
     ) -> anyhow::Result<Vec<Message>> {
         let mut sql = String::from(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
+            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -382,9 +384,65 @@ impl Database {
     ) -> anyhow::Result<Option<Message>> {
         self.conn()
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata
+                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE account_id = ?1 AND external_id = ?2",
                 params![account_id, external_id],
+                row::row_to_message,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// Populate the `context` field on each message by fetching all messages sharing the same `context_id`.
+    pub fn enrich_with_context(&self, messages: &mut [Message]) -> anyhow::Result<()> {
+        use std::collections::{HashMap, HashSet};
+
+        let context_ids: HashSet<&str> = messages
+            .iter()
+            .filter_map(|m| m.context_id.as_deref())
+            .collect();
+
+        if context_ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut context_map: HashMap<String, Vec<Message>> = HashMap::new();
+
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+             FROM messages WHERE context_id = ?1 ORDER BY timestamp ASC LIMIT 50",
+        )?;
+
+        for ctx_id in &context_ids {
+            let rows = stmt.query_map(params![ctx_id], row::row_to_message)?;
+            let ctx_messages: Vec<Message> = rows.collect::<Result<_, _>>()?;
+            context_map.insert(ctx_id.to_string(), ctx_messages);
+        }
+
+        for msg in messages.iter_mut() {
+            if let Some(ctx_id) = &msg.context_id {
+                if let Some(ctx_messages) = context_map.get(ctx_id) {
+                    if ctx_messages.len() > 1 {
+                        msg.context = Some(ctx_messages.clone());
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get the most recent message in a conversation (used for time-window context grouping).
+    pub fn last_message_in_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> anyhow::Result<Option<Message>> {
+        self.conn()
+            .query_row(
+                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+                 FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT 1",
+                params![conversation_id],
                 row::row_to_message,
             )
             .optional()
@@ -705,6 +763,8 @@ mod tests {
             reply_to_id: None,
             media_type: None,
             metadata: None,
+            context_id: None,
+            context: None,
         }
     }
 

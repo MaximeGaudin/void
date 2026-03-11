@@ -483,6 +483,22 @@ fn handle_message(
         return Ok(());
     }
 
+    let msg_ts = info.timestamp.timestamp();
+    let context_id = {
+        let last = db.last_message_in_conversation(&conv_id).ok().flatten();
+        if let Some(prev) = last {
+            if (msg_ts - prev.timestamp).abs() <= 3600 {
+                prev.context_id.unwrap_or_else(|| {
+                    format!("wa_{account_id}-group-{chat_jid}-{}", prev.timestamp)
+                })
+            } else {
+                format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+            }
+        } else {
+            format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+        }
+    };
+
     let message = void_core::models::Message {
         id: format!("wa_{account_id}_{}", info.id),
         conversation_id: conv_id,
@@ -496,7 +512,7 @@ fn handle_message(
             Some(info.push_name.clone())
         },
         body,
-        timestamp: info.timestamp.timestamp(),
+        timestamp: msg_ts,
         synced_at: None,
         is_from_me: info.source.is_from_me,
         is_read: false,
@@ -504,6 +520,8 @@ fn handle_message(
         reply_to_id: extract_quoted_id(msg),
         media_type,
         metadata: media_metadata,
+        context_id: Some(context_id),
+        context: None,
     };
     db.upsert_message(&message)?;
 

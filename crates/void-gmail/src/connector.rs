@@ -250,6 +250,8 @@ impl GmailConnector {
                 .map(|v| format!("{}-{v}", account_id)),
             media_type: None,
             metadata,
+            context_id: Some(format!("{}-thread-{}", account_id, thread_id)),
+            context: None,
         };
         db.upsert_message(&message)?;
         Ok(())
@@ -773,6 +775,8 @@ mod tests {
                         reply_to_id: None,
                         media_type: None,
                         metadata: None,
+                        context_id: Some(format!("{}-thread-{}", account_id, thread_id)),
+                        context: None,
                     };
                     db.upsert_message(&message).unwrap();
                 }
@@ -880,7 +884,7 @@ mod tests {
                         let from = msg.get_header("From").unwrap_or_default();
                         let message = Message {
                             id: format!("{}-{}", account_id, msg_id),
-                            conversation_id: conv_id,
+                            conversation_id: conv_id.clone(),
                             account_id: account_id.clone(),
                             connector: "gmail".into(),
                             external_id: msg_id.to_string(),
@@ -903,6 +907,8 @@ mod tests {
                             reply_to_id: None,
                             media_type: None,
                             metadata: None,
+                            context_id: Some(format!("{}-thread-{}", account_id, thread_id)),
+                            context: None,
                         };
                         db.upsert_message(&message).unwrap();
                     }

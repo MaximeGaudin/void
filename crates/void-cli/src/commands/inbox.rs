@@ -24,7 +24,7 @@ pub struct InboxArgs {
     pub include_muted: bool,
 }
 
-pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
+pub fn run(args: &InboxArgs, json: bool, enrich_context: bool) -> anyhow::Result<()> {
     debug!(account = ?args.account, connector = ?args.connector, size = args.size, all = args.all, "inbox");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
@@ -38,6 +38,9 @@ pub fn run(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
         args.include_muted,
     )?;
     messages.reverse();
+    if enrich_context {
+        db.enrich_with_context(&mut messages)?;
+    }
     formatter.print_messages(&messages)
 }
 

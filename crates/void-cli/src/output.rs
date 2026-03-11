@@ -45,9 +45,14 @@ impl OutputFormatter {
             return Ok(());
         }
 
-        let rows: Vec<MessageRow> = messages.iter().map(MessageRow::from).collect();
-        let table = Table::new(rows).with(Style::rounded()).to_string();
-        println!("{table}");
+        let has_context = messages.iter().any(|m| m.context.is_some());
+        if has_context {
+            print_messages_with_context(messages);
+        } else {
+            let rows: Vec<MessageRow> = messages.iter().map(MessageRow::from).collect();
+            let table = Table::new(rows).with(Style::rounded()).to_string();
+            println!("{table}");
+        }
         Ok(())
     }
 
@@ -100,6 +105,117 @@ impl OutputFormatter {
 
 fn json_wrap<T: serde::Serialize>(data: T) -> serde_json::Value {
     serde_json::json!({ "data": data, "error": null })
+}
+
+fn format_time_short(ts: i64) -> String {
+    Local
+        .timestamp_opt(ts, 0)
+        .single()
+        .map(|dt| dt.format("%H:%M").to_string())
+        .unwrap_or_else(|| ts.to_string())
+}
+
+fn print_messages_with_context(messages: &[Message]) {
+    const CH_W: usize = 4;
+    const TIME_W: usize = 16;
+    const SENDER_W: usize = 14;
+    const MSG_W: usize = 52;
+    const ID_W: usize = 14;
+
+    let sep = format!(
+        "├{:─<w1$}┼{:─<w2$}┼{:─<w3$}┼{:─<w4$}┼{:─<w5$}┤",
+        "",
+        "",
+        "",
+        "",
+        "",
+        w1 = CH_W + 2,
+        w2 = TIME_W + 2,
+        w3 = SENDER_W + 2,
+        w4 = MSG_W + 2,
+        w5 = ID_W + 2,
+    );
+    let top = format!(
+        "┌{:─<w1$}┬{:─<w2$}┬{:─<w3$}┬{:─<w4$}┬{:─<w5$}┐",
+        "",
+        "",
+        "",
+        "",
+        "",
+        w1 = CH_W + 2,
+        w2 = TIME_W + 2,
+        w3 = SENDER_W + 2,
+        w4 = MSG_W + 2,
+        w5 = ID_W + 2,
+    );
+    let bottom = format!(
+        "└{:─<w1$}┴{:─<w2$}┴{:─<w3$}┴{:─<w4$}┴{:─<w5$}┘",
+        "",
+        "",
+        "",
+        "",
+        "",
+        w1 = CH_W + 2,
+        w2 = TIME_W + 2,
+        w3 = SENDER_W + 2,
+        w4 = MSG_W + 2,
+        w5 = ID_W + 2,
+    );
+    let header = format!(
+        "│ {:<CH_W$} │ {:<TIME_W$} │ {:<SENDER_W$} │ {:<MSG_W$} │ {:<ID_W$} │",
+        "CH", "Time", "Sender", "Message", "ID"
+    );
+
+    println!("{top}");
+    println!("{header}");
+
+    for msg in messages {
+        println!("{sep}");
+
+        let badge = badge_from_connector(&msg.connector);
+        let time = format_ts(msg.timestamp);
+        let sender = msg
+            .sender_name
+            .clone()
+            .unwrap_or_else(|| truncate(&msg.sender, SENDER_W));
+        let body = truncate(msg.body.as_deref().unwrap_or(""), MSG_W);
+        let id = truncate(&msg.id, ID_W);
+
+        println!(
+            "│ {:<CH_W$} │ {:<TIME_W$} │ {:<SENDER_W$} │ {:<MSG_W$} │ {:<ID_W$} │",
+            badge,
+            time,
+            truncate(&sender, SENDER_W),
+            body,
+            id,
+        );
+
+        if let Some(ctx) = &msg.context {
+            for ctx_msg in ctx {
+                let marker = if ctx_msg.id == msg.id { " *" } else { "" };
+                let ctx_time = format_time_short(ctx_msg.timestamp);
+                let ctx_sender = ctx_msg
+                    .sender_name
+                    .clone()
+                    .unwrap_or_else(|| truncate(&ctx_msg.sender, SENDER_W));
+                let body_text = ctx_msg.body.as_deref().unwrap_or("");
+                let available_msg_w = MSG_W.saturating_sub(marker.len() + 2);
+                let ctx_body = format!("  {}{}", truncate(body_text, available_msg_w), marker);
+
+                println!(
+                    "│ {:<CH_W$} │   {:<w$} │ {:<SENDER_W$} │ {:<MSG_W$} │ {:<ID_W$} │",
+                    "",
+                    ctx_time,
+                    truncate(&ctx_sender, SENDER_W),
+                    ctx_body,
+                    "",
+                    w = TIME_W - 2,
+                );
+            }
+        }
+    }
+
+    println!("{bottom}");
 }
 
 fn format_ts(ts: i64) -> String {

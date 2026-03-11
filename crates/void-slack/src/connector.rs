@@ -141,17 +141,24 @@ impl SlackConnector {
                 .await
             {
                 Ok(history) => {
-                    for msg in &history.messages {
-                        if let Some(message) = map_message_cached(
-                            msg,
-                            conv,
-                            &conversation.id,
-                            &self.account_id,
-                            &user_cache,
-                        ) {
-                            db.upsert_message(&message)?;
-                            progress.inc_secondary(1);
-                        }
+                    let mut mapped: Vec<Message> = history
+                        .messages
+                        .iter()
+                        .filter_map(|msg| {
+                            map_message_cached(
+                                msg,
+                                conv,
+                                &conversation.id,
+                                &self.account_id,
+                                &user_cache,
+                            )
+                        })
+                        .collect();
+                    mapped.sort_by_key(|m| m.timestamp);
+                    assign_time_window_context(&mut mapped, &self.account_id, &conv.id);
+                    for message in &mapped {
+                        db.upsert_message(message)?;
+                        progress.inc_secondary(1);
                     }
                     if let Some(last) = history.messages.first() {
                         let mut conv_update = conversation.clone();
@@ -450,6 +457,11 @@ fn map_message_cached(
         (if text.is_empty() { None } else { Some(text) }, None)
     };
 
+    let context_id = msg
+        .thread_ts
+        .as_ref()
+        .map(|thread_ts| format!("{account_id}-thread-{thread_ts}"));
+
     Some(Message {
         id: format!("{account_id}-{}", msg.ts),
         conversation_id: conversation_id.to_string(),
@@ -470,6 +482,8 @@ fn map_message_cached(
             .map(|ts| format!("{account_id}-{ts}")),
         media_type,
         metadata,
+        context_id,
+        context: None,
     })
 }
 
@@ -507,6 +521,32 @@ fn build_metadata(
 
 fn parse_ts(ts: &str) -> Option<i64> {
     ts.split('.').next()?.parse().ok()
+}
+
+const TIME_WINDOW_SECS: i64 = 3600;
+
+/// Assign `context_id` to non-threaded messages using a 1-hour time-window grouping.
+/// Messages must be sorted by timestamp ASC before calling.
+fn assign_time_window_context(messages: &mut [Message], account_id: &str, channel_id: &str) {
+    let mut current_group_ts: Option<String> = None;
+    let mut last_ts: i64 = 0;
+
+    for msg in messages.iter_mut() {
+        if msg.context_id.is_some() {
+            last_ts = 0;
+            current_group_ts = None;
+            continue;
+        }
+
+        if current_group_ts.is_some() && (msg.timestamp - last_ts) <= TIME_WINDOW_SECS {
+            msg.context_id = current_group_ts.clone();
+        } else {
+            let group_id = format!("{account_id}-group-{channel_id}-{}", msg.timestamp);
+            msg.context_id = Some(group_id.clone());
+            current_group_ts = Some(group_id);
+        }
+        last_ts = msg.timestamp;
+    }
 }
 
 #[cfg(test)]

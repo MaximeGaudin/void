@@ -88,6 +88,11 @@ pub struct Message {
     pub reply_to_id: Option<String>,
     pub media_type: Option<String>,
     pub metadata: Option<serde_json::Value>,
+    /// Groups related messages (thread, email chain, time-proximity window). Stored in DB.
+    pub context_id: Option<String>,
+    /// Related messages sharing the same context_id. Populated at query time, never stored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<Vec<Message>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,6 +200,8 @@ mod tests {
             reply_to_id: None,
             media_type: None,
             metadata: None,
+            context_id: None,
+            context: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: Message = serde_json::from_str(&json).unwrap();

@@ -21,6 +21,10 @@ struct Cli {
     /// Enable verbose logging
     #[arg(long, short, global = true)]
     verbose: bool,
+
+    /// Disable context enrichment (related messages) on output
+    #[arg(long, global = true)]
+    no_context: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -93,12 +97,14 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Setup) => commands::setup::run().await,
         Some(Command::Sync(args)) => commands::sync::run(args).await,
         Some(Command::Doctor) => commands::doctor::run(),
-        Some(Command::Inbox(args)) => commands::inbox::run(args, !cli.pretty),
+        Some(Command::Inbox(args)) => commands::inbox::run(args, !cli.pretty, !cli.no_context),
         Some(Command::Conversations(args)) => commands::inbox::run_conversations(args, !cli.pretty),
-        Some(Command::Messages(args)) => commands::messages::run(args, !cli.pretty),
+        Some(Command::Messages(args)) => {
+            commands::messages::run(args, !cli.pretty, !cli.no_context)
+        }
         Some(Command::Contacts(args)) => commands::contacts::run(args, !cli.pretty),
         Some(Command::Channels(args)) => commands::channels::run(args, !cli.pretty),
-        Some(Command::Search(args)) => commands::search::run(args, !cli.pretty),
+        Some(Command::Search(args)) => commands::search::run(args, !cli.pretty, !cli.no_context),
         Some(Command::Send(args)) => commands::send::run(args).await,
         Some(Command::Reply(args)) => commands::reply::run(args).await,
         Some(Command::Read(args)) => commands::read::run(args, !cli.pretty).await,
