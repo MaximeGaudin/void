@@ -292,17 +292,22 @@ impl Connector for WhatsAppConnector {
     }
 
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
+        let has_session = std::path::Path::new(&self.session_db_path).exists();
         let connected = self.client.lock().await.is_some();
-        debug!(account_id = %self.config_id, connected, "WhatsApp health check");
+        let ok = connected || has_session;
+        debug!(account_id = %self.config_id, connected, has_session, "WhatsApp health check");
+        let message = if connected {
+            "connected".into()
+        } else if has_session {
+            "session found, will connect on sync".into()
+        } else {
+            "no session found. Run `void setup` to pair.".into()
+        };
         Ok(HealthStatus {
             account_id: self.config_id.clone(),
             connector_type: ConnectorType::WhatsApp,
-            ok: connected,
-            message: if connected {
-                "connected".into()
-            } else {
-                "not connected (run void sync first)".into()
-            },
+            ok,
+            message,
             last_sync: None,
             message_count: None,
         })
