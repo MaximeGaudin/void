@@ -3443,7 +3443,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "qr2term",
  "serde",
  "serde_json",
@@ -3451,7 +3450,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "uuid",
  "void-core",
  "wa-rs",
  "wa-rs-proto",

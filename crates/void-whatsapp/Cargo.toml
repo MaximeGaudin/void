@@ -15,8 +15,6 @@ tracing = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true }
-uuid = { workspace = true }
 tokio-util = { workspace = true }
 wa-rs = "0.2"
 wa-rs-sqlite-storage = "0.2"
