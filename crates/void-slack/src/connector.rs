@@ -615,4 +615,317 @@ mod tests {
         assert_eq!(meta["is_private"], true);
         assert_eq!(meta["channel_name"], "secret-project");
     }
+
+    // --- Integration tests (wiremock) ---
+
+    #[tokio::test]
+    async fn backfill_stores_conversations_and_messages() {
+        let server = wiremock::MockServer::start().await;
+
+        let users = serde_json::json!({
+            "ok": true,
+            "members": [
+                {
+                    "id": "U1",
+                    "name": "alice",
+                    "real_name": "Alice",
+                    "profile": {"display_name": "Alice", "real_name": "Alice"}
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/users.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+            .mount(&server)
+            .await;
+
+        let channels = serde_json::json!({
+            "ok": true,
+            "channels": [
+                {
+                    "id": "C1",
+                    "name": "general",
+                    "is_channel": true,
+                    "is_group": false,
+                    "is_im": false,
+                    "is_mpim": false,
+                    "is_private": false
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channels))
+            .mount(&server)
+            .await;
+
+        let history = serde_json::json!({
+            "ok": true,
+            "messages": [
+                {
+                    "ts": "1741700000.000100",
+                    "user": "U1",
+                    "text": "Hello world"
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.history"))
+            .and(wiremock::matchers::query_param("channel", "C1"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+            .mount(&server)
+            .await;
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec![],
+        };
+
+        let db = void_core::db::Database::open_in_memory().unwrap();
+        connector.backfill(&db).await.unwrap();
+
+        let conv = db.get_conversation("test-slack-C1").unwrap().unwrap();
+        assert_eq!(conv.name.as_deref(), Some("general"));
+
+        let msg = db
+            .get_message("test-slack-1741700000.000100")
+            .unwrap()
+            .unwrap();
+        assert_eq!(msg.body.as_deref(), Some("Hello world"));
+    }
+
+    #[tokio::test]
+    async fn backfill_saves_done_state() {
+        let server = wiremock::MockServer::start().await;
+
+        let users = serde_json::json!({"ok": true, "members": []});
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/users.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+            .mount(&server)
+            .await;
+
+        let channels = serde_json::json!({
+            "ok": true,
+            "channels": [
+                {
+                    "id": "C1",
+                    "name": "general",
+                    "is_channel": true,
+                    "is_group": false,
+                    "is_im": false,
+                    "is_mpim": false,
+                    "is_private": false
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channels))
+            .mount(&server)
+            .await;
+
+        let history = serde_json::json!({"ok": true, "messages": []});
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.history"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+            .mount(&server)
+            .await;
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec![],
+        };
+
+        let db = void_core::db::Database::open_in_memory().unwrap();
+        connector.backfill(&db).await.unwrap();
+        db.set_sync_state("test-slack", "backfill_done", "1")
+            .unwrap();
+
+        assert_eq!(
+            db.get_sync_state("test-slack", "backfill_done").unwrap(),
+            Some("1".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn start_sync_skips_backfill_when_already_done() {
+        let server = wiremock::MockServer::start().await;
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/users.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .expect(0)
+            .named("users.list")
+            .mount(&server)
+            .await;
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .expect(0)
+            .named("conversations.list")
+            .mount(&server)
+            .await;
+
+        let db = void_core::db::Database::open_in_memory().unwrap();
+        db.set_sync_state("test-slack", "backfill_done", "1")
+            .unwrap();
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec![],
+        };
+
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        connector
+            .start_sync(std::sync::Arc::new(db), cancel)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn backfill_paginates_conversations() {
+        let server = wiremock::MockServer::start().await;
+
+        let users = serde_json::json!({"ok": true, "members": []});
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/users.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+            .mount(&server)
+            .await;
+
+        let page1 = serde_json::json!({
+            "ok": true,
+            "channels": [
+                {
+                    "id": "C1",
+                    "name": "ch1",
+                    "is_channel": true,
+                    "is_group": false,
+                    "is_im": false,
+                    "is_mpim": false,
+                    "is_private": false
+                }
+            ],
+            "response_metadata": {"next_cursor": "cursor2"}
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .and(wiremock::matchers::query_param("cursor", "cursor2"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "ok": true,
+                    "channels": [
+                        {
+                            "id": "C2",
+                            "name": "ch2",
+                            "is_channel": true,
+                            "is_group": false,
+                            "is_im": false,
+                            "is_mpim": false,
+                            "is_private": false
+                        }
+                    ]
+                })),
+            )
+            .with_priority(1)
+            .mount(&server)
+            .await;
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(page1))
+            .with_priority(2)
+            .mount(&server)
+            .await;
+
+        let history_empty = serde_json::json!({"ok": true, "messages": []});
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.history"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history_empty))
+            .mount(&server)
+            .await;
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec![],
+        };
+
+        let db = void_core::db::Database::open_in_memory().unwrap();
+        connector.backfill(&db).await.unwrap();
+
+        assert!(db.get_conversation("test-slack-C1").unwrap().is_some());
+        assert!(db.get_conversation("test-slack-C2").unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn backfill_excludes_channels() {
+        let server = wiremock::MockServer::start().await;
+
+        let users = serde_json::json!({"ok": true, "members": []});
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/users.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+            .mount(&server)
+            .await;
+
+        let channels = serde_json::json!({
+            "ok": true,
+            "channels": [
+                {
+                    "id": "C1",
+                    "name": "general",
+                    "is_channel": true,
+                    "is_group": false,
+                    "is_im": false,
+                    "is_mpim": false,
+                    "is_private": false
+                },
+                {
+                    "id": "C2",
+                    "name": "random",
+                    "is_channel": true,
+                    "is_group": false,
+                    "is_im": false,
+                    "is_mpim": false,
+                    "is_private": false
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channels))
+            .mount(&server)
+            .await;
+
+        let history = serde_json::json!({"ok": true, "messages": []});
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.history"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+            .mount(&server)
+            .await;
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec!["random".to_string()],
+        };
+
+        let db = void_core::db::Database::open_in_memory().unwrap();
+        connector.backfill(&db).await.unwrap();
+
+        assert!(db.get_conversation("test-slack-C1").unwrap().is_some());
+        assert!(db.get_conversation("test-slack-C2").unwrap().is_none());
+    }
 }

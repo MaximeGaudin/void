@@ -2,10 +2,13 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+const DEFAULT_BASE_URL: &str = "https://www.googleapis.com";
+
 /// Google Calendar API client.
 pub struct CalendarApiClient {
     http: reqwest::Client,
     access_token: String,
+    base_url: String,
 }
 
 impl CalendarApiClient {
@@ -13,6 +16,16 @@ impl CalendarApiClient {
         Self {
             http: reqwest::Client::new(),
             access_token: access_token.to_string(),
+            base_url: DEFAULT_BASE_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url(access_token: &str, base_url: &str) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            access_token: access_token.to_string(),
+            base_url: base_url.to_string(),
         }
     }
 
@@ -20,7 +33,10 @@ impl CalendarApiClient {
         debug!("calendar: list_calendars");
         let resp: CalendarListResponse = self
             .http
-            .get("https://www.googleapis.com/calendar/v3/users/me/calendarList")
+            .get(format!(
+                "{}/calendar/v3/users/me/calendarList",
+                self.base_url
+            ))
             .bearer_auth(&self.access_token)
             .send()
             .await?
@@ -65,7 +81,8 @@ impl CalendarApiClient {
         }
 
         let url = format!(
-            "https://www.googleapis.com/calendar/v3/calendars/{}/events",
+            "{}/calendar/v3/calendars/{}/events",
+            self.base_url,
             urlencoded(calendar_id)
         );
         let resp: EventListResponse = self
@@ -75,6 +92,8 @@ impl CalendarApiClient {
             .query(&params)
             .send()
             .await?
+            .error_for_status()
+            .map_err(anyhow::Error::from)?
             .json()
             .await
             .context("calendar: failed to list events")?;
@@ -100,7 +119,8 @@ impl CalendarApiClient {
             "calendar: insert_event"
         );
         let url = format!(
-            "https://www.googleapis.com/calendar/v3/calendars/{}/events",
+            "{}/calendar/v3/calendars/{}/events",
+            self.base_url,
             urlencoded(calendar_id)
         );
         let mut req = self

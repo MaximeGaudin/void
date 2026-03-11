@@ -23,3 +23,6 @@ html-to-markdown-rs = { workspace = true }
 open = { workspace = true }
 url = { workspace = true }
 urlencoding = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }

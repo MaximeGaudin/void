@@ -446,6 +446,373 @@ fn html_to_markdown(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::GmailApiClient;
+    use void_core::db::Database;
+    use void_core::models::{Conversation, ConversationKind, Message};
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn api_list_messages_paginates() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/messages"))
+            .and(query_param_is_missing("pageToken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "messages": [
+                    {"id": "m1", "threadId": "t1"},
+                    {"id": "m2", "threadId": "t1"}
+                ],
+                "nextPageToken": "page2"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/messages"))
+            .and(query_param("pageToken", "page2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "messages": [
+                    {"id": "m3", "threadId": "t2"}
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let api = GmailApiClient::with_base_url("test-token", &server.uri());
+
+        let mut all_messages = Vec::new();
+        let mut page_token: Option<String> = None;
+
+        loop {
+            let resp = api
+                .list_messages(100, page_token.as_deref(), Some(&["INBOX"]), None)
+                .await
+                .unwrap();
+            if let Some(msgs) = resp.messages {
+                all_messages.extend(msgs);
+            }
+            page_token = resp.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        assert_eq!(all_messages.len(), 3);
+        assert_eq!(all_messages[0].id, "m1");
+        assert_eq!(all_messages[1].id, "m2");
+        assert_eq!(all_messages[2].id, "m3");
+    }
+
+    #[tokio::test]
+    async fn initial_sync_saves_history_id() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/profile"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "emailAddress": "test@example.com",
+                "historyId": "12345"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "messages": [{"id": "m1", "threadId": "t1"}]
+            })))
+            .mount(&server)
+            .await;
+
+        let full_message = serde_json::json!({
+            "id": "m1",
+            "threadId": "t1",
+            "snippet": "Hello",
+            "internalDate": "1741700000000",
+            "labelIds": ["INBOX"],
+            "payload": {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "From", "value": "sender@example.com"},
+                    {"name": "Subject", "value": "Test Subject"},
+                    {"name": "Date", "value": "Wed, 11 Mar 2026 10:00:00 +0000"}
+                ],
+                "body": {"data": "SGVsbG8gV29ybGQ", "size": 11}
+            }
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/messages/m1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(full_message))
+            .mount(&server)
+            .await;
+
+        let api = GmailApiClient::with_base_url("test-token", &server.uri());
+        let db = Database::open_in_memory().unwrap();
+
+        let config_id = "test-gmail";
+        let profile = api.get_profile().await.unwrap();
+
+        if let Some(history_id) = &profile.history_id {
+            db.set_sync_state(config_id, "history_id", history_id)
+                .unwrap();
+        }
+
+        let mut page_token: Option<String> = None;
+        loop {
+            let resp = api
+                .list_messages(100, page_token.as_deref(), Some(&["INBOX"]), None)
+                .await
+                .unwrap();
+            if let Some(msgs) = resp.messages {
+                for msg_ref in &msgs {
+                    let msg = api.get_message(&msg_ref.id).await.unwrap();
+                    let msg_id = msg.id.as_deref().unwrap_or("");
+                    let thread_id = msg.thread_id.as_deref().unwrap_or(msg_id);
+                    let from = msg.get_header("From").unwrap_or_default();
+                    let account_id = profile
+                        .email_address
+                        .as_deref()
+                        .unwrap_or(config_id)
+                        .to_string();
+                    let conv_id = format!("{}-{}", account_id, thread_id);
+                    let subject = msg
+                        .get_header("Subject")
+                        .unwrap_or_else(|| "(no subject)".into());
+
+                    let conversation = Conversation {
+                        id: conv_id.clone(),
+                        account_id: account_id.clone(),
+                        connector: "gmail".into(),
+                        external_id: thread_id.to_string(),
+                        name: Some(subject),
+                        kind: ConversationKind::Thread,
+                        last_message_at: msg
+                            .internal_date
+                            .as_deref()
+                            .and_then(|d| d.parse().ok())
+                            .map(|ms: i64| ms / 1000),
+                        unread_count: 0,
+                        is_muted: false,
+                        metadata: None,
+                    };
+                    db.upsert_conversation(&conversation).unwrap();
+
+                    let message = Message {
+                        id: format!("{}-{}", account_id, msg_id),
+                        conversation_id: conv_id,
+                        account_id: account_id.clone(),
+                        connector: "gmail".into(),
+                        external_id: msg_id.to_string(),
+                        sender: from
+                            .find('<')
+                            .map(|i| from[i + 1..].trim_end_matches('>').trim().to_string())
+                            .unwrap_or_else(|| from.clone()),
+                        sender_name: None,
+                        body: msg.text_body().or(msg.snippet.clone()),
+                        timestamp: msg
+                            .internal_date
+                            .as_deref()
+                            .and_then(|d| d.parse().ok())
+                            .map(|ms: i64| ms / 1000)
+                            .unwrap_or(0),
+                        synced_at: None,
+                        is_from_me: false,
+                        is_read: true,
+                        is_archived: false,
+                        reply_to_id: None,
+                        media_type: None,
+                        metadata: None,
+                    };
+                    db.upsert_message(&message).unwrap();
+                }
+            }
+            page_token = resp.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        let history_id = db.get_sync_state(config_id, "history_id").unwrap();
+        assert_eq!(history_id, Some("12345".to_string()));
+
+        let msg = db
+            .get_message("test@example.com-m1")
+            .unwrap()
+            .expect("message should be stored");
+        assert_eq!(msg.external_id, "m1");
+        assert_eq!(msg.body.as_deref(), Some("Hello World"));
+    }
+
+    #[tokio::test]
+    async fn incremental_sync_uses_history_id() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/history"))
+            .and(query_param("startHistoryId", "12345"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "history": [{
+                    "messagesAdded": [{
+                        "message": {"id": "m2", "threadId": "t2"}
+                    }]
+                }],
+                "historyId": "12346"
+            })))
+            .mount(&server)
+            .await;
+
+        let full_message = serde_json::json!({
+            "id": "m2",
+            "threadId": "t2",
+            "snippet": "New message",
+            "internalDate": "1741700001000",
+            "labelIds": ["INBOX"],
+            "payload": {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "From", "value": "other@example.com"},
+                    {"name": "Subject", "value": "Re: Test"},
+                    {"name": "Date", "value": "Wed, 11 Mar 2026 10:01:00 +0000"}
+                ],
+                "body": {"data": "TmV3IG1lc3NhZ2U=", "size": 11}
+            }
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/messages/m2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(full_message))
+            .mount(&server)
+            .await;
+
+        let api = GmailApiClient::with_base_url("test-token", &server.uri());
+        let db = Database::open_in_memory().unwrap();
+        db.set_sync_state("test-gmail", "history_id", "12345")
+            .unwrap();
+
+        let config_id = "test-gmail";
+        let history_id = db.get_sync_state(config_id, "history_id").unwrap();
+        let history_id = history_id.expect("history_id should be set");
+
+        let resp = api.list_history(&history_id).await.unwrap();
+
+        if let Some(records) = resp.history {
+            for record in &records {
+                if let Some(added) = &record.messages_added {
+                    for item in added {
+                        let msg = api.get_message(&item.message.id).await.unwrap();
+                        let msg_id = msg.id.as_deref().unwrap_or("");
+                        let thread_id = msg.thread_id.as_deref().unwrap_or(msg_id);
+                        let account_id = "test-gmail".to_string();
+                        let conv_id = format!("{}-{}", account_id, thread_id);
+
+                        let conversation = Conversation {
+                            id: conv_id.clone(),
+                            account_id: account_id.clone(),
+                            connector: "gmail".into(),
+                            external_id: thread_id.to_string(),
+                            name: Some(
+                                msg.get_header("Subject")
+                                    .unwrap_or_else(|| "(no subject)".into()),
+                            ),
+                            kind: ConversationKind::Thread,
+                            last_message_at: msg
+                                .internal_date
+                                .as_deref()
+                                .and_then(|d| d.parse().ok())
+                                .map(|ms: i64| ms / 1000),
+                            unread_count: 0,
+                            is_muted: false,
+                            metadata: None,
+                        };
+                        db.upsert_conversation(&conversation).unwrap();
+
+                        let from = msg.get_header("From").unwrap_or_default();
+                        let message = Message {
+                            id: format!("{}-{}", account_id, msg_id),
+                            conversation_id: conv_id,
+                            account_id: account_id.clone(),
+                            connector: "gmail".into(),
+                            external_id: msg_id.to_string(),
+                            sender: from
+                                .find('<')
+                                .map(|i| from[i + 1..].trim_end_matches('>').trim().to_string())
+                                .unwrap_or_else(|| from.clone()),
+                            sender_name: None,
+                            body: msg.text_body().or(msg.snippet.clone()),
+                            timestamp: msg
+                                .internal_date
+                                .as_deref()
+                                .and_then(|d| d.parse().ok())
+                                .map(|ms: i64| ms / 1000)
+                                .unwrap_or(0),
+                            synced_at: None,
+                            is_from_me: false,
+                            is_read: true,
+                            is_archived: false,
+                            reply_to_id: None,
+                            media_type: None,
+                            metadata: None,
+                        };
+                        db.upsert_message(&message).unwrap();
+                    }
+                }
+            }
+        }
+
+        if let Some(new_id) = resp.history_id {
+            db.set_sync_state(config_id, "history_id", &new_id).unwrap();
+        }
+
+        let updated = db.get_sync_state(config_id, "history_id").unwrap();
+        assert_eq!(updated, Some("12346".to_string()));
+
+        let msg = db
+            .get_message("test-gmail-m2")
+            .unwrap()
+            .expect("message should be stored");
+        assert_eq!(msg.external_id, "m2");
+        assert_eq!(msg.body.as_deref(), Some("New message"));
+    }
+
+    #[tokio::test]
+    async fn initial_sync_respects_max_pages() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/gmail/v1/users/me/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "messages": [{"id": "m1", "threadId": "t1"}],
+                "nextPageToken": "next"
+            })))
+            .expect(5)
+            .named("list_messages pages")
+            .mount(&server)
+            .await;
+
+        let api = GmailApiClient::with_base_url("test-token", &server.uri());
+
+        let max_pages: u64 = 5;
+        let mut page_token: Option<String> = None;
+        let mut page_count = 0u64;
+
+        while page_count < max_pages {
+            let resp = api
+                .list_messages(100, page_token.as_deref(), Some(&["INBOX"]), None)
+                .await
+                .unwrap();
+            page_count += 1;
+            page_token = resp.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        assert_eq!(page_count, 5);
+        drop(server);
+    }
 
     #[test]
     fn parse_email_address_extracts_email() {

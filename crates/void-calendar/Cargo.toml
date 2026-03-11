@@ -19,3 +19,6 @@ reqwest = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tokio-util = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }

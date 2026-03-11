@@ -2,10 +2,13 @@ use anyhow::Context;
 use serde::Deserialize;
 use tracing::{debug, info};
 
+const DEFAULT_BASE_URL: &str = "https://gmail.googleapis.com";
+
 /// Low-level Gmail API client.
 pub struct GmailApiClient {
     http: reqwest::Client,
     access_token: String,
+    base_url: String,
 }
 
 impl GmailApiClient {
@@ -13,6 +16,16 @@ impl GmailApiClient {
         Self {
             http: reqwest::Client::new(),
             access_token: access_token.to_string(),
+            base_url: DEFAULT_BASE_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url(access_token: &str, base_url: &str) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            access_token: access_token.to_string(),
+            base_url: base_url.to_string(),
         }
     }
 
@@ -24,7 +37,7 @@ impl GmailApiClient {
         debug!("gmail: get_profile");
         let resp: GmailProfile = self
             .http
-            .get("https://gmail.googleapis.com/gmail/v1/users/me/profile")
+            .get(format!("{}/gmail/v1/users/me/profile", self.base_url))
             .bearer_auth(&self.access_token)
             .send()
             .await?
@@ -62,7 +75,7 @@ impl GmailApiClient {
         }
         let resp: MessageListResponse = self
             .http
-            .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+            .get(format!("{}/gmail/v1/users/me/messages", self.base_url))
             .bearer_auth(&self.access_token)
             .query(&params)
             .send()
@@ -84,7 +97,8 @@ impl GmailApiClient {
         let resp: GmailMessage = self
             .http
             .get(format!(
-                "https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}"
+                "{}/gmail/v1/users/me/messages/{message_id}",
+                self.base_url
             ))
             .bearer_auth(&self.access_token)
             .query(&[("format", "full")])
@@ -103,7 +117,7 @@ impl GmailApiClient {
         debug!(start_history_id, "gmail: list_history");
         let resp: HistoryListResponse = self
             .http
-            .get("https://gmail.googleapis.com/gmail/v1/users/me/history")
+            .get(format!("{}/gmail/v1/users/me/history", self.base_url))
             .bearer_auth(&self.access_token)
             .query(&[("startHistoryId", start_history_id)])
             .send()
@@ -135,7 +149,8 @@ impl GmailApiClient {
         let resp: GmailMessage = self
             .http
             .post(format!(
-                "https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify"
+                "{}/gmail/v1/users/me/messages/{message_id}/modify",
+                self.base_url
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
@@ -153,7 +168,7 @@ impl GmailApiClient {
         let body = serde_json::json!({ "raw": raw });
         let resp: GmailMessage = self
             .http
-            .post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+            .post(format!("{}/gmail/v1/users/me/messages/send", self.base_url))
             .bearer_auth(&self.access_token)
             .json(&body)
             .send()

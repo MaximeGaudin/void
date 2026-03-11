@@ -17,3 +17,7 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
 tokio-util = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }
+serde_json = { workspace = true }

@@ -57,6 +57,9 @@ open = "5"
 url = "2"
 urlencoding = "2"
 
+# Testing
+wiremock = "0.6"
+
 # Internal crates
 void-core = { path = "crates/void-core" }
 void-slack = { path = "crates/void-slack" }

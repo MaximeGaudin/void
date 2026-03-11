@@ -6,10 +6,13 @@ use tracing::{debug, error, warn};
 const MAX_RETRIES: u32 = 5;
 const DEFAULT_RETRY_SECS: u64 = 5;
 
+const DEFAULT_BASE_URL: &str = "https://slack.com/api";
+
 /// Low-level Slack Web API client using user token.
 pub struct SlackApiClient {
     http: reqwest::Client,
     user_token: String,
+    base_url: String,
 }
 
 impl SlackApiClient {
@@ -17,6 +20,16 @@ impl SlackApiClient {
         Self {
             http: reqwest::Client::new(),
             user_token: user_token.to_string(),
+            base_url: DEFAULT_BASE_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url(user_token: &str, base_url: &str) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            user_token: user_token.to_string(),
+            base_url: base_url.to_string(),
         }
     }
 
@@ -115,7 +128,7 @@ impl SlackApiClient {
 
     pub async fn auth_test(&self) -> anyhow::Result<AuthTestResponse> {
         self.post_with_retry(
-            "https://slack.com/api/auth.test",
+            &format!("{}/auth.test", self.base_url),
             &serde_json::json!({}),
             "auth.test",
         )
@@ -136,7 +149,7 @@ impl SlackApiClient {
             params.push(("cursor", c.to_string()));
         }
         self.get_with_retry(
-            "https://slack.com/api/conversations.list",
+            &format!("{}/conversations.list", self.base_url),
             &params,
             "conversations.list",
         )
@@ -157,7 +170,7 @@ impl SlackApiClient {
             params.push(("oldest", o.to_string()));
         }
         self.get_with_retry(
-            "https://slack.com/api/conversations.history",
+            &format!("{}/conversations.history", self.base_url),
             &params,
             "conversations.history",
         )
@@ -168,7 +181,11 @@ impl SlackApiClient {
         debug!(user_id, "slack: users.info");
         let params: Vec<(&str, String)> = vec![("user", user_id.to_string())];
         let result: UserInfoResponse = self
-            .get_with_retry("https://slack.com/api/users.info", &params, "users.info")
+            .get_with_retry(
+                &format!("{}/users.info", self.base_url),
+                &params,
+                "users.info",
+            )
             .await?;
         debug!(user_id = ?result.user.as_ref().map(|u| &u.id), "slack: users.info success");
         Ok(result)
@@ -183,8 +200,12 @@ impl SlackApiClient {
         if let Some(c) = cursor {
             params.push(("cursor", c.to_string()));
         }
-        self.get_with_retry("https://slack.com/api/users.list", &params, "users.list")
-            .await
+        self.get_with_retry(
+            &format!("{}/users.list", self.base_url),
+            &params,
+            "users.list",
+        )
+        .await
     }
 
     pub async fn conversations_mark(&self, channel: &str, ts: &str) -> anyhow::Result<()> {
@@ -195,7 +216,7 @@ impl SlackApiClient {
         });
         let _: serde_json::Value = self
             .post_with_retry(
-                "https://slack.com/api/conversations.mark",
+                &format!("{}/conversations.mark", self.base_url),
                 &body,
                 "conversations.mark",
             )
@@ -220,7 +241,7 @@ impl SlackApiClient {
         }
         let result: ChatPostMessageResponse = self
             .post_with_retry(
-                "https://slack.com/api/chat.postMessage",
+                &format!("{}/chat.postMessage", self.base_url),
                 &body,
                 "chat.postMessage",
             )
