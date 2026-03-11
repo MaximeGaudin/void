@@ -2,9 +2,7 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use void_core::config::{
-    self, AccountConfig, AccountSettings, AccountType, VoidConfig,
-};
+use void_core::config::{self, AccountConfig, AccountSettings, AccountType, VoidConfig};
 
 use super::channel_factory;
 
@@ -334,9 +332,7 @@ async fn setup_whatsapp(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Resu
             Ok(()) => eprintln!("  ✓ WhatsApp paired successfully."),
             Err(e) => {
                 eprintln!("  ✗ Pairing failed: {e}");
-                eprintln!(
-                    "    You can retry later with: void auth whatsapp {account_id}"
-                );
+                eprintln!("    You can retry later with: void auth whatsapp {account_id}");
             }
         }
     } else {
@@ -457,9 +453,7 @@ async fn setup_calendar(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Resu
             Ok(()) => eprintln!("  ✓ Calendar authenticated successfully."),
             Err(e) => {
                 eprintln!("  ✗ Authentication failed: {e}");
-                eprintln!(
-                    "    You can retry later with: void auth calendar {account_id}"
-                );
+                eprintln!("    You can retry later with: void auth calendar {account_id}");
             }
         }
     } else {
@@ -518,15 +512,17 @@ fn pick_connector_action(
         eprintln!();
         eprintln!("  Existing accounts:");
         for &idx in existing_indices {
-            eprintln!("    • {} ({})", cfg.accounts[idx].id, cfg.accounts[idx].account_type);
+            eprintln!(
+                "    • {} ({})",
+                cfg.accounts[idx].id, cfg.accounts[idx].account_type
+            );
         }
         let choice = select(
-            &format!("You have {} {name} accounts configured:", existing_indices.len()),
-            &[
-                "Keep all current accounts",
-                "Add another account",
-                "Skip",
-            ],
+            &format!(
+                "You have {} {name} accounts configured:",
+                existing_indices.len()
+            ),
+            &["Keep all current accounts", "Add another account", "Skip"],
         );
         match choice {
             0 => ConnectorAction::Keep,
@@ -536,10 +532,7 @@ fn pick_connector_action(
     }
 }
 
-async fn authenticate_account(
-    account: &AccountConfig,
-    store_path: &Path,
-) -> anyhow::Result<()> {
+async fn authenticate_account(account: &AccountConfig, store_path: &Path) -> anyhow::Result<()> {
     let mut channel = channel_factory::build_channel(account, store_path)?;
     let channel_mut = Arc::get_mut(&mut channel)
         .ok_or_else(|| anyhow::anyhow!("internal error: could not get mutable channel ref"))?;

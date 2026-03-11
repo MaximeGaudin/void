@@ -8,6 +8,7 @@ pub mod config;
 pub mod contacts;
 pub mod doctor;
 pub mod inbox;
+pub mod install;
 pub mod messages;
 pub mod read;
 pub mod reply;

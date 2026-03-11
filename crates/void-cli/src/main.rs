@@ -61,6 +61,8 @@ enum Command {
     Accounts(commands::accounts::AccountsArgs),
     /// Configuration management
     Config(commands::config::ConfigArgs),
+    /// Install the void binary into your PATH
+    Install(commands::install::InstallArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -109,6 +111,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty),
         Some(Command::Accounts(args)) => commands::accounts::run(args),
         Some(Command::Config(args)) => commands::config::run(args),
+        Some(Command::Install(args)) => commands::install::run(args),
         None => {
             commands::status::run();
             Ok(())
