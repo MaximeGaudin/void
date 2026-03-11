@@ -287,6 +287,62 @@ calendar_ids = ["primary", "holidays"]
     }
 
     #[test]
+    fn expand_tilde_bare_tilde() {
+        let expanded = expand_tilde("~");
+        assert!(!expanded.to_str().unwrap().starts_with('~'));
+        assert!(expanded.is_absolute());
+    }
+
+    #[test]
+    fn find_account_returns_match() {
+        let config = VoidConfig {
+            store: StoreConfig::default(),
+            sync: SyncConfig::default(),
+            accounts: vec![
+                AccountConfig {
+                    id: "work-slack".into(),
+                    account_type: AccountType::Slack,
+                    settings: AccountSettings::Slack {
+                        app_token: "xapp".into(),
+                        user_token: "xoxp".into(),
+                    },
+                },
+                AccountConfig {
+                    id: "personal-gmail".into(),
+                    account_type: AccountType::Gmail,
+                    settings: AccountSettings::Gmail {
+                        credentials_file: "creds.json".into(),
+                    },
+                },
+            ],
+        };
+        assert!(config.find_account("work-slack").is_some());
+        assert_eq!(config.find_account("work-slack").unwrap().id, "work-slack");
+        assert!(config.find_account("nonexistent").is_none());
+    }
+
+    #[test]
+    fn find_account_by_connector_returns_match() {
+        let config = VoidConfig {
+            store: StoreConfig::default(),
+            sync: SyncConfig::default(),
+            accounts: vec![AccountConfig {
+                id: "gmail-1".into(),
+                account_type: AccountType::Gmail,
+                settings: AccountSettings::Gmail {
+                    credentials_file: "creds.json".into(),
+                },
+            }],
+        };
+        assert!(config.find_account_by_connector("gmail").is_some());
+        assert_eq!(
+            config.find_account_by_connector("gmail").unwrap().id,
+            "gmail-1"
+        );
+        assert!(config.find_account_by_connector("unknown").is_none());
+    }
+
+    #[test]
     fn redact_works() {
         assert_eq!(redact_token("xoxp-12345678-rest"), "xoxp-123...");
         assert_eq!(redact_token("short"), "***");

@@ -242,4 +242,12 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    #[test]
+    fn token_cache_path_joins_account_id() {
+        let store = std::path::Path::new("/tmp/void-store");
+        let path = token_cache_path(store, "gmail-1");
+        assert!(path.ends_with("gmail-1-token.json"));
+        assert!(path.to_str().unwrap().contains("gmail-1"));
+    }
 }

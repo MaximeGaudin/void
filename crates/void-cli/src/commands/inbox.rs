@@ -43,7 +43,10 @@ pub fn run_conversations(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
 
-    let conversations =
-        db.list_conversations(args.account.as_deref(), args.connector.as_deref(), args.limit)?;
+    let conversations = db.list_conversations(
+        args.account.as_deref(),
+        args.connector.as_deref(),
+        args.limit,
+    )?;
     formatter.print_conversations(&conversations)
 }

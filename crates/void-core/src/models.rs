@@ -168,6 +168,14 @@ mod tests {
     }
 
     #[test]
+    fn conversation_kind_display() {
+        assert_eq!(ConversationKind::Dm.to_string(), "dm");
+        assert_eq!(ConversationKind::Group.to_string(), "group");
+        assert_eq!(ConversationKind::Channel.to_string(), "channel");
+        assert_eq!(ConversationKind::Thread.to_string(), "thread");
+    }
+
+    #[test]
     fn message_serialization_roundtrip() {
         let msg = Message {
             id: "m1".into(),

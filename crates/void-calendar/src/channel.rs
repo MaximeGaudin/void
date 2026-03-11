@@ -502,4 +502,27 @@ mod tests {
         );
         assert!(result.attendees.is_some());
     }
+
+    #[test]
+    fn parse_rfc3339_valid() {
+        let ts = parse_rfc3339("2025-03-15T10:00:00Z");
+        assert!(ts > 1_740_000_000);
+        assert!(ts < 1_750_000_000);
+    }
+
+    #[test]
+    fn parse_rfc3339_invalid_returns_zero() {
+        assert_eq!(parse_rfc3339("not-a-date"), 0);
+    }
+
+    #[test]
+    fn parse_date_valid() {
+        let ts = parse_date("2025-12-25");
+        assert!(ts > 1_765_000_000);
+    }
+
+    #[test]
+    fn parse_date_invalid_returns_zero() {
+        assert_eq!(parse_date("invalid"), 0);
+    }
 }

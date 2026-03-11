@@ -399,7 +399,10 @@ impl Database {
 
         if let Some(acct) = account_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND m.account_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(
+                " AND m.account_id LIKE ?{}",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -1212,5 +1215,91 @@ mod tests {
         let results = db.list_channels(None, None, Some("engi"), 100).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name.as_deref(), Some("Engineering"));
+    }
+
+    #[test]
+    fn mark_message_read_updates_flag() {
+        let db = test_db();
+        let conv = make_conversation("c1", "test-slack", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        let msg = make_message("m1", "c1", "test-slack", "hello", 1_000);
+        db.upsert_message(&msg).unwrap();
+
+        let updated = db.mark_message_read("m1").unwrap();
+        assert!(
+            updated,
+            "mark_message_read should return true when row exists"
+        );
+
+        let loaded = db.get_message("m1").unwrap().unwrap();
+        assert!(loaded.is_read);
+    }
+
+    #[test]
+    fn mark_message_read_nonexistent_returns_false() {
+        let db = test_db();
+        let updated = db.mark_message_read("nonexistent").unwrap();
+        assert!(!updated);
+    }
+
+    #[test]
+    fn mark_message_archived_updates_flag() {
+        let db = test_db();
+        let conv = make_conversation("c1", "test-slack", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        let msg = make_message("m1", "c1", "test-slack", "hello", 1_000);
+        db.upsert_message(&msg).unwrap();
+
+        let updated = db.mark_message_archived("m1").unwrap();
+        assert!(updated);
+
+        let loaded = db.get_message("m1").unwrap().unwrap();
+        assert!(loaded.is_archived);
+    }
+
+    #[test]
+    fn find_message_by_external_id_returns_match() {
+        let db = test_db();
+        let conv = make_conversation("c1", "acct1", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        let msg = make_message("m1", "c1", "acct1", "hello", 1_000);
+        db.upsert_message(&msg).unwrap();
+
+        let found = db.find_message_by_external_id("acct1", "ext-m1").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().body.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn find_message_by_external_id_nonexistent_returns_none() {
+        let db = test_db();
+        let found = db
+            .find_message_by_external_id("acct1", "nonexistent")
+            .unwrap();
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn update_message_metadata_merges_json() {
+        let db = test_db();
+        let conv = make_conversation("c1", "test-slack", "C123");
+        db.upsert_conversation(&conv).unwrap();
+
+        let msg = make_message("m1", "c1", "test-slack", "hello", 1_000);
+        db.upsert_message(&msg).unwrap();
+
+        let updated = db
+            .update_message_metadata("m1", &serde_json::json!({"key": "value"}))
+            .unwrap();
+        assert!(updated);
+
+        let loaded = db.get_message("m1").unwrap().unwrap();
+        assert_eq!(
+            loaded.metadata.as_ref().unwrap()["key"],
+            serde_json::json!("value")
+        );
     }
 }

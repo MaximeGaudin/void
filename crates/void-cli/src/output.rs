@@ -268,6 +268,26 @@ impl From<&HealthStatus> for HealthRow {
     }
 }
 
+pub fn parse_channel_type(s: &str) -> Option<ChannelType> {
+    match s.to_lowercase().as_str() {
+        "whatsapp" | "wa" => Some(ChannelType::WhatsApp),
+        "slack" | "sl" => Some(ChannelType::Slack),
+        "gmail" | "gm" | "email" => Some(ChannelType::Gmail),
+        "calendar" | "cal" | "ca" => Some(ChannelType::Calendar),
+        _ => None,
+    }
+}
+
+fn badge_from_connector(connector: &str) -> String {
+    match connector {
+        "whatsapp" => "[WA]".into(),
+        "slack" => "[SL]".into(),
+        "gmail" => "[GM]".into(),
+        "calendar" => "[CA]".into(),
+        other => format!("[{}]", truncate(other, 4)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,24 +347,37 @@ mod tests {
         assert!(badge.starts_with('['));
         assert!(badge.ends_with(']'));
     }
-}
 
-pub fn parse_channel_type(s: &str) -> Option<ChannelType> {
-    match s.to_lowercase().as_str() {
-        "whatsapp" | "wa" => Some(ChannelType::WhatsApp),
-        "slack" | "sl" => Some(ChannelType::Slack),
-        "gmail" | "gm" | "email" => Some(ChannelType::Gmail),
-        "calendar" | "cal" | "ca" => Some(ChannelType::Calendar),
-        _ => None,
+    #[test]
+    fn parse_channel_type_whatsapp() {
+        assert_eq!(parse_channel_type("whatsapp"), Some(ChannelType::WhatsApp));
+        assert_eq!(parse_channel_type("wa"), Some(ChannelType::WhatsApp));
+        assert_eq!(parse_channel_type("WA"), Some(ChannelType::WhatsApp));
     }
-}
 
-fn badge_from_connector(connector: &str) -> String {
-    match connector {
-        "whatsapp" => "[WA]".into(),
-        "slack" => "[SL]".into(),
-        "gmail" => "[GM]".into(),
-        "calendar" => "[CA]".into(),
-        other => format!("[{}]", truncate(other, 4)),
+    #[test]
+    fn parse_channel_type_slack() {
+        assert_eq!(parse_channel_type("slack"), Some(ChannelType::Slack));
+        assert_eq!(parse_channel_type("sl"), Some(ChannelType::Slack));
+    }
+
+    #[test]
+    fn parse_channel_type_gmail() {
+        assert_eq!(parse_channel_type("gmail"), Some(ChannelType::Gmail));
+        assert_eq!(parse_channel_type("gm"), Some(ChannelType::Gmail));
+        assert_eq!(parse_channel_type("email"), Some(ChannelType::Gmail));
+    }
+
+    #[test]
+    fn parse_channel_type_calendar() {
+        assert_eq!(parse_channel_type("calendar"), Some(ChannelType::Calendar));
+        assert_eq!(parse_channel_type("cal"), Some(ChannelType::Calendar));
+        assert_eq!(parse_channel_type("ca"), Some(ChannelType::Calendar));
+    }
+
+    #[test]
+    fn parse_channel_type_unknown_returns_none() {
+        assert_eq!(parse_channel_type("unknown"), None);
+        assert_eq!(parse_channel_type(""), None);
     }
 }
