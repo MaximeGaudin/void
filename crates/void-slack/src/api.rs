@@ -249,6 +249,47 @@ impl SlackApiClient {
         debug!(ts = ?result.ts, "slack: chat.postMessage success");
         Ok(result)
     }
+
+    pub async fn chat_update(
+        &self,
+        channel: &str,
+        ts: &str,
+        text: &str,
+    ) -> anyhow::Result<ChatUpdateResponse> {
+        debug!(channel, ts, "slack: chat.update");
+        let body = serde_json::json!({
+            "channel": channel,
+            "ts": ts,
+            "text": text,
+        });
+        let result: ChatUpdateResponse = self
+            .post_with_retry(
+                &format!("{}/chat.update", self.base_url),
+                &body,
+                "chat.update",
+            )
+            .await?;
+        debug!(ts = ?result.ts, "slack: chat.update success");
+        Ok(result)
+    }
+
+    pub async fn reactions_add(&self, channel: &str, ts: &str, emoji: &str) -> anyhow::Result<()> {
+        debug!(channel, ts, emoji, "slack: reactions.add");
+        let body = serde_json::json!({
+            "channel": channel,
+            "timestamp": ts,
+            "name": emoji,
+        });
+        let _: serde_json::Value = self
+            .post_with_retry(
+                &format!("{}/reactions.add", self.base_url),
+                &body,
+                "reactions.add",
+            )
+            .await?;
+        debug!(emoji, "slack: reactions.add success");
+        Ok(())
+    }
 }
 
 // -- Slack API response types --
@@ -387,4 +428,11 @@ pub struct SlackUserProfile {
 pub struct ChatPostMessageResponse {
     pub channel: Option<String>,
     pub ts: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatUpdateResponse {
+    pub channel: Option<String>,
+    pub ts: Option<String>,
+    pub text: Option<String>,
 }

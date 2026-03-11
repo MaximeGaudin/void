@@ -174,6 +174,20 @@ impl SlackConnector {
         );
         Ok(())
     }
+
+    pub async fn react(&self, channel: &str, ts: &str, emoji: &str) -> anyhow::Result<()> {
+        self.api.reactions_add(channel, ts, emoji).await
+    }
+
+    pub async fn edit_message(
+        &self,
+        channel: &str,
+        ts: &str,
+        text: &str,
+    ) -> anyhow::Result<String> {
+        let resp = self.api.chat_update(channel, ts, text).await?;
+        Ok(resp.ts.unwrap_or_default())
+    }
 }
 
 #[async_trait]
