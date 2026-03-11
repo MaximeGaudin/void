@@ -16,11 +16,13 @@ pub fn build_channel(
             AccountSettings::Slack {
                 user_token,
                 app_token,
+                exclude_channels,
             },
         ) => Ok(Arc::new(void_slack::channel::SlackChannel::new(
             &account.id,
             user_token,
             app_token,
+            exclude_channels.clone(),
         ))),
         (AccountType::Gmail, AccountSettings::Gmail { credentials_file }) => {
             let cred_path = expand_tilde(credentials_file);

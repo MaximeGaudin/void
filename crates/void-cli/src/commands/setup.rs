@@ -267,6 +267,7 @@ async fn setup_slack(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<
         settings: AccountSettings::Slack {
             app_token,
             user_token,
+            exclude_channels: vec![],
         },
     };
 

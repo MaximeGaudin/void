@@ -17,14 +17,21 @@ pub struct SlackChannel {
     /// Reserved for Socket Mode WebSocket connection (future).
     #[allow(dead_code)]
     app_token: String,
+    exclude_channels: Vec<String>,
 }
 
 impl SlackChannel {
-    pub fn new(account_id: &str, user_token: &str, app_token: &str) -> Self {
+    pub fn new(
+        account_id: &str,
+        user_token: &str,
+        app_token: &str,
+        exclude_channels: Vec<String>,
+    ) -> Self {
         Self {
             account_id: account_id.to_string(),
             api: SlackApiClient::new(user_token),
             app_token: app_token.to_string(),
+            exclude_channels,
         }
     }
 
@@ -72,6 +79,26 @@ impl SlackChannel {
                 .filter(|c| !c.is_empty());
             if cursor.is_none() {
                 break;
+            }
+        }
+
+        if !self.exclude_channels.is_empty() {
+            let before = all.len();
+            all.retain(|conv| {
+                let dominated_by_id = self.exclude_channels.iter().any(|exc| exc == &conv.id);
+                let dominated_by_name = conv
+                    .name
+                    .as_ref()
+                    .is_some_and(|n| self.exclude_channels.iter().any(|exc| exc == n));
+                !(dominated_by_id || dominated_by_name)
+            });
+            let excluded = before - all.len();
+            if excluded > 0 {
+                info!(
+                    account_id = %self.account_id,
+                    excluded,
+                    "excluded channels from sync"
+                );
             }
         }
 

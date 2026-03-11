@@ -74,9 +74,13 @@ fn cmd_show() -> anyhow::Result<()> {
                 config::AccountSettings::Slack {
                     app_token,
                     user_token,
+                    exclude_channels,
                 } => {
                     eprintln!("    app_token:  {}", config::redact_token(app_token));
                     eprintln!("    user_token: {}", config::redact_token(user_token));
+                    if !exclude_channels.is_empty() {
+                        eprintln!("    exclude:    {}", exclude_channels.join(", "));
+                    }
                 }
                 config::AccountSettings::Gmail { credentials_file } => {
                     eprintln!("    credentials: {credentials_file}");

@@ -94,6 +94,8 @@ pub enum AccountSettings {
     Slack {
         app_token: String,
         user_token: String,
+        #[serde(default)]
+        exclude_channels: Vec<String>,
     },
     Gmail {
         credentials_file: String,
@@ -175,6 +177,7 @@ calendar_poll_interval_secs = 60
 # type = "slack"
 # app_token = "xapp-1-..."
 # user_token = "xoxp-..."
+# exclude_channels = ["random", "social"]
 #
 # [[accounts]]
 # id = "personal-gmail"
@@ -305,6 +308,7 @@ calendar_ids = ["primary", "holidays"]
                     settings: AccountSettings::Slack {
                         app_token: "xapp".into(),
                         user_token: "xoxp".into(),
+                        exclude_channels: vec![],
                     },
                 },
                 AccountConfig {
@@ -372,5 +376,49 @@ calendar_ids = ["primary", "holidays"]
         assert_eq!(loaded.store.path, "~/test-store");
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn parse_slack_exclude_channels() {
+        let toml = r#"
+[[accounts]]
+id = "work-slack"
+type = "slack"
+app_token = "xapp-1-test"
+user_token = "xoxp-test"
+exclude_channels = ["random", "social", "C07ABC123"]
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.accounts.len(), 1);
+        match &config.accounts[0].settings {
+            AccountSettings::Slack {
+                exclude_channels, ..
+            } => {
+                assert_eq!(exclude_channels.len(), 3);
+                assert_eq!(exclude_channels[0], "random");
+                assert_eq!(exclude_channels[2], "C07ABC123");
+            }
+            _ => panic!("expected Slack settings"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_without_exclude_channels_defaults_empty() {
+        let toml = r#"
+[[accounts]]
+id = "work-slack"
+type = "slack"
+app_token = "xapp-1-test"
+user_token = "xoxp-test"
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        match &config.accounts[0].settings {
+            AccountSettings::Slack {
+                exclude_channels, ..
+            } => {
+                assert!(exclude_channels.is_empty());
+            }
+            _ => panic!("expected Slack settings"),
+        }
     }
 }
