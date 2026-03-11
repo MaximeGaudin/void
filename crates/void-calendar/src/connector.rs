@@ -72,7 +72,10 @@ impl CalendarConnector {
         let time_min = (now - chrono::Duration::days(30)).to_rfc3339();
         let time_max = (now + chrono::Duration::days(90)).to_rfc3339();
 
-        let mut progress = void_core::progress::BackfillProgress::new("calendar", "events");
+        let mut progress = void_core::progress::BackfillProgress::new(
+            &format!("calendar:{}", self.account_id),
+            "events",
+        );
         progress.set_pages(self.calendar_ids.len() as u64);
 
         for cal_id in &self.calendar_ids {

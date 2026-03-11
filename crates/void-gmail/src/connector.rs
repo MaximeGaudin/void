@@ -84,7 +84,10 @@ impl GmailConnector {
         let mut page_token: Option<String> = None;
         let max_pages: u64 = 5;
 
-        let mut progress = void_core::progress::BackfillProgress::new("gmail", "messages");
+        let mut progress = void_core::progress::BackfillProgress::new(
+            &format!("gmail:{}", self.config_id),
+            "messages",
+        );
         progress.set_pages(max_pages);
 
         loop {

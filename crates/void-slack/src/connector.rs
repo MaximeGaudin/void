@@ -112,7 +112,8 @@ impl SlackConnector {
         let conversations = self.list_all_conversations().await?;
 
         eprintln!(
-            "[slack] found {} conversations, fetching history…",
+            "[slack:{}] found {} conversations, fetching history…",
+            self.account_id,
             conversations.len()
         );
 
@@ -122,8 +123,11 @@ impl SlackConnector {
             .timestamp()
             .to_string();
 
-        let mut progress = void_core::progress::BackfillProgress::new("slack", "conversations")
-            .with_secondary("messages");
+        let mut progress = void_core::progress::BackfillProgress::new(
+            &format!("slack:{}", self.account_id),
+            "conversations",
+        )
+        .with_secondary("messages");
         progress.set_items_total(conversations.len() as u64);
 
         for conv in &conversations {
@@ -193,7 +197,18 @@ impl Connector for SlackConnector {
     }
 
     async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
-        self.backfill(&db).await?;
+        let needs_backfill = db
+            .get_sync_state(&self.account_id, "backfill_done")?
+            .is_none();
+        if needs_backfill {
+            self.backfill(&db).await?;
+            db.set_sync_state(&self.account_id, "backfill_done", "1")?;
+        } else {
+            info!(
+                account_id = %self.account_id,
+                "Slack backfill already complete, starting incremental sync"
+            );
+        }
 
         // After backfill, poll for new messages periodically
         // (Socket Mode can be added later for true real-time)
