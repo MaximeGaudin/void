@@ -25,6 +25,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Interactive setup wizard — configure all connectors
+    Setup,
     /// Authenticate a channel
     Auth(commands::auth::AuthArgs),
     /// Start background sync
@@ -92,6 +94,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         .init();
 
     match &cli.command {
+        Some(Command::Setup) => commands::setup::run().await,
         Some(Command::Auth(args)) => commands::auth::run(args).await,
         Some(Command::Sync(args)) => commands::sync::run(args).await,
         Some(Command::Stop) => commands::sync::stop_daemon(),

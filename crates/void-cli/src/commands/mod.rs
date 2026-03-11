@@ -13,5 +13,6 @@ pub mod read;
 pub mod reply;
 pub mod search;
 pub mod send;
+pub mod setup;
 pub mod status;
 pub mod sync;
