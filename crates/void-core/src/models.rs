@@ -95,6 +95,33 @@ pub struct Message {
     pub context: Option<Vec<Message>>,
 }
 
+/// Remove messages that already appear in another message's context to avoid duplication.
+/// Keeps only the "anchor" (the message that owns the context) at the top level.
+pub fn dedup_context_messages(messages: Vec<Message>) -> Vec<Message> {
+    use std::collections::HashSet;
+
+    let mut shown_in_context: HashSet<String> = HashSet::new();
+
+    for msg in &messages {
+        if let Some(ctx) = &msg.context {
+            for ctx_msg in ctx {
+                if ctx_msg.id != msg.id {
+                    shown_in_context.insert(ctx_msg.id.clone());
+                }
+            }
+        }
+    }
+
+    if shown_in_context.is_empty() {
+        return messages;
+    }
+
+    messages
+        .into_iter()
+        .filter(|m| !shown_in_context.contains(&m.id))
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalendarEvent {
     pub id: String,
@@ -230,5 +257,78 @@ mod tests {
         };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("meet.google.com"));
+    }
+
+    fn make_msg(id: &str) -> Message {
+        Message {
+            id: id.into(),
+            conversation_id: "c1".into(),
+            account_id: "a1".into(),
+            connector: "slack".into(),
+            external_id: format!("ext-{id}"),
+            sender: "user@test".into(),
+            sender_name: None,
+            body: Some(format!("body of {id}")),
+            timestamp: 1_000,
+            synced_at: None,
+            is_from_me: false,
+            is_read: false,
+            is_archived: false,
+            reply_to_id: None,
+            media_type: None,
+            metadata: None,
+            context_id: None,
+            context: None,
+        }
+    }
+
+    #[test]
+    fn dedup_no_context_returns_all() {
+        let messages = vec![make_msg("m1"), make_msg("m2"), make_msg("m3")];
+        let result = dedup_context_messages(messages);
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn dedup_removes_messages_shown_in_other_context() {
+        let ctx_a = make_msg("m1");
+        let ctx_b = make_msg("m2");
+        let mut anchor = make_msg("m3");
+        anchor.context = Some(vec![ctx_a.clone(), ctx_b.clone(), anchor.clone()]);
+
+        let messages = vec![make_msg("m1"), make_msg("m2"), anchor];
+        let result = dedup_context_messages(messages);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "m3");
+    }
+
+    #[test]
+    fn dedup_keeps_anchor_even_if_in_own_context() {
+        let ctx_a = make_msg("m1");
+        let mut anchor = make_msg("m2");
+        anchor.context = Some(vec![ctx_a.clone(), anchor.clone()]);
+
+        let messages = vec![make_msg("m1"), anchor];
+        let result = dedup_context_messages(messages);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "m2");
+        assert!(result[0].context.is_some());
+    }
+
+    #[test]
+    fn dedup_preserves_messages_without_context_overlap() {
+        let mut anchor = make_msg("m2");
+        anchor.context = Some(vec![make_msg("m1"), anchor.clone()]);
+
+        let standalone = make_msg("m3");
+
+        let messages = vec![make_msg("m1"), anchor, standalone];
+        let result = dedup_context_messages(messages);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, "m2");
+        assert_eq!(result[1].id, "m3");
     }
 }

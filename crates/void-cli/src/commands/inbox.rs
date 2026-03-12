@@ -2,6 +2,7 @@ use clap::Args;
 use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
+use void_core::models::dedup_context_messages;
 
 use crate::output::OutputFormatter;
 
@@ -40,6 +41,7 @@ pub fn run(args: &InboxArgs, json: bool, enrich_context: bool) -> anyhow::Result
     messages.reverse();
     if enrich_context {
         db.enrich_with_context(&mut messages)?;
+        messages = dedup_context_messages(messages);
     }
     formatter.print_messages(&messages)
 }
