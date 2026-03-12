@@ -267,7 +267,7 @@ mod tests {
     fn parse_schedule_time_date_time_format() {
         // 2025-01-15 14:30 in local timezone
         let ts = parse_schedule_time("2025-01-15 14:30").unwrap();
-        let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap();
+        let dt = Local.timestamp_opt(ts, 0).single().unwrap();
         assert_eq!(dt.format("%Y-%m-%d").to_string(), "2025-01-15");
         assert_eq!(dt.format("%H:%M").to_string(), "14:30");
     }
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn parse_schedule_time_date_only_defaults_to_9am() {
         let ts = parse_schedule_time("2025-06-10").unwrap();
-        let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap();
+        let dt = Local.timestamp_opt(ts, 0).single().unwrap();
         assert_eq!(dt.format("%Y-%m-%d").to_string(), "2025-06-10");
         assert_eq!(dt.format("%H").to_string(), "09");
     }
