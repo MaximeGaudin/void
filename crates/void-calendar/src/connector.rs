@@ -135,6 +135,16 @@ impl CalendarConnector {
                 Ok(resp) => {
                     if let Some(events) = &resp.items {
                         for event in events {
+                            let event_id = event.id.as_deref().unwrap_or("");
+                            if event.status.as_deref() == Some("cancelled") {
+                                if db.delete_event(&self.account_id, event_id)? {
+                                    eprintln!(
+                                        "[calendar:{}] deleted: {}",
+                                        self.account_id, event_id
+                                    );
+                                }
+                                continue;
+                            }
                             if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
                                 eprintln!(
                                     "[calendar:{}] new: {}",
@@ -711,6 +721,11 @@ mod tests {
                 Ok(resp) => {
                     if let Some(events) = &resp.items {
                         for event in events {
+                            let event_id = event.id.as_deref().unwrap_or("");
+                            if event.status.as_deref() == Some("cancelled") {
+                                db.delete_event(account_id, event_id)?;
+                                continue;
+                            }
                             if let Some(cal_event) = map_event(event, account_id, cal_id) {
                                 db.upsert_event(&cal_event)?;
                             }
@@ -1076,5 +1091,82 @@ mod tests {
 
         let stored_token = db.get_sync_state("test-cal", "sync_token:primary").unwrap();
         assert_eq!(stored_token.as_deref(), Some("fresh-sync-token"));
+    }
+
+    #[tokio::test]
+    async fn incremental_sync_deletes_cancelled_events() {
+        let mock_server = MockServer::start().await;
+
+        let incremental_body = r#"{
+            "items": [
+                {"id": "ev1", "status": "cancelled"},
+                {"id": "ev5", "summary": "New Event", "start": {"dateTime": "2026-03-12T10:00:00Z"}, "end": {"dateTime": "2026-03-12T11:00:00Z"}, "status": "confirmed"}
+            ],
+            "nextSyncToken": "after-delete-token"
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/calendar/v3/calendars/primary/events"))
+            .and(query_param("syncToken", "pre-delete-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(incremental_body))
+            .mount(&mock_server)
+            .await;
+
+        let api = CalendarApiClient::with_base_url("test-token", &mock_server.uri());
+        let db = Database::open_in_memory().unwrap();
+
+        let existing = CalendarEvent {
+            id: "test-cal-ev1".into(),
+            account_id: "test-cal".into(),
+            connector: "calendar".into(),
+            external_id: "ev1".into(),
+            title: "To Be Deleted".into(),
+            description: None,
+            location: None,
+            start_at: 1_710_000_000,
+            end_at: 1_710_003_600,
+            all_day: false,
+            attendees: None,
+            status: Some("confirmed".into()),
+            calendar_name: Some("primary".into()),
+            meet_link: None,
+            metadata: None,
+        };
+        db.upsert_event(&existing).unwrap();
+        assert_eq!(
+            db.list_events(None, None, None, None, 100).unwrap().len(),
+            1
+        );
+
+        db.set_sync_state("test-cal", "sync_token:primary", "pre-delete-token")
+            .unwrap();
+
+        let calendar_ids = vec!["primary".to_string()];
+        let now = chrono::Utc::now();
+        let time_min = (now - chrono::Duration::days(30)).to_rfc3339();
+        let time_max = (now + chrono::Duration::days(90)).to_rfc3339();
+
+        run_incremental_sync_with_client(
+            &api,
+            &db,
+            "test-cal",
+            &calendar_ids,
+            &time_min,
+            &time_max,
+        )
+        .await
+        .unwrap();
+
+        let events = db.list_events(None, None, None, None, 100).unwrap();
+        assert_eq!(
+            events.len(),
+            1,
+            "cancelled event should be deleted, new one added"
+        );
+        assert_eq!(events[0].external_id, "ev5");
+        assert_eq!(events[0].title, "New Event");
+
+        let stored_token = db.get_sync_state("test-cal", "sync_token:primary").unwrap();
+        assert_eq!(stored_token.as_deref(), Some("after-delete-token"));
     }
 }

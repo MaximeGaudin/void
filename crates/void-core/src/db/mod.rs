@@ -490,6 +490,15 @@ impl Database {
         Ok(())
     }
 
+    pub fn delete_event(&self, account_id: &str, external_id: &str) -> anyhow::Result<bool> {
+        debug!(account_id, external_id, "deleting event");
+        let deleted = self.conn().execute(
+            "DELETE FROM events WHERE account_id = ?1 AND external_id = ?2",
+            params![account_id, external_id],
+        )?;
+        Ok(deleted > 0)
+    }
+
     pub fn list_events(
         &self,
         from: Option<i64>,

@@ -64,19 +64,23 @@ impl CalendarApiClient {
             time_max = ?time_max,
             "calendar: list_events"
         );
-        let mut params: Vec<(&str, String)> = vec![
-            ("singleEvents", "true".into()),
-            ("orderBy", "startTime".into()),
-            ("maxResults", "2500".into()),
-        ];
-        if let Some(t) = time_min {
-            params.push(("timeMin", t.into()));
-        }
-        if let Some(t) = time_max {
-            params.push(("timeMax", t.into()));
-        }
-        if let Some(st) = sync_token {
-            params.push(("syncToken", st.into()));
+        let mut params: Vec<(&str, String)> = vec![("maxResults", "2500".into())];
+
+        if sync_token.is_some() {
+            // syncToken is incompatible with singleEvents, orderBy, timeMin, timeMax
+            if let Some(st) = sync_token {
+                params.push(("syncToken", st.into()));
+            }
+            // showDeleted must be true (default) to receive cancelled events
+        } else {
+            params.push(("singleEvents", "true".into()));
+            params.push(("orderBy", "startTime".into()));
+            if let Some(t) = time_min {
+                params.push(("timeMin", t.into()));
+            }
+            if let Some(t) = time_max {
+                params.push(("timeMax", t.into()));
+            }
         }
         if let Some(pt) = page_token {
             params.push(("pageToken", pt.into()));
