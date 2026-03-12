@@ -249,9 +249,8 @@ impl DriveApiClient {
             .bearer_auth(&self.access_token)
             .query(&[("fields", "id,name,mimeType,size")])
             .send()
-            .await?
-            .error_for_status()
-            .map_err(anyhow::Error::from)?;
+            .await?;
+        let resp = check_response(resp).await?;
 
         let meta: FileMetadata = resp
             .json()
@@ -275,9 +274,8 @@ impl DriveApiClient {
             .bearer_auth(&self.access_token)
             .query(&[("alt", "media")])
             .send()
-            .await?
-            .error_for_status()
-            .map_err(anyhow::Error::from)?;
+            .await?;
+        let resp = check_response(resp).await?;
 
         let bytes = resp.bytes().await?;
         debug!(file_id, size = bytes.len(), "gdrive: download ok");
@@ -302,9 +300,8 @@ impl DriveApiClient {
             .bearer_auth(&self.access_token)
             .query(&[("mimeType", export_mime)])
             .send()
-            .await?
-            .error_for_status()
-            .map_err(anyhow::Error::from)?;
+            .await?;
+        let resp = check_response(resp).await?;
 
         let bytes = resp.bytes().await?;
         debug!(file_id, size = bytes.len(), "gdrive: export ok");
@@ -385,13 +382,69 @@ fn urlencoded(s: &str) -> String {
     s.replace('#', "%23").replace(' ', "%20")
 }
 
-/// Create a Drive API client from the user's stored OAuth tokens (reuses gmail auth).
+/// Check HTTP response status, extracting the Google API error message on failure.
+/// Produces actionable hints for common errors (missing scopes, Drive API not enabled).
+async fn check_response(resp: reqwest::Response) -> anyhow::Result<reqwest::Response> {
+    if resp.status().is_success() {
+        return Ok(resp);
+    }
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    let detail = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str().map(|s| s.to_string()))
+        })
+        .unwrap_or(body);
+
+    let lower = detail.to_lowercase();
+    if status == reqwest::StatusCode::FORBIDDEN && lower.contains("insufficient authentication scopes") {
+        anyhow::bail!(
+            "your current token does not include Google Drive scopes.\n\
+             Run `void drive auth` to authorize Drive access."
+        )
+    }
+    if (status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND)
+        && lower.contains("drive api") && lower.contains("not been used")
+    {
+        anyhow::bail!(
+            "the Google Drive API is not enabled for your Cloud project.\n\
+             Enable it at: https://console.cloud.google.com/apis/library/drive.googleapis.com\n\
+             Then run `void drive auth`."
+        )
+    }
+
+    anyhow::bail!("Google API error ({status}): {detail}")
+}
+
+/// Token path dedicated to Drive (avoids overwriting Gmail/Calendar tokens).
+pub fn drive_token_cache_path(store_path: &Path, account_id: &str) -> std::path::PathBuf {
+    store_path.join(format!("{account_id}-drive-token.json"))
+}
+
+/// Create a Drive API client. Tries the Drive-specific token first, then falls
+/// back to the shared Gmail token (which may already have sufficient scopes).
 pub async fn build_drive_client(
     store_path: &Path,
     account_id: &str,
     credentials_file: Option<&str>,
 ) -> anyhow::Result<DriveApiClient> {
-    let token_path = void_gmail::auth::token_cache_path(store_path, account_id);
+    let drive_path = drive_token_cache_path(store_path, account_id);
+    let gmail_path = void_gmail::auth::token_cache_path(store_path, account_id);
+
+    let token_path = if drive_path.exists() {
+        drive_path
+    } else if gmail_path.exists() {
+        gmail_path
+    } else {
+        anyhow::bail!(
+            "no Google token found for \"{account_id}\". \
+             Run `void drive auth --account {account_id}` first."
+        );
+    };
+
     let mut cache = void_gmail::auth::TokenCache::load(&token_path)?;
 
     let is_expired = cache
@@ -407,7 +460,7 @@ pub async fn build_drive_client(
             cache = void_gmail::auth::refresh_access_token(&http, &creds, refresh_token).await?;
             cache.save(&token_path)?;
         } else {
-            anyhow::bail!("token expired and no refresh token. Run `void setup`");
+            anyhow::bail!("token expired and no refresh token. Run `void drive auth`");
         }
     }
 
@@ -415,13 +468,14 @@ pub async fn build_drive_client(
 }
 
 /// Run the interactive OAuth flow for Drive scopes.
+/// Saves to a Drive-specific token file so Gmail/Calendar tokens are not overwritten.
 pub async fn authenticate_drive(
     store_path: &Path,
     account_id: &str,
     credentials_file: Option<&str>,
 ) -> anyhow::Result<()> {
     let creds = void_gmail::auth::load_client_credentials(credentials_file)?;
-    let token_path = void_gmail::auth::token_cache_path(store_path, account_id);
+    let token_path = drive_token_cache_path(store_path, account_id);
     let cache = void_gmail::auth::authorize_interactive(&creds, Some(DRIVE_SCOPES)).await?;
     cache.save(&token_path)?;
     Ok(())
