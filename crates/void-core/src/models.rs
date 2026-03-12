@@ -96,29 +96,43 @@ pub struct Message {
 }
 
 /// Remove messages that already appear in another message's context to avoid duplication.
-/// Keeps only the "anchor" (the message that owns the context) at the top level.
+/// For each context group, the most recent message in the top-level list is the anchor;
+/// all other messages from that group are removed.
 pub fn dedup_context_messages(messages: Vec<Message>) -> Vec<Message> {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
-    let mut shown_in_context: HashSet<String> = HashSet::new();
-
+    let mut best_per_context: HashMap<String, (i64, String)> = HashMap::new();
     for msg in &messages {
-        if let Some(ctx) = &msg.context {
-            for ctx_msg in ctx {
-                if ctx_msg.id != msg.id {
-                    shown_in_context.insert(ctx_msg.id.clone());
+        if let Some(ctx_id) = &msg.context_id {
+            if msg.context.is_some() {
+                let entry = best_per_context
+                    .entry(ctx_id.clone())
+                    .or_insert((0, String::new()));
+                if msg.timestamp > entry.0 {
+                    *entry = (msg.timestamp, msg.id.clone());
                 }
             }
         }
     }
 
-    if shown_in_context.is_empty() {
+    if best_per_context.is_empty() {
         return messages;
+    }
+
+    let mut removable: HashSet<String> = HashSet::new();
+    for msg in &messages {
+        if let Some(ctx_id) = &msg.context_id {
+            if let Some((_, anchor_id)) = best_per_context.get(ctx_id) {
+                if msg.id != *anchor_id {
+                    removable.insert(msg.id.clone());
+                }
+            }
+        }
     }
 
     messages
         .into_iter()
-        .filter(|m| !shown_in_context.contains(&m.id))
+        .filter(|m| !removable.contains(&m.id))
         .collect()
 }
 
@@ -259,7 +273,7 @@ mod tests {
         assert!(json.contains("meet.google.com"));
     }
 
-    fn make_msg(id: &str) -> Message {
+    fn make_msg_ts(id: &str, ts: i64, ctx_id: Option<&str>) -> Message {
         Message {
             id: id.into(),
             conversation_id: "c1".into(),
@@ -269,7 +283,7 @@ mod tests {
             sender: "user@test".into(),
             sender_name: None,
             body: Some(format!("body of {id}")),
-            timestamp: 1_000,
+            timestamp: ts,
             synced_at: None,
             is_from_me: false,
             is_read: false,
@@ -277,9 +291,13 @@ mod tests {
             reply_to_id: None,
             media_type: None,
             metadata: None,
-            context_id: None,
+            context_id: ctx_id.map(|s| s.to_string()),
             context: None,
         }
+    }
+
+    fn make_msg(id: &str) -> Message {
+        make_msg_ts(id, 1_000, None)
     }
 
     #[test]
@@ -291,12 +309,17 @@ mod tests {
 
     #[test]
     fn dedup_removes_messages_shown_in_other_context() {
-        let ctx_a = make_msg("m1");
-        let ctx_b = make_msg("m2");
-        let mut anchor = make_msg("m3");
-        anchor.context = Some(vec![ctx_a.clone(), ctx_b.clone(), anchor.clone()]);
+        let m1 = make_msg_ts("m1", 100, Some("ctx1"));
+        let m2 = make_msg_ts("m2", 200, Some("ctx1"));
+        let mut m3 = make_msg_ts("m3", 300, Some("ctx1"));
+        m3.context = Some(vec![m1.clone(), m2.clone(), m3.clone()]);
 
-        let messages = vec![make_msg("m1"), make_msg("m2"), anchor];
+        let mut m1_with_ctx = m1.clone();
+        m1_with_ctx.context = Some(vec![m1.clone(), m2.clone(), m3.clone()]);
+        let mut m2_with_ctx = m2.clone();
+        m2_with_ctx.context = Some(vec![m1.clone(), m2.clone(), m3.clone()]);
+
+        let messages = vec![m1_with_ctx, m2_with_ctx, m3];
         let result = dedup_context_messages(messages);
 
         assert_eq!(result.len(), 1);
@@ -305,11 +328,14 @@ mod tests {
 
     #[test]
     fn dedup_keeps_anchor_even_if_in_own_context() {
-        let ctx_a = make_msg("m1");
-        let mut anchor = make_msg("m2");
-        anchor.context = Some(vec![ctx_a.clone(), anchor.clone()]);
+        let m1 = make_msg_ts("m1", 100, Some("ctx1"));
+        let mut m2 = make_msg_ts("m2", 200, Some("ctx1"));
+        m2.context = Some(vec![m1.clone(), m2.clone()]);
 
-        let messages = vec![make_msg("m1"), anchor];
+        let mut m1_with_ctx = m1.clone();
+        m1_with_ctx.context = Some(vec![m1.clone(), m2.clone()]);
+
+        let messages = vec![m1_with_ctx, m2];
         let result = dedup_context_messages(messages);
 
         assert_eq!(result.len(), 1);
@@ -319,16 +345,41 @@ mod tests {
 
     #[test]
     fn dedup_preserves_messages_without_context_overlap() {
-        let mut anchor = make_msg("m2");
-        anchor.context = Some(vec![make_msg("m1"), anchor.clone()]);
+        let m1 = make_msg_ts("m1", 100, Some("ctx1"));
+        let mut m2 = make_msg_ts("m2", 200, Some("ctx1"));
+        m2.context = Some(vec![m1.clone(), m2.clone()]);
 
-        let standalone = make_msg("m3");
+        let mut m1_with_ctx = m1.clone();
+        m1_with_ctx.context = Some(vec![m1.clone(), m2.clone()]);
 
-        let messages = vec![make_msg("m1"), anchor, standalone];
+        let standalone = make_msg_ts("m3", 300, None);
+
+        let messages = vec![m1_with_ctx, m2, standalone];
         let result = dedup_context_messages(messages);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].id, "m2");
         assert_eq!(result[1].id, "m3");
+    }
+
+    #[test]
+    fn dedup_all_same_context_keeps_most_recent() {
+        let m1 = make_msg_ts("m1", 100, Some("ctx1"));
+        let m2 = make_msg_ts("m2", 200, Some("ctx1"));
+        let m3 = make_msg_ts("m3", 300, Some("ctx1"));
+        let ctx = vec![m1.clone(), m2.clone(), m3.clone()];
+
+        let mut m1e = m1;
+        m1e.context = Some(ctx.clone());
+        let mut m2e = m2;
+        m2e.context = Some(ctx.clone());
+        let mut m3e = m3;
+        m3e.context = Some(ctx);
+
+        let messages = vec![m1e, m2e, m3e];
+        let result = dedup_context_messages(messages);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "m3");
     }
 }
