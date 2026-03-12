@@ -237,6 +237,25 @@ impl SlackApiClient {
         Ok(())
     }
 
+    pub async fn conversations_open(
+        &self,
+        users: &[&str],
+    ) -> anyhow::Result<ConversationsOpenResponse> {
+        debug!(users = ?users, "slack: conversations.open");
+        let body = serde_json::json!({
+            "users": users.join(","),
+        });
+        let result: ConversationsOpenResponse = self
+            .post_with_retry(
+                &format!("{}/conversations.open", self.base_url),
+                &body,
+                "conversations.open",
+            )
+            .await?;
+        debug!(channel_id = ?result.channel.id, "slack: conversations.open success");
+        Ok(result)
+    }
+
     pub async fn chat_post_message(
         &self,
         channel: &str,
@@ -348,6 +367,78 @@ impl SlackApiClient {
         debug!(emoji, "slack: reactions.add success");
         Ok(())
     }
+
+    pub async fn files_get_upload_url_external(
+        &self,
+        filename: &str,
+        length: u64,
+    ) -> anyhow::Result<FilesUploadUrlResponse> {
+        debug!(filename, length, "slack: files.getUploadURLExternal");
+        let body = serde_json::json!({
+            "filename": filename,
+            "length": length,
+        });
+        let result: FilesUploadUrlResponse = self
+            .post_with_retry(
+                &format!("{}/files.getUploadURLExternal", self.base_url),
+                &body,
+                "files.getUploadURLExternal",
+            )
+            .await?;
+        debug!(file_id = %result.file_id, "slack: files.getUploadURLExternal success");
+        Ok(result)
+    }
+
+    /// POST raw bytes to a pre-signed upload URL (e.g. from files.getUploadURLExternal).
+    /// No auth header is used; the URL is pre-signed.
+    pub async fn post_raw_to_url(&self, url: &str, data: Vec<u8>) -> anyhow::Result<()> {
+        let resp = self
+            .http
+            .post(url)
+            .body(data)
+            .send()
+            .await
+            .context("failed to upload file to URL")?;
+        resp.error_for_status().context("file upload returned error status")?;
+        Ok(())
+    }
+
+    pub async fn files_complete_upload_external(
+        &self,
+        file_id: &str,
+        title: &str,
+        channel_id: Option<&str>,
+        initial_comment: Option<&str>,
+        thread_ts: Option<&str>,
+    ) -> anyhow::Result<()> {
+        debug!(
+            file_id,
+            title,
+            channel_id,
+            "slack: files.completeUploadExternal"
+        );
+        let mut body = serde_json::json!({
+            "files": [{"id": file_id, "title": title}],
+        });
+        if let Some(c) = channel_id {
+            body["channel_id"] = serde_json::Value::String(c.to_string());
+        }
+        if let Some(comment) = initial_comment {
+            body["initial_comment"] = serde_json::Value::String(comment.to_string());
+        }
+        if let Some(ts) = thread_ts {
+            body["thread_ts"] = serde_json::Value::String(ts.to_string());
+        }
+        let _: serde_json::Value = self
+            .post_with_retry(
+                &format!("{}/files.completeUploadExternal", self.base_url),
+                &body,
+                "files.completeUploadExternal",
+            )
+            .await?;
+        debug!("slack: files.completeUploadExternal success");
+        Ok(())
+    }
 }
 
 // -- Slack API response types --
@@ -407,6 +498,11 @@ pub struct SlackConversation {
 
 #[derive(Debug, Deserialize)]
 pub struct ConversationInfoResponse {
+    pub channel: SlackConversation,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConversationsOpenResponse {
     pub channel: SlackConversation,
 }
 
@@ -510,4 +606,10 @@ pub struct ChatScheduleMessageResponse {
 #[derive(Debug, Deserialize)]
 pub struct ConnectionsOpenResponse {
     pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FilesUploadUrlResponse {
+    pub upload_url: String,
+    pub file_id: String,
 }

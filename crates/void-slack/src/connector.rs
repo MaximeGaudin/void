@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite;
@@ -464,6 +466,46 @@ impl SlackConnector {
             }
         }
     }
+
+    pub async fn open_conversation(&self, users: &[&str]) -> anyhow::Result<String> {
+        let resp = self.api.conversations_open(users).await?;
+        Ok(resp.channel.id)
+    }
+
+    pub async fn upload_file(
+        &self,
+        channel: &str,
+        file_path: &str,
+        caption: Option<&str>,
+        thread_ts: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let data = std::fs::read(file_path)
+            .with_context(|| format!("failed to read file {}", file_path))?;
+        let filename = Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file");
+        let upload_info = self
+            .api
+            .files_get_upload_url_external(filename, data.len() as u64)
+            .await
+            .context("files.getUploadURLExternal failed")?;
+        self.api
+            .post_raw_to_url(&upload_info.upload_url, data)
+            .await
+            .context("file upload to URL failed")?;
+        self.api
+            .files_complete_upload_external(
+                &upload_info.file_id,
+                filename,
+                Some(channel),
+                caption,
+                thread_ts,
+            )
+            .await
+            .context("files.completeUploadExternal failed")?;
+        Ok(upload_info.file_id)
+    }
 }
 
 #[async_trait]
@@ -544,14 +586,40 @@ impl Connector for SlackConnector {
     }
 
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
-        let text = match &content {
-            MessageContent::Text(t) => t.clone(),
-            MessageContent::File { caption, .. } => {
-                caption.clone().unwrap_or_else(|| "(file)".into())
+        match &content {
+            MessageContent::File { path, caption, .. } => {
+                let path_str = path
+                    .to_str()
+                    .context("file path is not valid UTF-8")?;
+                let channel = if to.contains(',') {
+                    let users: Vec<&str> = to.split(',').map(|s| s.trim()).collect();
+                    let channel_id = self.open_conversation(&users).await?;
+                    info!(users = ?users, channel_id = %channel_id, "opened group conversation");
+                    channel_id
+                } else {
+                    to.to_string()
+                };
+                self.upload_file(
+                    &channel,
+                    path_str,
+                    caption.as_deref(),
+                    None,
+                )
+                .await
             }
-        };
-        let resp = self.api.chat_post_message(to, &text, None).await?;
-        Ok(resp.ts.unwrap_or_default())
+            MessageContent::Text(t) => {
+                let channel = if to.contains(',') {
+                    let users: Vec<&str> = to.split(',').map(|s| s.trim()).collect();
+                    let channel_id = self.open_conversation(&users).await?;
+                    info!(users = ?users, channel_id = %channel_id, "opened group conversation");
+                    channel_id
+                } else {
+                    to.to_string()
+                };
+                let resp = self.api.chat_post_message(&channel, t, None).await?;
+                Ok(resp.ts.unwrap_or_default())
+            }
+        }
     }
 
     async fn reply(
@@ -562,27 +630,37 @@ impl Connector for SlackConnector {
     ) -> anyhow::Result<String> {
         info!(account_id = %self.account_id, message_id = %message_id, in_thread, "sending Slack reply");
 
-        let text = match &content {
-            MessageContent::Text(t) => t.clone(),
-            MessageContent::File { caption, .. } => {
-                caption.clone().unwrap_or_else(|| "(file)".into())
-            }
-        };
-
         let parts: Vec<&str> = message_id.splitn(2, ':').collect();
         if parts.len() != 2 {
             anyhow::bail!("invalid message_id format, expected 'channel_id:ts'");
         }
         let (channel_id, ts) = (parts[0], parts[1]);
 
-        let thread_ts = if in_thread { Some(ts) } else { None };
-        let resp = self
-            .api
-            .chat_post_message(channel_id, &text, thread_ts)
-            .await?;
-        let reply_ts = resp.ts.clone().unwrap_or_default();
-        debug!(account_id = %self.account_id, ts = %reply_ts, "Slack reply sent");
-        Ok(reply_ts)
+        match &content {
+            MessageContent::File { path, caption, .. } => {
+                let path_str = path
+                    .to_str()
+                    .context("file path is not valid UTF-8")?;
+                let thread_ts = if in_thread { Some(ts) } else { None };
+                self.upload_file(
+                    channel_id,
+                    path_str,
+                    caption.as_deref(),
+                    thread_ts,
+                )
+                .await
+            }
+            MessageContent::Text(t) => {
+                let thread_ts = if in_thread { Some(ts) } else { None };
+                let resp = self
+                    .api
+                    .chat_post_message(channel_id, t, thread_ts)
+                    .await?;
+                let reply_ts = resp.ts.clone().unwrap_or_default();
+                debug!(account_id = %self.account_id, ts = %reply_ts, "Slack reply sent");
+                Ok(reply_ts)
+            }
+        }
     }
 }
 
@@ -1255,5 +1333,75 @@ mod tests {
 
         assert!(db.get_conversation("test-slack-C1").unwrap().is_some());
         assert!(db.get_conversation("test-slack-C2").unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn upload_file_calls_three_step_flow() {
+        let server = wiremock::MockServer::start().await;
+
+        let file_content = b"hello world";
+        let upload_path = format!("/upload-{}", std::process::id());
+        let upload_url = format!("{}{}", server.uri(), upload_path);
+
+        let get_upload_url_resp = serde_json::json!({
+            "ok": true,
+            "upload_url": upload_url,
+            "file_id": "F12345"
+        });
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/files.getUploadURLExternal"))
+            .and(wiremock::matchers::body_json(serde_json::json!({
+                "filename": "test.txt",
+                "length": file_content.len()
+            })))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(get_upload_url_resp),
+            )
+            .mount(&server)
+            .await;
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path(upload_path))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/files.completeUploadExternal"))
+            .and(wiremock::matchers::body_json(serde_json::json!({
+                "files": [{"id": "F12345", "title": "test.txt"}],
+                "channel_id": "C1",
+                "initial_comment": "my caption",
+                "thread_ts": "123.456"
+            })))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})),
+            )
+            .mount(&server)
+            .await;
+
+        let temp_dir = std::env::temp_dir().join(format!("void-slack-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let file_path = temp_dir.join("test.txt");
+        std::fs::write(&file_path, file_content).unwrap();
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec![],
+        };
+
+        let file_id = connector
+            .upload_file(
+                "C1",
+                file_path.to_str().unwrap(),
+                Some("my caption"),
+                Some("123.456"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(file_id, "F12345");
     }
 }
