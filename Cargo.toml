@@ -7,6 +7,7 @@ members = [
     "crates/void-gmail",
     "crates/void-calendar",
     "crates/void-whatsapp",
+    "crates/void-gdrive",
 ]
 
 [workspace.package]
@@ -46,7 +47,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 tokio-util = "0.7"
 tabled = "0.17"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 futures-util = "0.3"
 base64 = "0.22"
@@ -66,3 +67,4 @@ void-slack = { path = "crates/void-slack" }
 void-gmail = { path = "crates/void-gmail" }
 void-calendar = { path = "crates/void-calendar" }
 void-whatsapp = { path = "crates/void-whatsapp" }
+void-gdrive = { path = "crates/void-gdrive" }

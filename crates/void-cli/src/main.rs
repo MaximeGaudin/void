@@ -61,6 +61,8 @@ enum Command {
     Whatsapp(commands::whatsapp::WhatsAppArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
+    /// Download files from Google Drive/Docs/Sheets/Slides
+    Drive(commands::gdrive::GdriveArgs),
     /// Install the void binary into your PATH
     Install(commands::install::InstallArgs),
 }
@@ -110,6 +112,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Slack(args)) => commands::slack::run(args, !cli.pretty).await,
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args, !cli.pretty).await,
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
+        Some(Command::Drive(args)) => commands::gdrive::run(args, !cli.pretty).await,
         Some(Command::Install(args)) => commands::install::run(args),
         None => {
             commands::status::run();

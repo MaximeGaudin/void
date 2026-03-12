@@ -16,6 +16,7 @@ void-slack = { workspace = true }
 void-gmail = { workspace = true }
 void-calendar = { workspace = true }
 void-whatsapp = { workspace = true }
+void-gdrive = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
