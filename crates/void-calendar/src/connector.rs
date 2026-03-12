@@ -14,6 +14,28 @@ use crate::api::{
     InsertEventRequest, UpdateEventRequest,
 };
 
+/// Parameters for creating a new calendar event.
+#[derive(Debug, Clone)]
+pub struct CreateEventParams<'a> {
+    pub title: &'a str,
+    pub description: Option<&'a str>,
+    pub start: &'a str,
+    pub end: &'a str,
+    pub meet: bool,
+    pub attendees: Option<&'a str>,
+}
+
+/// Parameters for updating an existing calendar event.
+#[derive(Debug, Clone)]
+pub struct UpdateEventParams<'a> {
+    pub event_id: &'a str,
+    pub title: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub start: Option<&'a str>,
+    pub end: Option<&'a str>,
+    pub send_updates: Option<&'a str>,
+}
+
 pub struct CalendarConnector {
     account_id: String,
     credentials_file: Option<String>,
@@ -174,12 +196,7 @@ impl CalendarConnector {
 
     pub async fn create_event(
         &self,
-        title: &str,
-        description: Option<&str>,
-        start: &str,
-        end: &str,
-        meet: bool,
-        attendees: Option<&str>,
+        params: &CreateEventParams<'_>,
         db: &Database,
     ) -> anyhow::Result<CalendarEvent> {
         let api = self.get_client().await?;
@@ -189,10 +206,10 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
-        info!(account_id = %self.account_id, title = %title, calendar_id = %cal_id, "creating Calendar event");
+        info!(account_id = %self.account_id, title = %params.title, calendar_id = %cal_id, "creating Calendar event");
 
         let timezone = "UTC".to_string();
-        let attendee_list = attendees.map(|a| {
+        let attendee_list = params.attendees.map(|a| {
             a.split(',')
                 .map(|email| AttendeeRequest {
                     email: email.trim().to_string(),
@@ -200,7 +217,7 @@ impl CalendarConnector {
                 .collect::<Vec<_>>()
         });
 
-        let conference_data = if meet {
+        let conference_data = if params.meet {
             Some(ConferenceDataRequest {
                 create_request: CreateConferenceRequest {
                     request_id: uuid::Uuid::new_v4().to_string(),
@@ -214,21 +231,21 @@ impl CalendarConnector {
         };
 
         let request = InsertEventRequest {
-            summary: title.to_string(),
-            description: description.map(|d| d.to_string()),
+            summary: params.title.to_string(),
+            description: params.description.map(|d| d.to_string()),
             start: EventDateTimeRequest {
-                date_time: start.to_string(),
+                date_time: params.start.to_string(),
                 time_zone: timezone.clone(),
             },
             end: EventDateTimeRequest {
-                date_time: end.to_string(),
+                date_time: params.end.to_string(),
                 time_zone: timezone,
             },
             attendees: attendee_list,
             conference_data,
         };
 
-        let conference_version = if meet { Some(1) } else { None };
+        let conference_version = if params.meet { Some(1) } else { None };
         let resp = api
             .insert_event(cal_id, &request, conference_version)
             .await?;
@@ -246,8 +263,8 @@ impl CalendarConnector {
                 account_id: self.account_id.clone(),
                 connector: "calendar".into(),
                 external_id: resp.id.clone().unwrap_or_default(),
-                title: title.to_string(),
-                description: description.map(|d| d.to_string()),
+                title: params.title.to_string(),
+                description: params.description.map(|d| d.to_string()),
                 location: None,
                 start_at: 0,
                 end_at: 0,
@@ -265,12 +282,7 @@ impl CalendarConnector {
 
     pub async fn update_event(
         &self,
-        event_id: &str,
-        title: Option<&str>,
-        description: Option<&str>,
-        start: Option<&str>,
-        end: Option<&str>,
-        send_updates: Option<&str>,
+        params: &UpdateEventParams<'_>,
         db: &Database,
     ) -> anyhow::Result<CalendarEvent> {
         let api = self.get_client().await?;
@@ -279,18 +291,18 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
-        info!(account_id = %self.account_id, event_id, "updating Calendar event");
+        info!(account_id = %self.account_id, event_id = %params.event_id, "updating Calendar event");
 
         let timezone = "UTC".to_string();
         let update = UpdateEventRequest {
-            summary: title.map(|s| s.to_string()),
-            description: description.map(|s| s.to_string()),
+            summary: params.title.map(|s| s.to_string()),
+            description: params.description.map(|s| s.to_string()),
             location: None,
-            start: start.map(|s| EventDateTimeRequest {
+            start: params.start.map(|s| EventDateTimeRequest {
                 date_time: s.to_string(),
                 time_zone: timezone.clone(),
             }),
-            end: end.map(|s| EventDateTimeRequest {
+            end: params.end.map(|s| EventDateTimeRequest {
                 date_time: s.to_string(),
                 time_zone: timezone,
             }),
@@ -298,16 +310,16 @@ impl CalendarConnector {
         };
 
         let resp = api
-            .update_event(cal_id, event_id, &update, send_updates)
+            .update_event(cal_id, params.event_id, &update, params.send_updates)
             .await?;
         let cal_event =
             map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| CalendarEvent {
-                id: format!("{}-{}", self.account_id, event_id),
+                id: format!("{}-{}", self.account_id, params.event_id),
                 account_id: self.account_id.clone(),
                 connector: "calendar".into(),
-                external_id: event_id.to_string(),
-                title: title.unwrap_or("(updated)").to_string(),
-                description: description.map(|s| s.to_string()),
+                external_id: params.event_id.to_string(),
+                title: params.title.unwrap_or("(updated)").to_string(),
+                description: params.description.map(|s| s.to_string()),
                 location: None,
                 start_at: 0,
                 end_at: 0,
