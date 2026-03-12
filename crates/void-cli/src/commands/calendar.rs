@@ -257,17 +257,15 @@ async fn run_create(args: &CreateEventArgs, json: bool) -> anyhow::Result<()> {
         }
     });
 
-    let event = connector
-        .create_event(
-            &args.title,
-            args.description.as_deref(),
-            &args.start,
-            &end,
-            args.meet,
-            args.attendees.as_deref(),
-            &db,
-        )
-        .await?;
+    let params = void_calendar::connector::CreateEventParams {
+        title: &args.title,
+        description: args.description.as_deref(),
+        start: &args.start,
+        end: &end,
+        meet: args.meet,
+        attendees: args.attendees.as_deref(),
+    };
+    let event = connector.create_event(&params, &db).await?;
 
     let formatter = OutputFormatter::new(json);
     formatter.print_events(&[event])
@@ -339,17 +337,15 @@ async fn run_update(args: &UpdateEventArgs, json: bool) -> anyhow::Result<()> {
     let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
-    let event = connector
-        .update_event(
-            &args.event_id,
-            args.title.as_deref(),
-            args.description.as_deref(),
-            args.start.as_deref(),
-            args.end.as_deref(),
-            Some("all"),
-            &db,
-        )
-        .await?;
+    let params = void_calendar::connector::UpdateEventParams {
+        event_id: &args.event_id,
+        title: args.title.as_deref(),
+        description: args.description.as_deref(),
+        start: args.start.as_deref(),
+        end: args.end.as_deref(),
+        send_updates: Some("all"),
+    };
+    let event = connector.update_event(&params, &db).await?;
 
     eprintln!("Event updated.");
     let formatter = OutputFormatter::new(json);

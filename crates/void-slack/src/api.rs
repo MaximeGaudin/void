@@ -213,7 +213,7 @@ impl SlackApiClient {
         let resp: ConversationInfoResponse = self
             .get_with_retry(
                 &format!("{}/conversations.info", self.base_url),
-                &[("channel".into(), channel.to_string())],
+                &[("channel", channel.to_string())],
                 "conversations.info",
             )
             .await?;
@@ -292,7 +292,7 @@ impl SlackApiClient {
     ) -> anyhow::Result<ConnectionsOpenResponse> {
         let resp = self
             .http
-            .post(&format!("{}/apps.connections.open", self.base_url))
+            .post(format!("{}/apps.connections.open", self.base_url))
             .bearer_auth(app_token)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()

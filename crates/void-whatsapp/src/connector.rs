@@ -711,13 +711,22 @@ fn handle_reaction(
         .clone()
         .unwrap_or_else(|| serde_json::json!({}));
 
-    let reactions = meta
+    // Ensure metadata is an object; if not (e.g. corrupted data), use empty object
+    if !meta.is_object() {
+        meta = serde_json::json!({});
+    }
+    let obj = meta
         .as_object_mut()
-        .unwrap()
+        .expect("metadata is object after check");
+    let reactions_value = obj
         .entry("reactions")
-        .or_insert_with(|| serde_json::json!([]))
+        .or_insert_with(|| serde_json::json!([]));
+    if !reactions_value.is_array() {
+        *reactions_value = serde_json::json!([]);
+    }
+    let reactions = reactions_value
         .as_array_mut()
-        .unwrap();
+        .expect("reactions is array after check");
 
     // Remove any existing reaction from the same sender
     reactions.retain(|r| r.get("sender").and_then(|s| s.as_str()) != Some(&sender));

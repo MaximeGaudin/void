@@ -518,4 +518,18 @@ user_token = "xoxp-test"
             _ => panic!("expected Slack settings"),
         }
     }
+
+    #[test]
+    fn default_config_path_returns_config_toml_under_void_dir() {
+        let path = default_config_path();
+        assert!(path.to_str().unwrap().ends_with(".config/void/config.toml"));
+    }
+
+    #[test]
+    fn default_config_contains_store_section() {
+        let config_str = default_config();
+        assert!(config_str.contains("[store]"));
+        assert!(config_str.contains("path"));
+        assert!(config_str.contains("[sync]"));
+    }
 }

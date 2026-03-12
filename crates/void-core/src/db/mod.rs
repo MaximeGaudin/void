@@ -743,6 +743,9 @@ impl Database {
 
     pub fn rename_account(&self, old_id: &str, new_id: &str) -> anyhow::Result<()> {
         let conn = self.conn();
+        // Temporarily disable FKs: we update conversation ids first, which orphans
+        // messages; then we update messages. With FKs on, the order would violate.
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
         conn.execute(
             "UPDATE sync_state SET account_id = ?2 WHERE account_id = ?1",
             params![old_id, new_id],
@@ -752,9 +755,10 @@ impl Database {
             params![old_id, new_id],
         )?;
         conn.execute(
-            "UPDATE messages SET account_id = ?2, id = REPLACE(id, ?1, ?2) WHERE account_id = ?1",
+            "UPDATE messages SET account_id = ?2, id = REPLACE(id, ?1, ?2), conversation_id = REPLACE(conversation_id, ?1, ?2) WHERE account_id = ?1",
             params![old_id, new_id],
         )?;
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
         Ok(())
     }
 }
@@ -1826,5 +1830,85 @@ mod tests {
 
         let with_muted = db.list_channels(None, None, None, 100, true).unwrap();
         assert_eq!(with_muted.len(), 2);
+    }
+
+    #[test]
+    fn rename_account_updates_ids_in_all_tables() {
+        let db = test_db();
+        let conv = make_conversation("old-id-c1", "old-id", "E1");
+        db.upsert_conversation(&conv).unwrap();
+        db.upsert_message(&make_message(
+            "old-id-m1",
+            "old-id-c1",
+            "old-id",
+            "body",
+            1_000,
+        ))
+        .unwrap();
+        db.set_sync_state("old-id", "key1", "value1").unwrap();
+
+        db.rename_account("old-id", "new-id").unwrap();
+
+        let conv_after = db.get_conversation("new-id-c1").unwrap();
+        assert!(conv_after.is_some());
+        assert_eq!(conv_after.unwrap().account_id, "new-id");
+
+        let msg_after = db.get_message("new-id-m1").unwrap();
+        assert!(msg_after.is_some());
+        assert_eq!(msg_after.unwrap().account_id, "new-id");
+
+        let sync_val = db.get_sync_state("new-id", "key1").unwrap();
+        assert_eq!(sync_val, Some("value1".to_string()));
+
+        assert!(db.get_conversation("old-id-c1").unwrap().is_none());
+    }
+
+    fn make_conversation_with_connector(
+        id: &str,
+        account_id: &str,
+        ext_id: &str,
+        connector: &str,
+    ) -> Conversation {
+        let mut conv = make_conversation(id, account_id, ext_id);
+        conv.connector = connector.into();
+        conv
+    }
+
+    fn make_message_with_connector(
+        id: &str,
+        conv_id: &str,
+        account_id: &str,
+        body: &str,
+        ts: i64,
+        connector: &str,
+    ) -> Message {
+        let mut msg = make_message(id, conv_id, account_id, body, ts);
+        msg.connector = connector.into();
+        msg
+    }
+
+    #[test]
+    fn clear_connector_data_removes_all_messages_conversations_events_sync_state() {
+        let db = test_db();
+        let conv = make_conversation_with_connector("c1", "gmail-1", "E1", "gmail");
+        db.upsert_conversation(&conv).unwrap();
+        db.upsert_message(&make_message_with_connector(
+            "m1", "c1", "gmail-1", "body", 1_000, "gmail",
+        ))
+        .unwrap();
+        db.set_sync_state("gmail-1", "history_id", "123").unwrap();
+
+        let (msgs, convs, evts, sync) = db.clear_connector_data("gmail").unwrap();
+        assert_eq!(msgs, 1);
+        assert_eq!(convs, 1);
+        assert_eq!(evts, 0);
+        assert_eq!(sync, 1);
+
+        assert!(db.get_conversation("c1").unwrap().is_none());
+        assert!(db.get_message("m1").unwrap().is_none());
+        assert!(db
+            .get_sync_state("gmail-1", "history_id")
+            .unwrap()
+            .is_none());
     }
 }

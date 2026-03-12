@@ -246,3 +246,37 @@ fn build_slack_connector(
         exclude_channels,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_schedule_time_unix_timestamp() {
+        let ts = parse_schedule_time("1234567890").unwrap();
+        assert_eq!(ts, 1_234_567_890);
+    }
+
+    #[test]
+    fn parse_schedule_time_invalid_returns_error() {
+        let result = parse_schedule_time("not-a-time");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_schedule_time_date_time_format() {
+        // 2025-01-15 14:30 in local timezone
+        let ts = parse_schedule_time("2025-01-15 14:30").unwrap();
+        let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap();
+        assert_eq!(dt.format("%Y-%m-%d").to_string(), "2025-01-15");
+        assert_eq!(dt.format("%H:%M").to_string(), "14:30");
+    }
+
+    #[test]
+    fn parse_schedule_time_date_only_defaults_to_9am() {
+        let ts = parse_schedule_time("2025-06-10").unwrap();
+        let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap();
+        assert_eq!(dt.format("%Y-%m-%d").to_string(), "2025-06-10");
+        assert_eq!(dt.format("%H").to_string(), "09");
+    }
+}

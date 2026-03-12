@@ -1085,4 +1085,10 @@ mod tests {
         assert!(!looks_like_html("Hi Maxime,\n\nSee you tomorrow.\nAlice"));
         assert!(!looks_like_html(""));
     }
+
+    #[test]
+    fn gmail_url_formats_correctly() {
+        let url = GmailConnector::gmail_url("thread123");
+        assert_eq!(url, "https://mail.google.com/mail/u/0/#inbox/thread123");
+    }
 }
