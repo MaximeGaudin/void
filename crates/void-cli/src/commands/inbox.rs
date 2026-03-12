@@ -31,12 +31,13 @@ pub fn run(args: &InboxArgs, json: bool, enrich_context: bool) -> anyhow::Result
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new(json);
 
+    let include_muted = args.include_muted || args.all;
     let mut messages = db.recent_messages(
         args.account.as_deref(),
         args.connector.as_deref(),
         args.size,
         args.all,
-        args.include_muted,
+        include_muted,
     )?;
     messages.reverse();
     if enrich_context {
