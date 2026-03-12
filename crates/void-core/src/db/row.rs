@@ -45,13 +45,11 @@ pub(crate) fn row_to_message(row: &Row) -> rusqlite::Result<Message> {
         body: row.get(7)?,
         timestamp: row.get(8)?,
         synced_at: row.get(9)?,
-        is_from_me: row.get::<_, i32>(10)? != 0,
-        is_read: row.get::<_, i32>(11)? != 0,
-        is_archived: row.get::<_, i32>(12)? != 0,
-        reply_to_id: row.get(13)?,
-        media_type: row.get(14)?,
-        metadata: parse_json_opt(row.get(15)?),
-        context_id: row.get(16)?,
+        is_archived: row.get::<_, i32>(10)? != 0,
+        reply_to_id: row.get(11)?,
+        media_type: row.get(12)?,
+        metadata: parse_json_opt(row.get(13)?),
+        context_id: row.get(14)?,
         context: None,
     })
 }

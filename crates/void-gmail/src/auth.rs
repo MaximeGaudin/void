@@ -55,16 +55,30 @@ pub fn token_cache_path(store_path: &Path, account_id: &str) -> PathBuf {
     store_path.join(format!("{account_id}-token.json"))
 }
 
-pub fn load_client_credentials(credentials_file: &str) -> anyhow::Result<InstalledCredentials> {
-    let path = void_core::config::expand_tilde(credentials_file);
-    debug!(path = %path.display(), "loading client credentials");
-    let content = std::fs::read_to_string(&path)
-        .with_context(|| format!("failed to read credentials file at {}", path.display()))?;
+const EMBEDDED_CREDENTIALS: &str = include_str!("../google-credentials.json");
+
+/// Load credentials from a file, or use the embedded default if no path is given.
+pub fn load_client_credentials(
+    credentials_file: Option<&str>,
+) -> anyhow::Result<InstalledCredentials> {
+    let content = match credentials_file {
+        Some(path) if !path.is_empty() => {
+            let expanded = void_core::config::expand_tilde(path);
+            debug!(path = %expanded.display(), "loading client credentials from file");
+            std::fs::read_to_string(&expanded).with_context(|| {
+                format!("failed to read credentials file at {}", expanded.display())
+            })?
+        }
+        _ => {
+            debug!("using embedded default Google credentials");
+            EMBEDDED_CREDENTIALS.to_string()
+        }
+    };
     let creds: ClientCredentials =
-        serde_json::from_str(&content).context("failed to parse credentials file")?;
+        serde_json::from_str(&content).context("failed to parse credentials")?;
     creds
         .installed
-        .ok_or_else(|| anyhow::anyhow!("credentials file missing 'installed' key"))
+        .ok_or_else(|| anyhow::anyhow!("credentials missing 'installed' key"))
 }
 
 pub fn scopes() -> &'static str {

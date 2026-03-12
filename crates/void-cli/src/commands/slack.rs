@@ -1,3 +1,4 @@
+use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use clap::{Args, Subcommand};
 use tracing::debug;
 use void_core::config::{self, AccountType, VoidConfig};
@@ -15,6 +16,8 @@ pub enum SlackCommand {
     React(ReactArgs),
     /// Edit an existing message
     Edit(EditArgs),
+    /// Schedule a message to be sent later
+    Schedule(ScheduleArgs),
 }
 
 #[derive(Debug, Args)]
@@ -41,10 +44,30 @@ pub struct EditArgs {
     pub account: Option<String>,
 }
 
+#[derive(Debug, Args)]
+pub struct ScheduleArgs {
+    /// Channel name or ID to send to
+    #[arg(long)]
+    pub channel: String,
+    /// Message text
+    #[arg(long)]
+    pub message: String,
+    /// When to send — accepts "HH:MM" (today), "YYYY-MM-DD HH:MM", or a Unix timestamp
+    #[arg(long)]
+    pub at: String,
+    /// Thread timestamp to reply in a thread
+    #[arg(long)]
+    pub thread: Option<String>,
+    /// Slack account to use
+    #[arg(long)]
+    pub account: Option<String>,
+}
+
 pub async fn run(args: &SlackArgs, _json: bool) -> anyhow::Result<()> {
     match &args.command {
         SlackCommand::React(a) => run_react(a).await,
         SlackCommand::Edit(a) => run_edit(a).await,
+        SlackCommand::Schedule(a) => run_schedule(a).await,
     }
 }
 
@@ -104,6 +127,77 @@ async fn run_edit(args: &EditArgs) -> anyhow::Result<()> {
 
     eprintln!("Message updated.");
     Ok(())
+}
+
+async fn run_schedule(args: &ScheduleArgs) -> anyhow::Result<()> {
+    let post_at = parse_schedule_time(&args.at)?;
+    let now = chrono::Utc::now().timestamp();
+    if post_at <= now {
+        anyhow::bail!("Scheduled time must be in the future (parsed as Unix ts {post_at})");
+    }
+
+    let cfg = load_config()?;
+    let connector = build_slack_connector(args.account.as_deref(), &cfg)?;
+
+    let scheduled_id = connector
+        .schedule_message(
+            &args.channel,
+            &args.message,
+            post_at,
+            args.thread.as_deref(),
+        )
+        .await?;
+
+    let dt = chrono::DateTime::from_timestamp(post_at, 0)
+        .map(|utc| utc.with_timezone(&Local))
+        .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
+        .unwrap_or_else(|| post_at.to_string());
+
+    eprintln!("Message scheduled for {dt} (id: {scheduled_id})");
+    Ok(())
+}
+
+/// Parse a human-friendly time string into a Unix timestamp.
+///
+/// Accepted formats:
+///   - `HH:MM`              — today at this local time
+///   - `YYYY-MM-DD HH:MM`   — specific date and time in local timezone
+///   - Plain integer         — Unix timestamp
+pub fn parse_schedule_time(input: &str) -> anyhow::Result<i64> {
+    let s = input.trim();
+
+    if let Ok(ts) = s.parse::<i64>() {
+        return Ok(ts);
+    }
+
+    if let Ok(time) = NaiveTime::parse_from_str(s, "%H:%M") {
+        let today = Local::now().date_naive();
+        let naive = NaiveDateTime::new(today, time);
+        let local = Local
+            .from_local_datetime(&naive)
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("Ambiguous local time: {s}"))?;
+        return Ok(local.timestamp());
+    }
+
+    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
+        let local = Local
+            .from_local_datetime(&naive)
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("Ambiguous local time: {s}"))?;
+        return Ok(local.timestamp());
+    }
+
+    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        let naive = date.and_hms_opt(9, 0, 0).unwrap();
+        let local = Local
+            .from_local_datetime(&naive)
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("Ambiguous local date: {s}"))?;
+        return Ok(local.timestamp());
+    }
+
+    anyhow::bail!("Cannot parse time '{s}'. Use HH:MM, YYYY-MM-DD HH:MM, or a Unix timestamp.")
 }
 
 fn load_config() -> anyhow::Result<VoidConfig> {

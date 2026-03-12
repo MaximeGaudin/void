@@ -336,13 +336,15 @@ fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                     }
                 }
                 config::AccountSettings::Gmail { credentials_file } => {
-                    eprintln!("    credentials: {credentials_file}");
+                    let label = credentials_file.as_deref().unwrap_or("(built-in)");
+                    eprintln!("    credentials: {label}");
                 }
                 config::AccountSettings::Calendar {
                     credentials_file,
                     calendar_ids,
                 } => {
-                    eprintln!("    credentials:  {credentials_file}");
+                    let label = credentials_file.as_deref().unwrap_or("(built-in)");
+                    eprintln!("    credentials:  {label}");
                     eprintln!("    calendar_ids: {calendar_ids:?}");
                 }
                 config::AccountSettings::WhatsApp {} => {}
@@ -409,6 +411,7 @@ async fn exit_setup(cfg: &VoidConfig) -> anyhow::Result<()> {
                 daemon: true,
                 restart: false,
                 clear: false,
+                clear_connector: None,
                 stop: false,
             };
             super::sync::daemonize(&args, false)?;
@@ -455,35 +458,27 @@ async fn setup_gmail(
     }
 
     eprintln!();
-    eprintln!("To connect Gmail, you need a Google Cloud OAuth credentials file.");
-    eprintln!("This is the same file used for all Google services (Gmail, Calendar).");
-    eprintln!("If you don't have one yet, follow these steps:");
-    eprintln!();
-    eprintln!("  1. Go to https://console.cloud.google.com/apis/credentials");
-    eprintln!("  2. Create a project (or select an existing one)");
-    eprintln!("  3. Enable the \"Gmail API\" (APIs & Services > Library)");
-    eprintln!("  4. Go to \"OAuth consent screen\" and configure it:");
-    eprintln!("     - User type: External (or Internal if using Workspace)");
-    eprintln!("     - Add your email as a test user");
-    eprintln!("  5. Go to Credentials > Create Credentials > OAuth client ID");
-    eprintln!("     - Application type: Desktop app");
-    eprintln!("     - Download the JSON file");
-    eprintln!("  6. Save it somewhere safe, e.g. ~/.config/void/google-credentials.json");
+    eprintln!("Void includes built-in Google OAuth credentials.");
+    eprintln!("You can use your own credentials file, or use the built-in ones.");
     eprintln!();
 
-    let creds = prompt("Path to Google Cloud credentials JSON: ");
-    if creds.is_empty() {
-        eprintln!("  Skipped (no path provided).");
-        return Ok(());
-    }
-
-    let expanded = config::expand_tilde(&creds);
-    if !expanded.exists() {
-        eprintln!("  Warning: file not found at {}", expanded.display());
-        if !confirm("  Continue anyway?") {
+    let custom_creds = if confirm("Use built-in credentials? (recommended)") {
+        None
+    } else {
+        let path = prompt("Path to Google Cloud credentials JSON: ");
+        if path.is_empty() {
+            eprintln!("  Skipped (no path provided).");
             return Ok(());
         }
-    }
+        let expanded = config::expand_tilde(&path);
+        if !expanded.exists() {
+            eprintln!("  Warning: file not found at {}", expanded.display());
+            if !confirm("  Continue anyway?") {
+                return Ok(());
+            }
+        }
+        Some(path)
+    };
 
     let account_id = prompt_default("Account name", "gmail");
 
@@ -491,7 +486,7 @@ async fn setup_gmail(
         id: account_id.clone(),
         account_type: AccountType::Gmail,
         settings: AccountSettings::Gmail {
-            credentials_file: creds,
+            credentials_file: custom_creds,
         },
     };
 
@@ -697,67 +692,40 @@ async fn setup_calendar(
 
     eprintln!();
 
-    let google_creds = cfg
-        .accounts
-        .iter()
-        .find_map(|a| match (&a.account_type, &a.settings) {
-            (AccountType::Gmail, AccountSettings::Gmail { credentials_file }) => {
-                Some(credentials_file.clone())
-            }
-            (
-                AccountType::Calendar,
-                AccountSettings::Calendar {
-                    credentials_file, ..
-                },
-            ) => Some(credentials_file.clone()),
-            _ => None,
-        });
+    let existing_custom_creds: Option<String> =
+        cfg.accounts
+            .iter()
+            .find_map(|a| match (&a.account_type, &a.settings) {
+                (AccountType::Gmail, AccountSettings::Gmail { credentials_file }) => {
+                    credentials_file.clone()
+                }
+                (
+                    AccountType::Calendar,
+                    AccountSettings::Calendar {
+                        credentials_file, ..
+                    },
+                ) => credentials_file.clone(),
+                _ => None,
+            });
 
-    let creds = if let Some(ref existing_path) = google_creds {
-        eprintln!("You have a Google Cloud credentials file configured: {existing_path}");
-        eprintln!("Google Calendar uses the same credentials file as Gmail.");
-        eprintln!("(Make sure the \"Google Calendar API\" is enabled in the same");
-        eprintln!(" Google Cloud project.)");
+    let custom_creds = if let Some(ref existing_path) = existing_custom_creds {
+        eprintln!("You have a custom credentials file configured: {existing_path}");
         eprintln!();
-
         if confirm_default_yes("Reuse this credentials file?") {
-            existing_path.clone()
+            Some(existing_path.clone())
+        } else if confirm("Use built-in credentials instead?") {
+            None
         } else {
             let path = prompt("Path to Google Cloud credentials JSON: ");
             if path.is_empty() {
-                eprintln!("  Skipped (no path provided).");
-                return Ok(());
+                None
+            } else {
+                Some(path)
             }
-            path
         }
     } else {
-        eprintln!("To connect Google Calendar, you need a Google Cloud OAuth");
-        eprintln!("credentials file (the same file used for Gmail):");
-        eprintln!();
-        eprintln!("  1. Go to https://console.cloud.google.com/apis/credentials");
-        eprintln!("  2. Create a project (or select an existing one)");
-        eprintln!("  3. Enable the \"Google Calendar API\" (APIs & Services > Library)");
-        eprintln!("  4. Go to \"OAuth consent screen\" and configure it");
-        eprintln!("  5. Go to Credentials > Create Credentials > OAuth client ID");
-        eprintln!("     - Application type: Desktop app");
-        eprintln!("     - Download the JSON file");
-        eprintln!();
-
-        let path = prompt("Path to Google Cloud credentials JSON: ");
-        if path.is_empty() {
-            eprintln!("  Skipped (no path provided).");
-            return Ok(());
-        }
-        path
+        None
     };
-
-    let expanded = config::expand_tilde(&creds);
-    if !expanded.exists() {
-        eprintln!("  Warning: file not found at {}", expanded.display());
-        if !confirm("  Continue anyway?") {
-            return Ok(());
-        }
-    }
 
     eprintln!();
     eprintln!("Which calendars should Void sync?");
@@ -776,7 +744,7 @@ async fn setup_calendar(
         id: account_id.clone(),
         account_type: AccountType::Calendar,
         settings: AccountSettings::Calendar {
-            credentials_file: creds,
+            credentials_file: custom_creds,
             calendar_ids,
         },
     };

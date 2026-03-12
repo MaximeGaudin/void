@@ -16,7 +16,7 @@ use crate::api::{
 
 pub struct CalendarConnector {
     account_id: String,
-    credentials_file: String,
+    credentials_file: Option<String>,
     calendar_ids: Vec<String>,
     store_path: std::path::PathBuf,
 }
@@ -24,13 +24,13 @@ pub struct CalendarConnector {
 impl CalendarConnector {
     pub fn new(
         account_id: &str,
-        credentials_file: &str,
+        credentials_file: Option<&str>,
         calendar_ids: Vec<String>,
         store_path: &std::path::Path,
     ) -> Self {
         Self {
             account_id: account_id.to_string(),
-            credentials_file: credentials_file.to_string(),
+            credentials_file: credentials_file.map(|s| s.to_string()),
             calendar_ids: if calendar_ids.is_empty() {
                 vec!["primary".to_string()]
             } else {
@@ -52,7 +52,8 @@ impl CalendarConnector {
         if is_expired {
             debug!(account_id = %self.account_id, "refreshing Calendar access token");
             if let Some(ref refresh_token) = cache.refresh_token {
-                let creds = void_gmail::auth::load_client_credentials(&self.credentials_file)?;
+                let creds =
+                    void_gmail::auth::load_client_credentials(self.credentials_file.as_deref())?;
                 let http = reqwest::Client::new();
                 cache =
                     void_gmail::auth::refresh_access_token(&http, &creds, refresh_token).await?;
@@ -469,7 +470,7 @@ impl Connector for CalendarConnector {
     }
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
-        let creds = void_gmail::auth::load_client_credentials(&self.credentials_file)?;
+        let creds = void_gmail::auth::load_client_credentials(self.credentials_file.as_deref())?;
         let token_path = void_gmail::auth::token_cache_path(&self.store_path, &self.account_id);
 
         let scopes = "https://www.googleapis.com/auth/calendar.readonly \

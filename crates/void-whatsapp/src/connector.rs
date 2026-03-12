@@ -12,7 +12,7 @@ use wa_rs::types::events::Event;
 use wa_rs::types::message::MessageInfo;
 use wa_rs::Jid;
 use wa_rs_proto::whatsapp::message::ExtendedTextMessage;
-use wa_rs_proto::whatsapp::{ContextInfo, Message as WaMessage};
+use wa_rs_proto::whatsapp::{ContextInfo, HistorySync, Message as WaMessage};
 use wa_rs_sqlite_storage::SqliteStore;
 use wa_rs_tokio_transport::TokioWebSocketTransportFactory;
 use wa_rs_ureq_http::UreqHttpClient;
@@ -313,6 +313,24 @@ impl Connector for WhatsAppConnector {
                                 warn!("Failed to update mute state for {external_id}: {e}");
                             }
                         }
+                        Event::HistorySync(history) => {
+                            let account_id = own_jid_holder
+                                .lock()
+                                .expect("mutex")
+                                .clone()
+                                .unwrap_or_else(|| config_id.clone());
+                            let sync_type = history.sync_type;
+                            let conv_count = history.conversations.len();
+                            let msg_count: usize =
+                                history.conversations.iter().map(|c| c.messages.len()).sum();
+                            eprintln!(
+                                "[whatsapp:{}] history sync type={} conversations={} messages={}",
+                                account_id, sync_type, conv_count, msg_count
+                            );
+                            if let Err(e) = handle_history_sync(&db, &account_id, &history) {
+                                warn!("Failed to process history sync: {e}");
+                            }
+                        }
                         Event::Disconnected(_) => {
                             warn!("WhatsApp disconnected, waiting for reconnect");
                         }
@@ -426,6 +444,142 @@ fn is_system_message(msg: &WaMessage) -> bool {
             .is_some()
 }
 
+fn handle_history_sync(
+    db: &Database,
+    account_id: &str,
+    history: &HistorySync,
+) -> anyhow::Result<()> {
+    let mut total_stored = 0u64;
+
+    for conv in &history.conversations {
+        let chat_jid = &conv.id;
+        if chat_jid.is_empty() {
+            continue;
+        }
+        let is_group = chat_jid.ends_with("@g.us");
+        let conv_id = format!("wa_{account_id}_{chat_jid}");
+
+        let last_ts = conv
+            .messages
+            .iter()
+            .filter_map(|m| m.message.as_ref()?.message_timestamp)
+            .max()
+            .map(|t| t as i64);
+
+        let conv_name = conv.name.clone().unwrap_or_else(|| chat_jid.clone());
+        let conversation = Conversation {
+            id: conv_id.clone(),
+            account_id: account_id.to_string(),
+            connector: "whatsapp".into(),
+            external_id: chat_jid.clone(),
+            name: Some(conv_name),
+            kind: if is_group {
+                ConversationKind::Group
+            } else {
+                ConversationKind::Dm
+            },
+            last_message_at: last_ts,
+            unread_count: conv.unread_count.unwrap_or(0) as i64,
+            is_muted: false,
+            metadata: None,
+        };
+        db.upsert_conversation(&conversation)?;
+
+        let mut sorted_msgs: Vec<_> = conv
+            .messages
+            .iter()
+            .filter_map(|m| {
+                let wmi = m.message.as_ref()?;
+                let wa_msg = wmi.message.as_ref()?;
+                let ts = wmi.message_timestamp? as i64;
+                let key = &wmi.key;
+                let msg_id = key.id.as_deref().unwrap_or_default();
+                if msg_id.is_empty() {
+                    return None;
+                }
+                Some((wmi, wa_msg, ts, msg_id))
+            })
+            .collect();
+        sorted_msgs.sort_by_key(|&(_, _, ts, _)| ts);
+
+        let mut prev_context_id: Option<String> = None;
+        let mut prev_ts: Option<i64> = None;
+
+        for (wmi, wa_msg, msg_ts, msg_id) in &sorted_msgs {
+            if is_system_message(wa_msg) {
+                continue;
+            }
+
+            let body = extract_text(wa_msg);
+            let media_type = extract_media_type(wa_msg);
+            let media_metadata = extract_media_metadata(wa_msg);
+
+            if body.is_none() && media_type.is_none() {
+                continue;
+            }
+
+            let from_me = wmi.key.from_me.unwrap_or(false);
+            let sender_jid = if from_me {
+                account_id.to_string()
+            } else if is_group {
+                wmi.key
+                    .participant
+                    .clone()
+                    .or_else(|| wmi.participant.clone())
+                    .unwrap_or_else(|| chat_jid.clone())
+            } else {
+                chat_jid.clone()
+            };
+
+            let sender_name = wmi.push_name.clone();
+
+            let context_id = if let (Some(prev_cid), Some(pt)) = (&prev_context_id, prev_ts) {
+                if (*msg_ts - pt).abs() <= 3600 {
+                    prev_cid.clone()
+                } else {
+                    format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+                }
+            } else {
+                format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+            };
+
+            prev_context_id = Some(context_id.clone());
+            prev_ts = Some(*msg_ts);
+
+            let reply_to_id = extract_quoted_id(wa_msg);
+
+            let message = void_core::models::Message {
+                id: format!("wa_{account_id}_{msg_id}"),
+                conversation_id: conv_id.clone(),
+                account_id: account_id.to_string(),
+                connector: "whatsapp".into(),
+                external_id: msg_id.to_string(),
+                sender: sender_jid,
+                sender_name,
+                body,
+                timestamp: *msg_ts,
+                synced_at: None,
+                is_archived: false,
+                reply_to_id,
+                media_type,
+                metadata: media_metadata,
+                context_id: Some(context_id),
+                context: None,
+            };
+            db.upsert_message(&message)?;
+            total_stored += 1;
+        }
+    }
+
+    info!(
+        account_id = %account_id,
+        sync_type = history.sync_type,
+        stored = total_stored,
+        "history sync processed"
+    );
+    Ok(())
+}
+
 fn handle_message(
     db: &Database,
     account_id: &str,
@@ -514,8 +668,6 @@ fn handle_message(
         body,
         timestamp: msg_ts,
         synced_at: None,
-        is_from_me: info.source.is_from_me,
-        is_read: false,
         is_archived: false,
         reply_to_id: extract_quoted_id(msg),
         media_type,

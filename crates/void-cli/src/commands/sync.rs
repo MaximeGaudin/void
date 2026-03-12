@@ -24,6 +24,9 @@ pub struct SyncArgs {
     /// Clear the database before syncing (fresh start)
     #[arg(long)]
     pub clear: bool,
+    /// Clear data for a specific connector before syncing (e.g. whatsapp, slack, gmail, calendar)
+    #[arg(long)]
+    pub clear_connector: Option<String>,
     /// Stop the running sync daemon
     #[arg(long)]
     pub stop: bool,
@@ -143,6 +146,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let connectors_clone = args.connectors.clone();
     let clear = args.clear;
+    let clear_connector = args.clear_connector.clone();
     rt.block_on(async move {
         let log_level = if verbose { "debug" } else { "info" };
         tracing_subscriber::fmt()
@@ -160,6 +164,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
             daemon: false,
             restart: false,
             clear,
+            clear_connector,
             stop: false,
         };
         if let Err(e) = run(&inner_args).await {
@@ -207,6 +212,34 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     }
 
     let db = Arc::new(Database::open(&cfg.db_path())?);
+
+    if let Some(ref connector_type) = args.clear_connector {
+        let ct = connector_type.trim().to_lowercase();
+        let (msgs, convs, evts, sync_st) = db.clear_connector_data(&ct)?;
+        eprintln!(
+            "Cleared {ct} data: {msgs} messages, {convs} conversations, {evts} events, {sync_st} sync states"
+        );
+        info!(
+            connector = %ct, msgs, convs, evts, sync_st,
+            "connector data cleared"
+        );
+
+        if ct == "whatsapp" {
+            for account in &cfg.accounts {
+                if account.account_type.to_string() == "whatsapp" {
+                    let session_db = store_path.join(format!("whatsapp-{}.db", account.id));
+                    if session_db.exists() {
+                        std::fs::remove_file(&session_db)?;
+                        eprintln!(
+                            "Removed WhatsApp session: {} (will require re-pairing)",
+                            session_db.display()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     let mut connectors: Vec<Arc<dyn void_core::connector::Connector>> = Vec::new();
 
     for account in &cfg.accounts {

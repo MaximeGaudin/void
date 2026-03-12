@@ -56,11 +56,34 @@ Look for duplicated code across the workspace. Common patterns to watch for:
 
 For each duplicate found, note the locations and whether it should be extracted to a shared module, generalized with a trait/generic, or consolidated into `void-core`.
 
-### 1.4 File size audit
+### 1.4 Placeholder & stub code scan
+
+Search for comments and code that signal incomplete or fake implementations. These are **critical** findings because the code appears to work but silently does nothing.
+
+```bash
+rg -in "todo|fixme|hack|xxx|stub|placeholder|not yet implemented|unimplemented|to be implemented|future:|later:" --type rust
+rg -n "// .*Future:" --type rust
+```
+
+Patterns to flag:
+
+| Pattern | Why it's dangerous |
+|---------|--------------------|
+| `// TODO` / `// FIXME` / `// HACK` / `// XXX` | Marks known incomplete work |
+| `// Future:` / `// later:` / `// stub` | Deferred implementation that may be forgotten |
+| Empty loop bodies (`loop { ... => { } }`) | Silently drops events/data |
+| Empty match arms with only `debug!()` or a comment | Ignores important cases |
+| `unimplemented!()` / `todo!()` macro calls | Will panic at runtime |
+| Functions that return hardcoded values or immediately `Ok(())` without doing real work | Fake implementations |
+| Poll/tick loops where the tick handler is a no-op | Pretends to sync but does nothing |
+
+Each finding is **Critical** severity — these must be either implemented or explicitly removed with a clear rationale.
+
+### 1.5 File size audit
 
 List files exceeding **400 lines** (excluding tests). These are split candidates.
 
-### 1.5 Produce findings report
+### 1.6 Produce findings report
 
 Before making any changes, present a summary table to the user:
 

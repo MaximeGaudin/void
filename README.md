@@ -25,13 +25,13 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │  ├── void inbox          ├── void send              │
 │  ├── void search         ├── void reply             │
 │  ├── void calendar       ├── void archive           │
-│  ├── void contacts       ├── void read              │
-│  ├── void channels       ├── void calendar create   │
-│  └── void messages       ├── void gmail draft ...   │
-│                          ├── void slack react ...    │
+│  ├── void contacts       ├── void calendar create   │
+│  ├── void channels       ├── void gmail draft ...   │
+│  └── void messages       ├── void slack react ...   │
+│                          ├── void slack schedule     │
 │  Sync daemon             └── void whatsapp download │
 │  ├── WhatsApp (wa-rs WebSocket)                     │
-│  ├── Slack (Web API polling)                        │
+│  ├── Slack (Socket Mode WebSocket)                   │
 │  ├── Gmail (history.list polling)                   │
 │  └── Calendar (syncToken polling)                   │
 └────────────────────────────────────────────────────┘
@@ -86,7 +86,6 @@ void calendar
 |---------|-------------|
 | `void send` | Send a new message |
 | `void reply <id>` | Reply to a message (`--in-thread` for threaded replies) |
-| `void read <id>` | Mark a message as read |
 | `void archive <id>` | Archive a message (mark as processed) |
 
 ### Connector-Specific

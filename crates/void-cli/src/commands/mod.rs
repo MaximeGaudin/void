@@ -8,7 +8,6 @@ pub mod gmail;
 pub mod inbox;
 pub mod install;
 pub mod messages;
-pub mod read;
 pub mod reply;
 pub mod search;
 pub mod send;

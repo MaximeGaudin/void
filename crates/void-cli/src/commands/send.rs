@@ -1,7 +1,7 @@
 use clap::Args;
 use tracing::{debug, info};
 
-use void_core::config::{self, VoidConfig};
+use void_core::config::{self, AccountType, VoidConfig};
 use void_core::models::MessageContent;
 
 use crate::commands::connector_factory;
@@ -27,6 +27,9 @@ pub struct SendArgs {
     /// File to attach
     #[arg(long)]
     pub file: Option<String>,
+    /// Schedule for later — "HH:MM", "YYYY-MM-DD HH:MM", or Unix timestamp (Slack only)
+    #[arg(long)]
+    pub at: Option<String>,
 }
 
 pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
@@ -49,6 +52,13 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         })
         .ok_or_else(|| anyhow::anyhow!("No {target_type} account found in config.toml"))?;
 
+    if let Some(ref at_str) = args.at {
+        if account.account_type != AccountType::Slack {
+            anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
+        }
+        return run_slack_scheduled_send(account, &cfg, &args.to, &args.message, at_str).await;
+    }
+
     let store_path = cfg.store_path();
     let conn = connector_factory::build_connector(account, &store_path)?;
     debug!("connector built");
@@ -65,5 +75,53 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
 
     let msg_id = conn.send_message(&args.to, content).await?;
     eprintln!("Message sent (id: {msg_id})");
+    Ok(())
+}
+
+async fn run_slack_scheduled_send(
+    account: &void_core::config::AccountConfig,
+    _cfg: &VoidConfig,
+    channel: &str,
+    message: &str,
+    at_str: &str,
+) -> anyhow::Result<()> {
+    use super::slack::parse_schedule_time;
+
+    let post_at = parse_schedule_time(at_str)?;
+    let now = chrono::Utc::now().timestamp();
+    if post_at <= now {
+        anyhow::bail!("Scheduled time must be in the future.");
+    }
+
+    let (user_token, app_token, exclude_channels) = match &account.settings {
+        void_core::config::AccountSettings::Slack {
+            user_token,
+            app_token,
+            exclude_channels,
+        } => (
+            user_token.clone(),
+            app_token.clone(),
+            exclude_channels.clone(),
+        ),
+        _ => anyhow::bail!("Mismatched settings for Slack account"),
+    };
+
+    let connector = void_slack::connector::SlackConnector::new(
+        &account.id,
+        &user_token,
+        &app_token,
+        exclude_channels,
+    );
+
+    let scheduled_id = connector
+        .schedule_message(channel, message, post_at, None)
+        .await?;
+
+    let dt = chrono::DateTime::from_timestamp(post_at, 0)
+        .map(|utc| utc.with_timezone(&chrono::Local))
+        .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
+        .unwrap_or_else(|| post_at.to_string());
+
+    eprintln!("Message scheduled for {dt} (id: {scheduled_id})");
     Ok(())
 }

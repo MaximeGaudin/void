@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures_util::{SinkExt, StreamExt};
+use tokio_tungstenite::tungstenite;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use void_core::connector::Connector;
 use void_core::db::Database;
@@ -14,8 +16,6 @@ use crate::api::{SlackApiClient, SlackConversation, SlackMessage, SlackReaction}
 pub struct SlackConnector {
     account_id: String,
     api: SlackApiClient,
-    /// Reserved for Socket Mode WebSocket connection (future).
-    #[allow(dead_code)]
     app_token: String,
     exclude_channels: Vec<String>,
 }
@@ -131,7 +131,7 @@ impl SlackConnector {
         progress.set_items_total(conversations.len() as u64);
 
         for conv in &conversations {
-            let conversation = map_conversation(conv, &self.account_id);
+            let conversation = map_conversation(conv, &self.account_id, &user_cache);
             db.upsert_conversation(&conversation)?;
             progress.inc(1);
 
@@ -195,6 +195,275 @@ impl SlackConnector {
         let resp = self.api.chat_update(channel, ts, text).await?;
         Ok(resp.ts.unwrap_or_default())
     }
+
+    pub async fn schedule_message(
+        &self,
+        channel: &str,
+        text: &str,
+        post_at: i64,
+        thread_ts: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let resp = self
+            .api
+            .chat_schedule_message(channel, text, post_at, thread_ts)
+            .await?;
+        Ok(resp.scheduled_message_id.unwrap_or_default())
+    }
+
+    async fn run_socket_mode(
+        &self,
+        db: &Database,
+        cancel: &CancellationToken,
+    ) -> anyhow::Result<()> {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        let user_cache = self.prefetch_users().await.unwrap_or_default();
+
+        loop {
+            if cancel.is_cancelled() {
+                info!(account_id = %self.account_id, "Slack sync cancelled");
+                return Ok(());
+            }
+
+            let wss_url = match self.api.connections_open(&self.app_token).await {
+                Ok(resp) => resp.url,
+                Err(e) => {
+                    error!(account_id = %self.account_id, error = %e, "failed to open Socket Mode connection");
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            info!(account_id = %self.account_id, "connecting to Slack Socket Mode");
+
+            let (ws_stream, _) = match tokio_tungstenite::connect_async(&wss_url).await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    error!(account_id = %self.account_id, error = %e, "WebSocket connect failed");
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            eprintln!("[slack:{}] Socket Mode connected", self.account_id);
+            let (mut ws_tx, mut ws_rx) = ws_stream.split();
+
+            let disconnect = loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        info!(account_id = %self.account_id, "Slack sync cancelled");
+                        return Ok(());
+                    }
+                    frame = ws_rx.next() => {
+                        match frame {
+                            Some(Ok(tungstenite::Message::Text(text))) => {
+                                let envelope: serde_json::Value = match serde_json::from_str(&text) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        eprintln!("[slack:{}] failed to parse frame: {}", self.account_id, e);
+                                        continue;
+                                    }
+                                };
+
+                                let msg_type = envelope.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+                                if let Some(envelope_id) = envelope.get("envelope_id").and_then(|v| v.as_str()) {
+                                    let ack = serde_json::json!({"envelope_id": envelope_id});
+                                    if let Err(e) = ws_tx.send(tungstenite::Message::Text(ack.to_string().into())).await {
+                                        eprintln!("[slack:{}] failed to send ack: {}", self.account_id, e);
+                                    }
+                                }
+
+                                match msg_type {
+                                    "hello" => {
+                                        eprintln!("[slack:{}] Socket Mode handshake OK", self.account_id);
+                                    }
+                                    "disconnect" => {
+                                        let reason = envelope.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                        eprintln!("[slack:{}] disconnect requested: {}", self.account_id, reason);
+                                        break true;
+                                    }
+                                    "events_api" => {
+                                        if let Some(payload) = envelope.get("payload") {
+                                            self.handle_socket_event(payload, db, &user_cache).await;
+                                        }
+                                    }
+                                    other => {
+                                        eprintln!("[slack:{}] unhandled envelope type: {}", self.account_id, other);
+                                    }
+                                }
+                            }
+                            Some(Ok(tungstenite::Message::Ping(_data))) => {
+                                let _ = ws_tx.send(tungstenite::Message::Pong(_data)).await;
+                            }
+                            Some(Ok(tungstenite::Message::Close(reason))) => {
+                                eprintln!("[slack:{}] WebSocket closed by server: {:?}", self.account_id, reason);
+                                break true;
+                            }
+                            Some(Err(e)) => {
+                                eprintln!("[slack:{}] WebSocket error: {}", self.account_id, e);
+                                break true;
+                            }
+                            None => {
+                                eprintln!("[slack:{}] WebSocket stream ended", self.account_id);
+                                break true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            };
+
+            if !disconnect || cancel.is_cancelled() {
+                return Ok(());
+            }
+
+            eprintln!(
+                "[slack:{}] reconnecting Socket Mode in 2s...",
+                self.account_id
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    async fn handle_socket_event(
+        &self,
+        payload: &serde_json::Value,
+        db: &Database,
+        user_cache: &HashMap<String, String>,
+    ) {
+        let event = match payload.get("event") {
+            Some(e) => e,
+            None => {
+                eprintln!(
+                    "[slack:{}] event payload has no 'event' field",
+                    self.account_id
+                );
+                return;
+            }
+        };
+
+        let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if event_type != "message" {
+            eprintln!(
+                "[slack:{}] event type '{}' (not message, skipping)",
+                self.account_id, event_type
+            );
+            return;
+        }
+
+        let subtype = event.get("subtype").and_then(|v| v.as_str());
+        if subtype.is_some() {
+            debug!(subtype, "ignoring message subtype");
+            return;
+        }
+
+        let channel_id = match event.get("channel").and_then(|v| v.as_str()) {
+            Some(c) => c,
+            None => return,
+        };
+        let ts = match event.get("ts").and_then(|v| v.as_str()) {
+            Some(t) => t,
+            None => return,
+        };
+        let user_id = event
+            .get("user")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let text = event.get("text").and_then(|v| v.as_str()).unwrap_or("");
+
+        if text.is_empty() {
+            return;
+        }
+
+        let sender_name = user_cache
+            .get(user_id)
+            .cloned()
+            .unwrap_or_else(|| user_id.to_string());
+
+        let conv_id = format!("{}-{}", self.account_id, channel_id);
+
+        if self
+            .ensure_conversation_exists(db, channel_id, &conv_id, user_cache)
+            .await
+            .is_err()
+        {
+            return;
+        }
+
+        let thread_ts = event.get("thread_ts").and_then(|v| v.as_str());
+        let context_id = thread_ts.map(|tts| format!("{}-thread-{tts}", self.account_id));
+
+        let timestamp = parse_ts(ts).unwrap_or(0);
+        let message = Message {
+            id: format!("{}-{}", self.account_id, ts),
+            conversation_id: conv_id.clone(),
+            account_id: self.account_id.clone(),
+            connector: "slack".into(),
+            external_id: ts.to_string(),
+            sender: user_id.to_string(),
+            sender_name: Some(sender_name.clone()),
+            body: Some(text.to_string()),
+            timestamp,
+            synced_at: None,
+            is_archived: false,
+            reply_to_id: thread_ts.map(|tts| format!("{}-{tts}", self.account_id)),
+            media_type: None,
+            metadata: None,
+            context_id,
+            context: None,
+        };
+
+        match db.upsert_message(&message) {
+            Ok(()) => {
+                let preview: String = text.chars().take(80).collect();
+                eprintln!(
+                    "[slack:{}] new: {} — {}",
+                    self.account_id, sender_name, preview
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "[slack:{}] error storing message {}: {}",
+                    self.account_id, ts, e
+                );
+            }
+        }
+    }
+
+    async fn ensure_conversation_exists(
+        &self,
+        db: &Database,
+        channel_id: &str,
+        conv_id: &str,
+        user_cache: &HashMap<String, String>,
+    ) -> anyhow::Result<()> {
+        if db.get_conversation(conv_id)?.is_some() {
+            return Ok(());
+        }
+
+        debug!(
+            channel_id,
+            "conversation not in DB, fetching via conversations.info"
+        );
+        match self.api.conversations_info(channel_id).await {
+            Ok(slack_conv) => {
+                let conversation = map_conversation(&slack_conv, &self.account_id, user_cache);
+                db.upsert_conversation(&conversation)?;
+                debug!(conv_id, "created conversation from Socket Mode event");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!(
+                    "[slack:{}] failed to fetch conversation {}: {}",
+                    self.account_id, channel_id, e
+                );
+                Err(e)
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -231,23 +500,7 @@ impl Connector for SlackConnector {
             );
         }
 
-        // After backfill, poll for new messages periodically
-        // (Socket Mode can be added later for true real-time)
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    info!(account_id = %self.account_id, "Slack sync cancelled");
-                    break;
-                }
-                _ = interval.tick() => {
-                    debug!(account_id = %self.account_id, "Slack poll tick");
-                    // Future: poll conversations.history for new messages
-                    // since last known timestamp per conversation
-                }
-            }
-        }
-        Ok(())
+        self.run_socket_mode(&db, &cancel).await
     }
 
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
@@ -333,7 +586,11 @@ impl Connector for SlackConnector {
     }
 }
 
-fn map_conversation(conv: &SlackConversation, account_id: &str) -> Conversation {
+fn map_conversation(
+    conv: &SlackConversation,
+    account_id: &str,
+    user_cache: &HashMap<String, String>,
+) -> Conversation {
     let kind = if conv.is_im.unwrap_or(false) {
         ConversationKind::Dm
     } else if conv.is_group.unwrap_or(false) || conv.is_mpim.unwrap_or(false) {
@@ -342,11 +599,15 @@ fn map_conversation(conv: &SlackConversation, account_id: &str) -> Conversation 
         ConversationKind::Channel
     };
 
-    let name = conv
-        .name
-        .clone()
-        .or_else(|| conv.user.clone())
-        .unwrap_or_else(|| conv.id.clone());
+    let name = if conv.is_im.unwrap_or(false) {
+        conv.user
+            .as_deref()
+            .and_then(|uid| user_cache.get(uid).cloned())
+            .or_else(|| conv.user.clone())
+            .unwrap_or_else(|| conv.id.clone())
+    } else {
+        conv.name.clone().unwrap_or_else(|| conv.id.clone())
+    };
 
     Conversation {
         id: format!("{}-{}", account_id, conv.id),
@@ -379,7 +640,7 @@ fn map_message_cached(
         .cloned()
         .unwrap_or_else(|| sender.clone());
 
-    let mut metadata = build_metadata(conv, &msg.reactions);
+    let mut metadata = build_metadata(conv, &msg.reactions, user_cache);
     let text = msg.text.clone().unwrap_or_default();
 
     let (body, media_type) = if !msg.files.is_empty() {
@@ -473,8 +734,6 @@ fn map_message_cached(
         body,
         timestamp: parse_ts(&msg.ts).unwrap_or(0),
         synced_at: None,
-        is_from_me: false,
-        is_read: false,
         is_archived: false,
         reply_to_id: msg
             .thread_ts
@@ -490,6 +749,7 @@ fn map_message_cached(
 fn build_metadata(
     conv: &SlackConversation,
     reactions: &[SlackReaction],
+    user_cache: &HashMap<String, String>,
 ) -> Option<serde_json::Value> {
     let kind = if conv.is_im.unwrap_or(false) {
         "dm"
@@ -501,9 +761,19 @@ fn build_metadata(
         "channel"
     };
 
+    let channel_name = if conv.is_im.unwrap_or(false) {
+        conv.user
+            .as_deref()
+            .and_then(|uid| user_cache.get(uid).map(|s| s.as_str()))
+            .or(conv.user.as_deref())
+            .unwrap_or(&conv.id)
+    } else {
+        conv.name.as_deref().unwrap_or(&conv.id)
+    };
+
     let mut meta = serde_json::json!({
         "channel_id": conv.id,
-        "channel_name": conv.name.as_deref().or(conv.user.as_deref()).unwrap_or(&conv.id),
+        "channel_name": channel_name,
         "channel_kind": kind,
         "is_private": conv.is_private.unwrap_or(false) || conv.is_im.unwrap_or(false) || conv.is_mpim.unwrap_or(false),
     });
@@ -565,10 +835,12 @@ mod tests {
             is_private: Some(true),
             user: Some("U456".into()),
         };
-        let result = map_conversation(&conv, "work-slack");
+        let mut cache = HashMap::new();
+        cache.insert("U456".to_string(), "Alice".to_string());
+        let result = map_conversation(&conv, "work-slack", &cache);
         assert_eq!(result.kind, ConversationKind::Dm);
         assert_eq!(result.connector, "slack");
-        assert_eq!(result.name.as_deref(), Some("U456"));
+        assert_eq!(result.name.as_deref(), Some("Alice"));
         assert_eq!(result.external_id, "D123");
     }
 
@@ -584,7 +856,7 @@ mod tests {
             is_private: Some(false),
             user: None,
         };
-        let result = map_conversation(&conv, "work-slack");
+        let result = map_conversation(&conv, "work-slack", &HashMap::new());
         assert_eq!(result.kind, ConversationKind::Channel);
         assert_eq!(result.connector, "slack");
         assert_eq!(result.name.as_deref(), Some("general"));
@@ -608,7 +880,7 @@ mod tests {
             is_private: Some(false),
             user: None,
         };
-        let meta = build_metadata(&conv, &[]).unwrap();
+        let meta = build_metadata(&conv, &[], &HashMap::new()).unwrap();
         assert_eq!(meta["channel_id"], "C789");
         assert_eq!(meta["channel_name"], "general");
         assert_eq!(meta["channel_kind"], "channel");
@@ -640,9 +912,11 @@ mod tests {
                 users: vec![],
             },
         ];
-        let meta = build_metadata(&conv, &reactions).unwrap();
+        let mut cache = HashMap::new();
+        cache.insert("U456".to_string(), "Bob".to_string());
+        let meta = build_metadata(&conv, &reactions, &cache).unwrap();
         assert_eq!(meta["channel_id"], "D123");
-        assert_eq!(meta["channel_name"], "U456");
+        assert_eq!(meta["channel_name"], "Bob");
         assert_eq!(meta["channel_kind"], "dm");
         assert_eq!(meta["is_private"], true);
         let r = meta["reactions"].as_array().unwrap();
@@ -664,7 +938,7 @@ mod tests {
             is_private: Some(true),
             user: None,
         };
-        let meta = build_metadata(&conv, &[]).unwrap();
+        let meta = build_metadata(&conv, &[], &HashMap::new()).unwrap();
         assert_eq!(meta["channel_kind"], "private_channel");
         assert_eq!(meta["is_private"], true);
         assert_eq!(meta["channel_name"], "secret-project");

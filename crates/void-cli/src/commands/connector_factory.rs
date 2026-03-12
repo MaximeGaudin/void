@@ -25,10 +25,10 @@ pub fn build_connector(
             exclude_channels.clone(),
         ))),
         (AccountType::Gmail, AccountSettings::Gmail { credentials_file }) => {
-            let cred_path = expand_tilde(credentials_file);
+            let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
             Ok(Arc::new(void_gmail::connector::GmailConnector::new(
                 &account.id,
-                cred_path.to_str().unwrap_or(""),
+                cred_path.as_deref().and_then(|p| p.to_str()),
                 store_path,
             )))
         }
@@ -39,10 +39,10 @@ pub fn build_connector(
                 calendar_ids,
             },
         ) => {
-            let cred_path = expand_tilde(credentials_file);
+            let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
             Ok(Arc::new(void_calendar::connector::CalendarConnector::new(
                 &account.id,
-                cred_path.to_str().unwrap_or(""),
+                cred_path.as_deref().and_then(|p| p.to_str()),
                 calendar_ids.clone(),
                 store_path,
             )))

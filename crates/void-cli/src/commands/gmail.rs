@@ -565,12 +565,12 @@ fn build_gmail_connector(
         ),
     };
 
-    let cred_path = expand_tilde(&credentials_file);
+    let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
     let store_path = cfg.store_path();
     debug!(account_id = %account.id, "building Gmail connector for CLI");
     Ok(void_gmail::connector::GmailConnector::new(
         &account.id,
-        cred_path.to_str().unwrap_or(""),
+        cred_path.as_deref().and_then(|p| p.to_str()),
         &store_path,
     ))
 }

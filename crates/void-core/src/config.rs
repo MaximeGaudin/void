@@ -86,14 +86,10 @@ impl<'de> Deserialize<'de> for AccountConfig {
                 exclude_channels: raw.exclude_channels.unwrap_or_default(),
             },
             AccountType::Gmail => AccountSettings::Gmail {
-                credentials_file: raw
-                    .credentials_file
-                    .ok_or_else(|| serde::de::Error::missing_field("credentials_file"))?,
+                credentials_file: raw.credentials_file,
             },
             AccountType::Calendar => AccountSettings::Calendar {
-                credentials_file: raw
-                    .credentials_file
-                    .ok_or_else(|| serde::de::Error::missing_field("credentials_file"))?,
+                credentials_file: raw.credentials_file,
                 calendar_ids: raw.calendar_ids.unwrap_or_default(),
             },
             AccountType::WhatsApp => AccountSettings::WhatsApp {},
@@ -153,10 +149,12 @@ pub enum AccountSettings {
         exclude_channels: Vec<String>,
     },
     Gmail {
-        credentials_file: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        credentials_file: Option<String>,
     },
     Calendar {
-        credentials_file: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        credentials_file: Option<String>,
         #[serde(default)]
         calendar_ids: Vec<String>,
     },
@@ -237,12 +235,12 @@ calendar_poll_interval_secs = 60
 # [[accounts]]
 # id = "personal-gmail"
 # type = "gmail"
-# credentials_file = "~/.config/void/gmail-personal.json"
+# # credentials_file is optional — built-in Google credentials are used by default
+# # credentials_file = "~/.config/void/custom-credentials.json"
 #
 # [[accounts]]
 # id = "my-calendar"
 # type = "calendar"
-# credentials_file = "~/.config/void/calendar.json"
 # calendar_ids = ["primary"]
 "#
     .to_string()
@@ -370,7 +368,7 @@ calendar_ids = ["primary", "holidays"]
                     id: "personal-gmail".into(),
                     account_type: AccountType::Gmail,
                     settings: AccountSettings::Gmail {
-                        credentials_file: "creds.json".into(),
+                        credentials_file: Some("creds.json".into()),
                     },
                 },
             ],
@@ -389,7 +387,7 @@ calendar_ids = ["primary", "holidays"]
                 id: "gmail-1".into(),
                 account_type: AccountType::Gmail,
                 settings: AccountSettings::Gmail {
-                    credentials_file: "creds.json".into(),
+                    credentials_file: Some("creds.json".into()),
                 },
             }],
         };
@@ -449,7 +447,10 @@ calendar_ids = ["primary"]
                 credentials_file,
                 calendar_ids,
             } => {
-                assert_eq!(credentials_file, "~/.config/void/google-creds.json");
+                assert_eq!(
+                    credentials_file.as_deref(),
+                    Some("~/.config/void/google-creds.json")
+                );
                 assert_eq!(calendar_ids, &["primary"]);
             }
             other => panic!("expected Calendar settings, got {other:?}"),

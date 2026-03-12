@@ -17,6 +17,8 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
 tokio-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

@@ -166,13 +166,12 @@ impl Database {
         debug!(message_id = %msg.id, "upserting message");
         let now = chrono::Utc::now().timestamp();
         self.conn().execute(
-            "INSERT INTO messages (id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+            "INSERT INTO messages (id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
                 body = excluded.body,
                 connector = excluded.connector,
                 sender_name = excluded.sender_name,
-                is_read = MAX(is_read, excluded.is_read),
                 is_archived = MAX(is_archived, excluded.is_archived),
                 media_type = excluded.media_type,
                 metadata = excluded.metadata,
@@ -188,8 +187,6 @@ impl Database {
                 msg.body,
                 msg.timestamp,
                 msg.synced_at.unwrap_or(now),
-                msg.is_from_me as i32,
-                msg.is_read as i32,
                 msg.is_archived as i32,
                 msg.reply_to_id,
                 msg.media_type,
@@ -208,7 +205,7 @@ impl Database {
         until: Option<i64>,
     ) -> anyhow::Result<Vec<Message>> {
         let mut sql = String::from(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE conversation_id = ?1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -240,7 +237,7 @@ impl Database {
     pub fn get_message(&self, id: &str) -> anyhow::Result<Option<Message>> {
         self.conn()
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE id = ?1",
                 params![id],
                 row::row_to_message,
@@ -259,7 +256,7 @@ impl Database {
     ) -> anyhow::Result<Vec<Message>> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
-            "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_from_me, m.is_read, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
+            "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1",
@@ -309,7 +306,7 @@ impl Database {
         include_muted: bool,
     ) -> anyhow::Result<Vec<Message>> {
         let mut sql = String::from(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -346,14 +343,6 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn mark_message_read(&self, id: &str) -> anyhow::Result<bool> {
-        debug!(message_id = %id, "marking message as read");
-        let updated = self
-            .conn()
-            .execute("UPDATE messages SET is_read = 1 WHERE id = ?1", params![id])?;
-        Ok(updated > 0)
-    }
-
     pub fn mark_message_archived(&self, id: &str) -> anyhow::Result<bool> {
         debug!(message_id = %id, "marking message as archived");
         let updated = self.conn().execute(
@@ -384,7 +373,7 @@ impl Database {
     ) -> anyhow::Result<Option<Message>> {
         self.conn()
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE account_id = ?1 AND external_id = ?2",
                 params![account_id, external_id],
                 row::row_to_message,
@@ -410,7 +399,7 @@ impl Database {
 
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE context_id = ?1 ORDER BY timestamp ASC LIMIT 50",
         )?;
 
@@ -440,7 +429,7 @@ impl Database {
     ) -> anyhow::Result<Option<Message>> {
         self.conn()
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_from_me, is_read, is_archived, reply_to_id, media_type, metadata, context_id
+                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT 1",
                 params![conversation_id],
                 row::row_to_message,
@@ -499,6 +488,46 @@ impl Database {
         Ok(deleted > 0)
     }
 
+    /// Delete all data (messages, conversations, events, sync_state) for a given connector type.
+    /// Returns a summary of how many rows were deleted from each table.
+    pub fn clear_connector_data(
+        &self,
+        connector_type: &str,
+    ) -> anyhow::Result<(usize, usize, usize, usize)> {
+        let conn = self.conn();
+
+        let account_ids: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT account_id FROM conversations WHERE connector = ?1
+                 UNION SELECT DISTINCT account_id FROM messages WHERE connector = ?1
+                 UNION SELECT DISTINCT account_id FROM events WHERE connector = ?1",
+            )?;
+            let rows = stmt.query_map(params![connector_type], |row| row.get(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+
+        let msgs = conn.execute(
+            "DELETE FROM messages WHERE connector = ?1",
+            params![connector_type],
+        )?;
+        let convs = conn.execute(
+            "DELETE FROM conversations WHERE connector = ?1",
+            params![connector_type],
+        )?;
+        let evts = conn.execute(
+            "DELETE FROM events WHERE connector = ?1",
+            params![connector_type],
+        )?;
+
+        let mut sync_deleted = 0usize;
+        for aid in &account_ids {
+            sync_deleted +=
+                conn.execute("DELETE FROM sync_state WHERE account_id = ?1", params![aid])?;
+        }
+
+        Ok((msgs, convs, evts, sync_deleted))
+    }
+
     pub fn list_events(
         &self,
         from: Option<i64>,
@@ -555,7 +584,7 @@ impl Database {
     ) -> anyhow::Result<Vec<Contact>> {
         let mut sql = String::from(
             "SELECT sender, sender_name, account_id, connector, COUNT(*) as msg_count, MAX(timestamp) as last_ts
-             FROM messages WHERE is_from_me = 0",
+             FROM messages WHERE sender != account_id",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -766,8 +795,6 @@ mod tests {
             body: Some(body.into()),
             timestamp: ts,
             synced_at: None,
-            is_from_me: false,
-            is_read: false,
             is_archived: false,
             reply_to_id: None,
             media_type: None,
@@ -1470,19 +1497,16 @@ mod tests {
         let mut m1 = make_message("m1", "c1", "test-slack", "hello", 1_000);
         m1.sender = "alice@test.com".into();
         m1.sender_name = Some("Alice".into());
-        m1.is_from_me = false;
         db.upsert_message(&m1).unwrap();
 
         let mut m2 = make_message("m2", "c1", "test-slack", "world", 2_000);
         m2.sender = "alice@test.com".into();
         m2.sender_name = Some("Alice".into());
-        m2.is_from_me = false;
         db.upsert_message(&m2).unwrap();
 
         let mut m3 = make_message("m3", "c1", "test-slack", "bye", 3_000);
         m3.sender = "bob@test.com".into();
         m3.sender_name = Some("Bob".into());
-        m3.is_from_me = false;
         db.upsert_message(&m3).unwrap();
 
         let contacts = db.list_contacts(None, None, None, 100).unwrap();
@@ -1502,13 +1526,11 @@ mod tests {
         let mut m1 = make_message("m1", "c1", "test-slack", "hi", 1_000);
         m1.sender = "alice@test.com".into();
         m1.sender_name = Some("Alice".into());
-        m1.is_from_me = false;
         db.upsert_message(&m1).unwrap();
 
         let mut m2 = make_message("m2", "c1", "test-slack", "hey", 2_000);
         m2.sender = "bob@test.com".into();
         m2.sender_name = Some("Bob".into());
-        m2.is_from_me = false;
         db.upsert_message(&m2).unwrap();
 
         let results = db.list_contacts(None, None, Some("alice"), 100).unwrap();
@@ -1527,13 +1549,11 @@ mod tests {
 
         let mut m1 = make_message("m1", "c1", "gladiaio", "hi", 1_000);
         m1.sender = "alice@slack".into();
-        m1.is_from_me = false;
         db.upsert_message(&m1).unwrap();
 
         let mut m2 = make_message("m2", "c2", "33651090627", "hey", 2_000);
         m2.sender = "bob@wa".into();
         m2.connector = "whatsapp".into();
-        m2.is_from_me = false;
         db.upsert_message(&m2).unwrap();
 
         let results = db.list_contacts(Some("gladiaio"), None, None, 100).unwrap();
@@ -1548,8 +1568,7 @@ mod tests {
         db.upsert_conversation(&conv).unwrap();
 
         let mut m1 = make_message("m1", "c1", "test-slack", "hi", 1_000);
-        m1.sender = "me@test.com".into();
-        m1.is_from_me = true;
+        m1.sender = "test-slack".into();
         db.upsert_message(&m1).unwrap();
 
         let contacts = db.list_contacts(None, None, None, 100).unwrap();
@@ -1594,32 +1613,6 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name.as_deref(), Some("Engineering"));
-    }
-
-    #[test]
-    fn mark_message_read_updates_flag() {
-        let db = test_db();
-        let conv = make_conversation("c1", "test-slack", "C123");
-        db.upsert_conversation(&conv).unwrap();
-
-        let msg = make_message("m1", "c1", "test-slack", "hello", 1_000);
-        db.upsert_message(&msg).unwrap();
-
-        let updated = db.mark_message_read("m1").unwrap();
-        assert!(
-            updated,
-            "mark_message_read should return true when row exists"
-        );
-
-        let loaded = db.get_message("m1").unwrap().unwrap();
-        assert!(loaded.is_read);
-    }
-
-    #[test]
-    fn mark_message_read_nonexistent_returns_false() {
-        let db = test_db();
-        let updated = db.mark_message_read("nonexistent").unwrap();
-        assert!(!updated);
     }
 
     #[test]

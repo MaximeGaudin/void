@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension};
 use tracing::debug;
 
-pub const SCHEMA_VERSION: i32 = 6;
+pub const SCHEMA_VERSION: i32 = 7;
 
 /// Run all pending migrations on the database connection.
 pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
@@ -40,6 +40,9 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
     }
     if version < 6 {
         migrate_v6(conn)?;
+    }
+    if version < 7 {
+        migrate_v7(conn)?;
     }
     Ok(())
 }
@@ -191,6 +194,19 @@ fn migrate_v6(conn: &Connection) -> anyhow::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_messages_context_id ON messages(context_id);
 
         INSERT OR REPLACE INTO schema_version (version) VALUES (6);
+    ",
+    )?;
+    Ok(())
+}
+
+fn migrate_v7(conn: &Connection) -> anyhow::Result<()> {
+    debug!("running migration v7: drop is_read and is_from_me");
+    conn.execute_batch(
+        "
+        ALTER TABLE messages DROP COLUMN is_read;
+        ALTER TABLE messages DROP COLUMN is_from_me;
+
+        INSERT OR REPLACE INTO schema_version (version) VALUES (7);
     ",
     )?;
     Ok(())

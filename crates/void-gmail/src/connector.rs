@@ -15,16 +15,20 @@ use crate::auth;
 
 pub struct GmailConnector {
     config_id: String,
-    credentials_file: String,
+    credentials_file: Option<String>,
     store_path: std::path::PathBuf,
     my_email: std::sync::Mutex<Option<String>>,
 }
 
 impl GmailConnector {
-    pub fn new(account_id: &str, credentials_file: &str, store_path: &std::path::Path) -> Self {
+    pub fn new(
+        account_id: &str,
+        credentials_file: Option<&str>,
+        store_path: &std::path::Path,
+    ) -> Self {
         Self {
             config_id: account_id.to_string(),
-            credentials_file: credentials_file.to_string(),
+            credentials_file: credentials_file.map(|s| s.to_string()),
             store_path: store_path.to_path_buf(),
             my_email: std::sync::Mutex::new(None),
         }
@@ -54,7 +58,7 @@ impl GmailConnector {
         if is_expired {
             debug!(config_id = %self.config_id, "refreshing access token");
             if let Some(ref refresh_token) = cache.refresh_token {
-                let creds = auth::load_client_credentials(&self.credentials_file)?;
+                let creds = auth::load_client_credentials(self.credentials_file.as_deref())?;
                 let http = reqwest::Client::new();
                 cache = auth::refresh_access_token(&http, &creds, refresh_token).await?;
                 cache.save(&token_path)?;
@@ -199,8 +203,6 @@ impl GmailConnector {
         };
         db.upsert_conversation(&conversation)?;
 
-        let my_email = self.my_email.lock().expect("mutex").clone();
-        let is_from_me = my_email.as_ref().is_some_and(|e| from.contains(e));
         let sender_email = parse_email_address(&from);
         let sender_name = parse_email_name(&from);
 
@@ -236,11 +238,6 @@ impl GmailConnector {
                 .map(|ms: i64| ms / 1000)
                 .unwrap_or(0),
             synced_at: None,
-            is_from_me,
-            is_read: !msg
-                .label_ids
-                .as_ref()
-                .is_some_and(|labels| labels.iter().any(|l| l == "UNREAD")),
             is_archived: !msg
                 .label_ids
                 .as_ref()
@@ -407,7 +404,7 @@ impl Connector for GmailConnector {
     }
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
-        let creds = auth::load_client_credentials(&self.credentials_file)?;
+        let creds = auth::load_client_credentials(self.credentials_file.as_deref())?;
         let token_path = self.token_path();
 
         let cache = auth::authorize_interactive(&creds, None).await?;
@@ -769,8 +766,6 @@ mod tests {
                             .map(|ms: i64| ms / 1000)
                             .unwrap_or(0),
                         synced_at: None,
-                        is_from_me: false,
-                        is_read: true,
                         is_archived: false,
                         reply_to_id: None,
                         media_type: None,
@@ -901,8 +896,6 @@ mod tests {
                                 .map(|ms: i64| ms / 1000)
                                 .unwrap_or(0),
                             synced_at: None,
-                            is_from_me: false,
-                            is_read: true,
                             is_archived: false,
                             reply_to_id: None,
                             media_type: None,

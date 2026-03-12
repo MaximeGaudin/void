@@ -208,6 +208,18 @@ impl SlackApiClient {
         .await
     }
 
+    pub async fn conversations_info(&self, channel: &str) -> anyhow::Result<SlackConversation> {
+        debug!(channel, "slack: conversations.info");
+        let resp: ConversationInfoResponse = self
+            .get_with_retry(
+                &format!("{}/conversations.info", self.base_url),
+                &[("channel".into(), channel.to_string())],
+                "conversations.info",
+            )
+            .await?;
+        Ok(resp.channel)
+    }
+
     pub async fn conversations_mark(&self, channel: &str, ts: &str) -> anyhow::Result<()> {
         debug!(channel, ts, "slack: conversations.mark");
         let body = serde_json::json!({
@@ -270,6 +282,52 @@ impl SlackApiClient {
             )
             .await?;
         debug!(ts = ?result.ts, "slack: chat.update success");
+        Ok(result)
+    }
+
+    /// Call apps.connections.open with an app-level token to get a WebSocket URL for Socket Mode.
+    pub async fn connections_open(
+        &self,
+        app_token: &str,
+    ) -> anyhow::Result<ConnectionsOpenResponse> {
+        let resp = self
+            .http
+            .post(&format!("{}/apps.connections.open", self.base_url))
+            .bearer_auth(app_token)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .send()
+            .await?;
+
+        let slack_resp: SlackResponse<ConnectionsOpenResponse> = resp.json().await?;
+        slack_resp
+            .into_result()
+            .context("apps.connections.open failed")
+    }
+
+    pub async fn chat_schedule_message(
+        &self,
+        channel: &str,
+        text: &str,
+        post_at: i64,
+        thread_ts: Option<&str>,
+    ) -> anyhow::Result<ChatScheduleMessageResponse> {
+        debug!(channel, post_at, "slack: chat.scheduleMessage");
+        let mut body = serde_json::json!({
+            "channel": channel,
+            "text": text,
+            "post_at": post_at,
+        });
+        if let Some(ts) = thread_ts {
+            body["thread_ts"] = serde_json::Value::String(ts.to_string());
+        }
+        let result: ChatScheduleMessageResponse = self
+            .post_with_retry(
+                &format!("{}/chat.scheduleMessage", self.base_url),
+                &body,
+                "chat.scheduleMessage",
+            )
+            .await?;
+        debug!(scheduled_message_id = ?result.scheduled_message_id, "slack: chat.scheduleMessage success");
         Ok(result)
     }
 
@@ -345,6 +403,11 @@ pub struct SlackConversation {
     pub is_mpim: Option<bool>,
     pub is_private: Option<bool>,
     pub user: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConversationInfoResponse {
+    pub channel: SlackConversation,
 }
 
 #[derive(Debug, Deserialize)]
@@ -435,4 +498,16 @@ pub struct ChatUpdateResponse {
     pub channel: Option<String>,
     pub ts: Option<String>,
     pub text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatScheduleMessageResponse {
+    pub channel: Option<String>,
+    pub scheduled_message_id: Option<String>,
+    pub post_at: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConnectionsOpenResponse {
+    pub url: String,
 }
