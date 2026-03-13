@@ -183,7 +183,7 @@ fn show_menu_header(cfg: &VoidConfig) {
 async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
     let choice = select(
         "Which connector type?",
-        &["Gmail", "Slack", "WhatsApp", "Google Calendar"],
+        &["Gmail", "Slack", "WhatsApp", "Google Calendar", "Google Drive"],
     );
 
     separator();
@@ -192,6 +192,7 @@ async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyho
         1 => setup_slack(cfg, store_path, true).await?,
         2 => setup_whatsapp(cfg, store_path, true).await?,
         3 => setup_calendar(cfg, store_path, true).await?,
+        4 => setup_gdrive(cfg, store_path).await?,
         _ => {}
     }
     Ok(())
@@ -246,6 +247,18 @@ fn rename_account(cfg: &mut VoidConfig, store_path: &std::path::Path) -> anyhow:
             "  Renamed token: {} → {}",
             old_token.display(),
             new_token.display()
+        );
+    }
+
+    // Rename Drive token file if present
+    let old_drive_token = store_path.join(format!("{old_name}-drive-token.json"));
+    let new_drive_token = store_path.join(format!("{new_name}-drive-token.json"));
+    if old_drive_token.exists() {
+        std::fs::rename(&old_drive_token, &new_drive_token)?;
+        eprintln!(
+            "  Renamed drive token: {} → {}",
+            old_drive_token.display(),
+            new_drive_token.display()
         );
     }
 
@@ -374,7 +387,7 @@ async fn run_full_wizard(
     eprintln!();
     eprintln!("This wizard will guide you through connecting your");
     eprintln!("communication services (Gmail, Slack, WhatsApp,");
-    eprintln!("Google Calendar) to Void.");
+    eprintln!("Google Calendar, Google Drive) to Void.");
     eprintln!();
 
     separator();
@@ -385,6 +398,8 @@ async fn run_full_wizard(
     setup_whatsapp(cfg, store_path, false).await?;
     separator();
     setup_calendar(cfg, store_path, false).await?;
+    separator();
+    setup_gdrive(cfg, store_path).await?;
     separator();
 
     cfg.save(config_path)?;
@@ -762,6 +777,85 @@ async fn setup_calendar(
     }
 
     cfg.accounts.push(account);
+    Ok(())
+}
+
+// ── Google Drive ────────────────────────────────────────────────────────────
+
+async fn setup_gdrive(cfg: &VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+    eprintln!("📁  GOOGLE DRIVE");
+    eprintln!();
+    eprintln!("Enables downloading files from Google Drive, Docs, Sheets, and Slides.");
+    eprintln!("This adds Drive read-only access to an existing Google account.");
+
+    let google_accounts: Vec<(usize, &AccountConfig)> = cfg
+        .accounts
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| {
+            a.account_type == AccountType::Gmail || a.account_type == AccountType::Calendar
+        })
+        .collect();
+
+    if google_accounts.is_empty() {
+        eprintln!();
+        eprintln!("  No Google accounts configured (Gmail or Calendar).");
+        eprintln!("  Set up Gmail or Calendar first, then enable Drive access.");
+        return Ok(());
+    }
+
+    let choice = select(
+        "Enable Google Drive access?",
+        &["Yes, enable it", "Skip for now"],
+    );
+    if choice != 0 {
+        return Ok(());
+    }
+
+    let account = if google_accounts.len() == 1 {
+        let (_, acc) = google_accounts[0];
+        eprintln!("  Using account: {} ({})", acc.id, acc.account_type);
+        acc
+    } else {
+        let options: Vec<String> = google_accounts
+            .iter()
+            .map(|(_, a)| format!("{} ({})", a.id, a.account_type))
+            .collect();
+        let options_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+        let pick = select("Which Google account should Drive use?", &options_refs);
+        google_accounts[pick].1
+    };
+
+    let drive_token = void_gdrive::api::drive_token_cache_path(store_path, &account.id);
+    if drive_token.exists() {
+        eprintln!("  Drive is already authorized for \"{}\".", account.id);
+        if !confirm("  Re-authorize?") {
+            return Ok(());
+        }
+    }
+
+    let credentials_file = match &account.settings {
+        AccountSettings::Gmail { credentials_file } => credentials_file.clone(),
+        AccountSettings::Calendar {
+            credentials_file, ..
+        } => credentials_file.clone(),
+        _ => None,
+    };
+    let cred_path = credentials_file.as_ref().map(|f| config::expand_tilde(f));
+
+    match void_gdrive::api::authenticate_drive(
+        store_path,
+        &account.id,
+        cred_path.as_deref().and_then(|p| p.to_str()),
+    )
+    .await
+    {
+        Ok(()) => eprintln!("  ✓ Google Drive authorized for \"{}\".", account.id),
+        Err(e) => {
+            eprintln!("  ✗ Authorization failed: {e}");
+            eprintln!("    You can retry later with: void drive auth --account {}", account.id);
+        }
+    }
     Ok(())
 }
 
