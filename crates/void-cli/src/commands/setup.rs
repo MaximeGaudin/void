@@ -55,6 +55,20 @@ fn select(label: &str, options: &[&str]) -> usize {
     }
 }
 
+fn confirm_typed(label: &str, expected_phrase: &str) -> bool {
+    eprintln!("{label}");
+    loop {
+        let answer = prompt(&format!("  Type \"{expected_phrase}\" to continue: "));
+        if answer.eq_ignore_ascii_case(expected_phrase) {
+            return true;
+        }
+        if answer.eq_ignore_ascii_case("skip") || answer.is_empty() {
+            return false;
+        }
+        eprintln!("  Please type exactly \"{expected_phrase}\" (or \"skip\" to skip).");
+    }
+}
+
 fn separator() {
     eprintln!("\n{}\n", "─".repeat(60));
 }
@@ -477,7 +491,7 @@ async fn setup_gmail(
     eprintln!("You can use your own credentials file, or use the built-in ones.");
     eprintln!();
 
-    let custom_creds = if confirm("Use built-in credentials? (recommended)") {
+    let custom_creds = if confirm_default_yes("Use built-in credentials? (recommended)") {
         None
     } else {
         let path = prompt("Path to Google Cloud credentials JSON: ");
@@ -553,21 +567,124 @@ async fn setup_slack(
         }
     }
 
+    // ── Critical warning: User mode, not Bot mode ───────────────────────
     eprintln!();
-    eprintln!("To connect Slack, you need to create a Slack App and");
-    eprintln!("generate two tokens. Here's how:");
+    eprintln!("┌─────────────────────────────────────────────────────────┐");
+    eprintln!("│                    ⚠️  IMPORTANT  ⚠️                     │");
+    eprintln!("├─────────────────────────────────────────────────────────┤");
+    eprintln!("│  ALL Slack app settings must be configured for USER     │");
+    eprintln!("│  tokens, NOT bot tokens.                                │");
+    eprintln!("│                                                         │");
+    eprintln!("│  This means:                                            │");
+    eprintln!("│  • Add scopes under \"User Token Scopes\"                 │");
+    eprintln!("│    (NOT \"Bot Token Scopes\")                             │");
+    eprintln!("│  • Subscribe to events under \"on behalf of users\"       │");
+    eprintln!("│    (NOT \"bot events\")                                   │");
+    eprintln!("│                                                         │");
+    eprintln!("│  Why? Void acts as YOU — it reads and sends messages    │");
+    eprintln!("│  with your identity. No need to invite a bot to every   │");
+    eprintln!("│  channel. You get access to everything you can see.     │");
+    eprintln!("└─────────────────────────────────────────────────────────┘");
     eprintln!();
-    eprintln!("  1. Go to https://api.slack.com/apps and click \"Create New App\"");
-    eprintln!("  2. Choose \"From scratch\", pick a name and your workspace");
-    eprintln!("  3. Under \"OAuth & Permissions\", add these User Token Scopes:");
-    eprintln!("     channels:history, channels:read, chat:write,");
-    eprintln!("     groups:history, groups:read, im:history, im:read,");
-    eprintln!("     mpim:history, mpim:read, users:read, reactions:read");
-    eprintln!("  4. Install the app to your workspace");
-    eprintln!("  5. Copy the \"User OAuth Token\" (starts with xoxp-)");
-    eprintln!("  6. Under \"Basic Information\" > \"App-Level Tokens\":");
-    eprintln!("     Create a token with connections:write scope");
-    eprintln!("     (starts with xapp-)");
+
+    if !confirm_typed(
+        "Please confirm you understand the above.",
+        "user not bot",
+    ) {
+        eprintln!("  Slack setup skipped.");
+        return Ok(());
+    }
+
+    // ── Step 1: Create the Slack App ────────────────────────────────────
+    separator();
+    eprintln!("STEP 1 — Create a Slack App");
+    eprintln!();
+    eprintln!("  1. Go to https://api.slack.com/apps");
+    eprintln!("  2. Click \"Create New App\" > \"From scratch\"");
+    eprintln!("  3. Pick a name (e.g. \"Void\") and select your workspace");
+    eprintln!();
+    if !confirm_default_yes("Done? Continue to next step") {
+        eprintln!("  Slack setup skipped.");
+        return Ok(());
+    }
+
+    // ── Step 2: User Token Scopes ───────────────────────────────────────
+    separator();
+    eprintln!("STEP 2 — Add User Token Scopes");
+    eprintln!();
+    eprintln!("  Go to \"OAuth & Permissions\" in your app settings.");
+    eprintln!("  Scroll down to \"User Token Scopes\" (NOT Bot Token Scopes!).");
+    eprintln!("  Add ALL of the following scopes:");
+    eprintln!();
+    eprintln!("    channels:history    — View messages in public channels");
+    eprintln!("    channels:read       — View basic channel info");
+    eprintln!("    chat:write          — Send messages as you");
+    eprintln!("    files:write         — Upload and share files");
+    eprintln!("    groups:history      — View messages in private channels");
+    eprintln!("    groups:read         — View basic info about private channels");
+    eprintln!("    im:history          — View messages in DMs");
+    eprintln!("    im:read             — View basic info about DMs");
+    eprintln!("    mpim:history        — View messages in group DMs");
+    eprintln!("    mpim:read           — View basic info about group DMs");
+    eprintln!("    reactions:read      — View emoji reactions");
+    eprintln!("    reactions:write     — Add emoji reactions");
+    eprintln!("    users:read          — View people in the workspace");
+    eprintln!();
+    if !confirm_default_yes("Done? Continue to next step") {
+        eprintln!("  Slack setup skipped.");
+        return Ok(());
+    }
+
+    // ── Step 3: Enable Socket Mode ──────────────────────────────────────
+    separator();
+    eprintln!("STEP 3 — Enable Socket Mode");
+    eprintln!();
+    eprintln!("  Go to \"Socket Mode\" in the left sidebar.");
+    eprintln!("  Toggle \"Enable Socket Mode\" ON.");
+    eprintln!("  When prompted, create an app-level token:");
+    eprintln!("    • Name it anything (e.g. \"void-socket\")");
+    eprintln!("    • Add the scope: connections:write");
+    eprintln!("    • Click \"Generate\"");
+    eprintln!("  Save this token — it starts with xapp-");
+    eprintln!();
+    if !confirm_default_yes("Done? Continue to next step") {
+        eprintln!("  Slack setup skipped.");
+        return Ok(());
+    }
+
+    // ── Step 4: Event Subscriptions ─────────────────────────────────────
+    separator();
+    eprintln!("STEP 4 — Subscribe to Events (on behalf of users)");
+    eprintln!();
+    eprintln!("  Go to \"Event Subscriptions\" in the left sidebar.");
+    eprintln!("  Toggle \"Enable Events\" ON.");
+    eprintln!("  Expand \"Subscribe to events on behalf of users\"");
+    eprintln!("  (NOT \"Subscribe to bot events\"!)");
+    eprintln!("  Add these events:");
+    eprintln!();
+    eprintln!("    message.channels    — Messages in public channels");
+    eprintln!("    message.groups      — Messages in private channels");
+    eprintln!("    message.im          — Messages in DMs");
+    eprintln!("    message.mpim        — Messages in group DMs");
+    eprintln!();
+    eprintln!("  Click \"Save Changes\" at the bottom.");
+    eprintln!();
+    if !confirm_default_yes("Done? Continue to next step") {
+        eprintln!("  Slack setup skipped.");
+        return Ok(());
+    }
+
+    // ── Step 5: Install & collect tokens ────────────────────────────────
+    separator();
+    eprintln!("STEP 5 — Install the App & Collect Tokens");
+    eprintln!();
+    eprintln!("  Go to \"Install App\" in the left sidebar and install to your workspace.");
+    eprintln!("  (If already installed, click \"Reinstall to Workspace\" to apply scope changes.)");
+    eprintln!();
+    eprintln!("  You need two tokens:");
+    eprintln!("  • User OAuth Token (xoxp-...)  →  found under \"OAuth & Permissions\"");
+    eprintln!("  • App-Level Token   (xapp-...)  →  found under \"Basic Information\"");
+    eprintln!("                                      > \"App-Level Tokens\"");
     eprintln!();
 
     let user_token = prompt("User OAuth Token (xoxp-...): ");
@@ -804,11 +921,7 @@ async fn setup_gdrive(cfg: &VoidConfig, store_path: &Path) -> anyhow::Result<()>
         return Ok(());
     }
 
-    let choice = select(
-        "Enable Google Drive access?",
-        &["Yes, enable it", "Skip for now"],
-    );
-    if choice != 0 {
+    if !confirm_default_yes("Enable Google Drive access?") {
         return Ok(());
     }
 
@@ -874,11 +987,7 @@ fn pick_connector_action(
     cfg: &VoidConfig,
 ) -> ConnectorAction {
     if existing_indices.is_empty() {
-        let choice = select(
-            &format!("Would you like to set up {name}?"),
-            &["Yes, set it up", "Skip for now"],
-        );
-        if choice == 0 {
+        if confirm_default_yes(&format!("Set up {name}?")) {
             ConnectorAction::Add
         } else {
             ConnectorAction::Skip
