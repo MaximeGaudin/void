@@ -287,9 +287,16 @@ fn read_claude_code_token_from_keychain() -> Option<String> {
 
         let raw = String::from_utf8(output.stdout).ok()?;
         let json: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
-        json.get("accessToken")
+
+        json.get("claudeAiOauth")
+            .and_then(|o| o.get("accessToken"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
+            .or_else(|| {
+                json.get("accessToken")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
     }
 }
 
