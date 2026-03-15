@@ -136,9 +136,17 @@ impl SlackConnector {
         let user_cache = self.prefetch_users().await?;
         let conversations = self.list_all_conversations().await?;
 
+        let oldest_secs: u64 = oldest_ts.parse().unwrap_or(0);
+        let oldest_ms = oldest_secs * 1000;
+
+        let active: Vec<_> = conversations
+            .iter()
+            .filter(|c| c.updated.map_or(true, |u| u >= oldest_ms))
+            .collect();
+
         eprintln!(
-            "[slack:{}] {} — {} conversations, fetching since {}…",
-            self.account_id, label, conversations.len(), oldest_ts
+            "[slack:{}] {} — {}/{} conversations active since {}, fetching…",
+            self.account_id, label, active.len(), conversations.len(), oldest_ts
         );
 
         let mut progress = void_core::progress::BackfillProgress::new(
@@ -146,9 +154,9 @@ impl SlackConnector {
             "conversations",
         )
         .with_secondary("messages");
-        progress.set_items_total(conversations.len() as u64);
+        progress.set_items_total(active.len() as u64);
 
-        for conv in &conversations {
+        for conv in &active {
             let conversation = map_conversation(conv, &self.account_id, &user_cache);
             db.upsert_conversation(&conversation)?;
             progress.inc(1);
@@ -935,6 +943,7 @@ mod tests {
             is_mpim: Some(false),
             is_private: Some(true),
             user: Some("U456".into()),
+            updated: None,
         };
         let mut cache = HashMap::new();
         cache.insert("U456".to_string(), "Alice".to_string());
@@ -956,6 +965,7 @@ mod tests {
             is_mpim: Some(false),
             is_private: Some(false),
             user: None,
+            updated: None,
         };
         let result = map_conversation(&conv, "work-slack", &HashMap::new());
         assert_eq!(result.kind, ConversationKind::Channel);
@@ -980,6 +990,7 @@ mod tests {
             is_mpim: Some(false),
             is_private: Some(false),
             user: None,
+            updated: None,
         };
         let meta = build_metadata(&conv, &[], &HashMap::new()).unwrap();
         assert_eq!(meta["channel_id"], "C789");
@@ -1000,6 +1011,7 @@ mod tests {
             is_mpim: Some(false),
             is_private: Some(true),
             user: Some("U456".into()),
+            updated: None,
         };
         let reactions = vec![
             SlackReaction {
@@ -1038,6 +1050,7 @@ mod tests {
             is_mpim: Some(false),
             is_private: Some(true),
             user: None,
+            updated: None,
         };
         let meta = build_metadata(&conv, &[], &HashMap::new()).unwrap();
         assert_eq!(meta["channel_kind"], "private_channel");

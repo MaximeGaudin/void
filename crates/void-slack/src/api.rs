@@ -512,6 +512,8 @@ pub struct SlackConversation {
     pub is_mpim: Option<bool>,
     pub is_private: Option<bool>,
     pub user: Option<String>,
+    /// Millisecond timestamp of last activity in the conversation.
+    pub updated: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
