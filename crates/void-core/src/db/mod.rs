@@ -126,7 +126,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, hook_name, trigger_type, started_at, duration_ms, success, result, error, message_id, input_prompt, raw_output
-             FROM hook_logs ORDER BY started_at DESC LIMIT ?1",
+             FROM (SELECT * FROM hook_logs ORDER BY started_at DESC LIMIT ?1) ORDER BY started_at ASC",
         )?;
         let rows = stmt.query_map(params![limit as i64], |row| {
             Ok(crate::hooks::HookLog {
