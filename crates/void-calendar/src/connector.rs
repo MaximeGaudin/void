@@ -246,8 +246,13 @@ impl CalendarConnector {
         };
 
         let conference_version = if params.meet { Some(1) } else { None };
+        let send_notif = if request.attendees.is_some() {
+            Some("all")
+        } else {
+            None
+        };
         let resp = api
-            .insert_event(cal_id, &request, conference_version)
+            .insert_event(cal_id, &request, conference_version, send_notif)
             .await?;
 
         let event_id = resp.id.as_deref().unwrap_or("new");

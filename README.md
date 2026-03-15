@@ -27,8 +27,9 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │  ├── void calendar       ├── void archive           │
 │  ├── void contacts       ├── void calendar create   │
 │  ├── void channels       ├── void gmail draft ...   │
-│  └── void messages       ├── void slack react ...   │
+│  └── void messages       ├── void slack react/edit  │
 │                          ├── void slack schedule     │
+│                          ├── void slack open         │
 │  Sync daemon             └── void whatsapp download │
 │  ├── WhatsApp (wa-rs WebSocket)                     │
 │  ├── Slack (Socket Mode WebSocket)                   │
@@ -40,9 +41,14 @@ Void runs a background sync daemon that continuously pulls messages and events f
 ## Quick Start
 
 ```bash
-# Build
-cargo build --release
+# Build and install to ~/bin
+./build-install.sh
 
+# Or specify a custom directory
+./build-install.sh /usr/local/bin
+```
+
+```bash
 # Interactive setup — configure connectors, authenticate accounts
 void setup
 
@@ -99,12 +105,16 @@ void calendar
 | `void gmail attachment` | Download an attachment |
 | `void slack react <id>` | Add an emoji reaction |
 | `void slack edit <id>` | Edit a Slack message |
+| `void slack schedule` | Schedule a message for later |
+| `void slack open` | Open a group DM with multiple users |
 | `void whatsapp download <id>` | Download WhatsApp media |
 | `void calendar create` | Create a calendar event |
 | `void calendar search` | Search calendar events |
 | `void calendar respond <id>` | Accept/decline/tentative an invite |
 | `void calendar update <id>` | Update an event |
 | `void calendar delete <id>` | Delete an event |
+| `void calendar availability` | Check attendee availability (FreeBusy) |
+| `void calendar calendars` | List available calendars |
 
 ### System
 
@@ -116,7 +126,6 @@ void calendar
 | `void sync --stop` | Stop the sync daemon |
 | `void sync --clear` | Clear database and start fresh |
 | `void doctor` | Check configuration and connectivity |
-| `void install` | Install the void binary into your PATH |
 
 ### Global Flags
 
@@ -176,12 +185,13 @@ Create a Slack app with a **user token** (`xoxp-`) and an **app-level token** (`
 
 ### Gmail & Google Calendar
 
-1. Create OAuth2 credentials in [Google Cloud Console](https://console.cloud.google.com/) (Desktop application type)
-2. Download the credentials JSON file
-3. Run `void setup` and provide the credentials file path
-4. Complete the OAuth flow in your browser
+Built-in OAuth2 credentials are included — no Google Cloud setup required:
 
-Gmail and Calendar can share the same Google Cloud OAuth credentials file.
+1. Run `void setup` and select Gmail or Calendar
+2. Accept the default built-in credentials (or provide your own Google Cloud credentials file)
+3. Complete the OAuth flow in your browser
+
+Gmail and Calendar share the same OAuth credentials.
 
 ## Data Storage
 

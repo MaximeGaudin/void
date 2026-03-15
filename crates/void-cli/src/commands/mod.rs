@@ -7,7 +7,6 @@ pub mod doctor;
 pub mod gdrive;
 pub mod gmail;
 pub mod inbox;
-pub mod install;
 pub mod messages;
 pub mod reply;
 pub mod search;

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use async_trait::async_trait;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -484,17 +485,27 @@ impl Connector for GmailConnector {
     }
 
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
-        let (subject, body) = match &content {
-            MessageContent::Text(t) => ("(no subject)".to_string(), t.clone()),
-            MessageContent::File { caption, .. } => (
-                "(attachment)".to_string(),
-                caption.clone().unwrap_or_default(),
-            ),
+        let raw = match &content {
+            MessageContent::Text(t) => {
+                let subject = "(no subject)";
+                info!(recipient = %to, subject = %subject, "sending Gmail message");
+                compose_rfc2822(to, subject, t)
+            }
+            MessageContent::File {
+                path,
+                caption,
+                mime_type,
+            } => {
+                let subject = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("(attachment)");
+                let body = caption.clone().unwrap_or_default();
+                info!(recipient = %to, subject = %subject, "sending Gmail message with attachment");
+                compose_rfc2822_with_attachment(to, subject, &body, path, mime_type.as_deref(), None, None)?
+            }
         };
 
-        info!(recipient = %to, subject = %subject, "sending Gmail message");
-
-        let raw = compose_rfc2822(to, &subject, &body);
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
 
         let api = self.get_client().await?;
@@ -534,18 +545,43 @@ impl Connector for GmailConnector {
     ) -> anyhow::Result<String> {
         info!(message_id = %message_id, in_thread = in_thread, "sending Gmail reply");
 
-        let body = match &content {
-            MessageContent::Text(t) => t.clone(),
-            MessageContent::File { caption, .. } => caption.clone().unwrap_or_default(),
+        let api = self.get_client().await?;
+
+        let raw = match &content {
+            MessageContent::Text(t) => format!(
+                "In-Reply-To: {message_id}\r\nReferences: {message_id}\r\n\
+                 Content-Type: text/plain; charset=utf-8\r\n\r\n{t}"
+            ),
+            MessageContent::File {
+                path,
+                caption,
+                mime_type,
+            } => {
+                let orig = api.get_message(message_id).await?;
+                let to = orig.get_header("From").unwrap_or_default();
+                let subj = orig.get_header("Subject").unwrap_or_else(|| "(no subject)".into());
+                let subject = if subj.starts_with("Re:") {
+                    subj
+                } else {
+                    format!("Re: {subj}")
+                };
+                let in_reply_to = orig.get_header("Message-ID");
+                let references = in_reply_to.as_ref().map(|s| s.as_str());
+                let body = caption.clone().unwrap_or_default();
+                compose_rfc2822_with_attachment(
+                    &to,
+                    &subject,
+                    &body,
+                    path,
+                    mime_type.as_deref(),
+                    in_reply_to.as_deref(),
+                    references,
+                )?
+            }
         };
 
-        let raw = format!(
-            "In-Reply-To: {message_id}\r\nReferences: {message_id}\r\n\
-             Content-Type: text/plain; charset=utf-8\r\n\r\n{body}"
-        );
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
 
-        let api = self.get_client().await?;
         let resp = api.send_message(&encoded).await?;
         let reply_id = resp.id.clone().unwrap_or_default();
         debug!(reply_id = %reply_id, "Gmail reply sent");
@@ -557,6 +593,50 @@ fn compose_rfc2822(to: &str, subject: &str, body: &str) -> String {
     format!(
         "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
     )
+}
+
+fn compose_rfc2822_with_attachment(
+    to: &str,
+    subject: &str,
+    body: &str,
+    file_path: &std::path::Path,
+    mime_type: Option<&str>,
+    in_reply_to: Option<&str>,
+    references: Option<&str>,
+) -> anyhow::Result<String> {
+    let file_bytes = std::fs::read(file_path)
+        .with_context(|| format!("failed to read file {}", file_path.display()))?;
+    let encoded = STANDARD.encode(&file_bytes);
+    let wrapped = encoded
+        .as_bytes()
+        .chunks(76)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join("\r\n");
+
+    let filename = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("attachment");
+    let mime = mime_type.unwrap_or("application/octet-stream");
+
+    const BOUNDARY: &str = "void_boundary_001";
+
+    let mut headers = format!(
+        "To: {to}\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"{BOUNDARY}\"\r\n"
+    );
+    if let Some(irt) = in_reply_to {
+        headers.push_str(&format!("In-Reply-To: {irt}\r\n"));
+    }
+    if let Some(refs) = references {
+        headers.push_str(&format!("References: {refs}\r\n"));
+    }
+    headers.push_str("\r\n");
+
+    let raw = format!(
+        "{headers}--{BOUNDARY}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}\r\n--{BOUNDARY}\r\nContent-Type: {mime}; name=\"{filename}\"\r\nContent-Disposition: attachment; filename=\"{filename}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{wrapped}\r\n--{BOUNDARY}--"
+    );
+    Ok(raw)
 }
 
 fn parse_email_address(from: &str) -> String {
@@ -996,6 +1076,53 @@ mod tests {
         assert!(raw.contains("To: alice@example.com"));
         assert!(raw.contains("Subject: Test Subject"));
         assert!(raw.contains("Hello, Alice!"));
+    }
+
+    #[test]
+    fn compose_rfc2822_with_attachment_creates_multipart() {
+        let dir = std::env::temp_dir();
+        let name = format!("void_gmail_test_{}.txt", uuid::Uuid::new_v4());
+        let path = dir.join(&name);
+        std::fs::write(&path, "test content").unwrap();
+        let result = compose_rfc2822_with_attachment(
+            "a@b.com",
+            "Subj",
+            "body",
+            &path,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        std::fs::remove_file(&path).ok();
+        assert!(result.contains("void_boundary_001"));
+        assert!(result.contains("Content-Type: multipart/mixed"));
+        assert!(result.contains("Content-Transfer-Encoding: base64"));
+        assert!(result.contains("dGVzdCBjb250ZW50"));
+        assert!(result.contains(&name));
+        assert!(result.contains("To: a@b.com"));
+        assert!(result.contains("Subject: Subj"));
+        assert!(result.contains("Content-Disposition: attachment"));
+    }
+
+    #[test]
+    fn compose_rfc2822_with_attachment_uses_provided_mime_type() {
+        let dir = std::env::temp_dir();
+        let name = format!("void_gmail_test_{}.pdf", uuid::Uuid::new_v4());
+        let path = dir.join(&name);
+        std::fs::write(&path, "PDF bytes").unwrap();
+        let result = compose_rfc2822_with_attachment(
+            "x@y.com",
+            "Doc",
+            "See attached",
+            &path,
+            Some("application/pdf"),
+            None,
+            None,
+        )
+        .unwrap();
+        std::fs::remove_file(&path).ok();
+        assert!(result.contains("Content-Type: application/pdf"));
     }
 
     #[test]

@@ -16,9 +16,17 @@ pub struct SlackApiClient {
 }
 
 impl SlackApiClient {
+    fn build_http_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("failed to build HTTP client")
+    }
+
     pub fn new(user_token: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: Self::build_http_client(),
             user_token: user_token.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
         }
@@ -27,7 +35,7 @@ impl SlackApiClient {
     #[cfg(test)]
     pub fn with_base_url(user_token: &str, base_url: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: Self::build_http_client(),
             user_token: user_token.to_string(),
             base_url: base_url.to_string(),
         }
@@ -374,14 +382,14 @@ impl SlackApiClient {
         length: u64,
     ) -> anyhow::Result<FilesUploadUrlResponse> {
         debug!(filename, length, "slack: files.getUploadURLExternal");
-        let body = serde_json::json!({
-            "filename": filename,
-            "length": length,
-        });
+        let params = [
+            ("filename", filename.to_string()),
+            ("length", length.to_string()),
+        ];
         let result: FilesUploadUrlResponse = self
-            .post_with_retry(
+            .get_with_retry(
                 &format!("{}/files.getUploadURLExternal", self.base_url),
-                &body,
+                &params,
                 "files.getUploadURLExternal",
             )
             .await?;
@@ -389,17 +397,27 @@ impl SlackApiClient {
         Ok(result)
     }
 
-    /// POST raw bytes to a pre-signed upload URL (e.g. from files.getUploadURLExternal).
-    /// No auth header is used; the URL is pre-signed.
-    pub async fn post_raw_to_url(&self, url: &str, data: Vec<u8>) -> anyhow::Result<()> {
+    /// Upload file bytes to a pre-signed URL (from files.getUploadURLExternal).
+    /// Slack requires multipart/form-data with the file in a field named "file".
+    pub async fn post_file_to_url(
+        &self,
+        url: &str,
+        data: Vec<u8>,
+        filename: &str,
+    ) -> anyhow::Result<()> {
+        let part = reqwest::multipart::Part::bytes(data)
+            .file_name(filename.to_string())
+            .mime_str("application/octet-stream")?;
+        let form = reqwest::multipart::Form::new().part("file", part);
         let resp = self
             .http
             .post(url)
-            .body(data)
+            .multipart(form)
             .send()
             .await
             .context("failed to upload file to URL")?;
-        resp.error_for_status().context("file upload returned error status")?;
+        resp.error_for_status()
+            .context("file upload returned error status")?;
         Ok(())
     }
 

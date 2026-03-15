@@ -18,6 +18,8 @@ pub enum SlackCommand {
     Edit(EditArgs),
     /// Schedule a message to be sent later
     Schedule(ScheduleArgs),
+    /// Open (or get) a direct message or group conversation with one or more users
+    Open(OpenArgs),
 }
 
 #[derive(Debug, Args)]
@@ -63,11 +65,22 @@ pub struct ScheduleArgs {
     pub account: Option<String>,
 }
 
+#[derive(Debug, Args)]
+pub struct OpenArgs {
+    /// Comma-separated list of Slack user IDs to open a conversation with
+    #[arg(long)]
+    pub users: String,
+    /// Slack account to use
+    #[arg(long)]
+    pub account: Option<String>,
+}
+
 pub async fn run(args: &SlackArgs, _json: bool) -> anyhow::Result<()> {
     match &args.command {
         SlackCommand::React(a) => run_react(a).await,
         SlackCommand::Edit(a) => run_edit(a).await,
         SlackCommand::Schedule(a) => run_schedule(a).await,
+        SlackCommand::Open(a) => run_open(a).await,
     }
 }
 
@@ -154,6 +167,26 @@ async fn run_schedule(args: &ScheduleArgs) -> anyhow::Result<()> {
         .unwrap_or_else(|| post_at.to_string());
 
     eprintln!("Message scheduled for {dt} (id: {scheduled_id})");
+    Ok(())
+}
+
+async fn run_open(args: &OpenArgs) -> anyhow::Result<()> {
+    let cfg = load_config()?;
+    let connector = build_slack_connector(args.account.as_deref(), &cfg)?;
+
+    let user_ids: Vec<&str> = args.users.split(',').map(|s| s.trim()).collect();
+    if user_ids.is_empty() {
+        anyhow::bail!("Provide at least one user ID with --users");
+    }
+
+    let channel_id = connector.open_conversation(&user_ids).await?;
+
+    if user_ids.len() == 1 {
+        eprintln!("DM opened: {channel_id}");
+    } else {
+        eprintln!("Group conversation opened: {channel_id}");
+    }
+    println!("{channel_id}");
     Ok(())
 }
 

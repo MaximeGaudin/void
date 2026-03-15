@@ -50,7 +50,22 @@ need user attention.
 
 After all three sub-agents complete, gather their summary reports.
 
-### Step 3: Build & Verify
+### Step 3: README Sync Check
+
+Verify the `README.md` is up to date with the actual codebase capabilities:
+
+1. Read `README.md`
+2. Cross-reference with:
+   - CLI commands available in `crates/void-cli/src/main.rs` (the `Command` enum) and each subcommand module
+   - Connector features (Gmail, Slack, WhatsApp, Calendar) — check each connector's public methods
+   - Sync features (daemon, Socket Mode, etc.)
+3. Flag any discrepancies:
+   - Commands listed in README that no longer exist
+   - Commands/features in the code that are missing from README
+   - Outdated descriptions or examples
+4. Fix the README to match the current state of the code
+
+### Step 4: Build & Verify
 
 Run a final workspace-wide verification to confirm nothing conflicts:
 
@@ -66,7 +81,7 @@ Fix any issues introduced by the parallel work. Common conflicts:
 - Best-practices refactor moved code that test-improver added tests for — update imports
 - Dependency removal broke a newly added test — restore the dep or adjust the test
 
-### Step 4: Present Combined Report
+### Step 5: Present Combined Report
 
 Combine the three sub-agent reports into a single summary for the user:
 
@@ -81,6 +96,9 @@ Combine the three sub-agent reports into a single summary for the user:
 
 ## Best Practices
 <paste Best Practices Auditor summary>
+
+## README Sync
+<list any discrepancies found and fixes applied>
 
 ## Final Verification
 - `cargo fmt`: ✅ / ❌

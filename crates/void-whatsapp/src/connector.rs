@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use wa_rs::bot::Bot;
 use wa_rs::client::Client;
+use wa_rs::download::MediaType as WaMediaType;
 use wa_rs::proto_helpers::MessageExt;
 use wa_rs::send::SendOptions;
 use wa_rs::types::events::Event;
 use wa_rs::types::message::MessageInfo;
 use wa_rs::Jid;
-use wa_rs_proto::whatsapp::message::ExtendedTextMessage;
+use wa_rs_proto::whatsapp::message::{
+    AudioMessage, DocumentMessage, ExtendedTextMessage, ImageMessage, VideoMessage,
+};
 use wa_rs_proto::whatsapp::{ContextInfo, HistorySync, Message as WaMessage};
 use wa_rs_sqlite_storage::SqliteStore;
 use wa_rs_tokio_transport::TokioWebSocketTransportFactory;
@@ -120,7 +124,6 @@ impl WhatsAppConnector {
     ) -> anyhow::Result<Vec<u8>> {
         use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
-        use wa_rs::download::MediaType as WaMediaType;
 
         self.ensure_connected().await?;
         let guard = self.client.lock().await;
@@ -155,6 +158,123 @@ impl WhatsAppConnector {
 
         Ok(data)
     }
+}
+
+/// Maps MIME type and filename to wa_rs MediaType and default MIME string.
+fn determine_media_type(mime: Option<&str>, filename: &str) -> (WaMediaType, &'static str) {
+    let ext = std::path::Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if let Some(m) = mime {
+        let m_lower = m.to_lowercase();
+        if m_lower.starts_with("image/") {
+            return (WaMediaType::Image, "image/jpeg");
+        }
+        if m_lower.starts_with("video/") {
+            return (WaMediaType::Video, "video/mp4");
+        }
+        if m_lower.starts_with("audio/") {
+            return (WaMediaType::Audio, "audio/ogg; codecs=opus");
+        }
+    }
+
+    match ext.as_str() {
+        "jpg" | "jpeg" | "png" | "gif" | "webp" => (WaMediaType::Image, "image/jpeg"),
+        "mp4" | "mov" | "avi" => (WaMediaType::Video, "video/mp4"),
+        "ogg" | "mp3" | "m4a" | "wav" | "opus" => (WaMediaType::Audio, "audio/ogg; codecs=opus"),
+        _ => (WaMediaType::Document, "application/octet-stream"),
+    }
+}
+
+/// Uploads a file to WhatsApp and builds the appropriate WaMessage.
+async fn upload_and_build_media_message(
+    client: &Client,
+    path: &std::path::Path,
+    caption: Option<&str>,
+    mime_type: Option<&str>,
+    context_info: Option<ContextInfo>,
+) -> anyhow::Result<WaMessage> {
+    let data = tokio::fs::read(path)
+        .await
+        .with_context(|| format!("failed to read file {}", path.display()))?;
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    let (media_type, default_mime) = determine_media_type(mime_type, filename);
+    let mime = mime_type.unwrap_or(default_mime);
+
+    let upload = client
+        .upload(data, media_type)
+        .await
+        .context("WhatsApp media upload failed")?;
+
+    let msg = match media_type {
+        WaMediaType::Image => WaMessage {
+            image_message: Some(Box::new(ImageMessage {
+                url: Some(upload.url),
+                direct_path: Some(upload.direct_path),
+                media_key: Some(upload.media_key),
+                file_sha256: Some(upload.file_sha256),
+                file_enc_sha256: Some(upload.file_enc_sha256),
+                file_length: Some(upload.file_length),
+                mimetype: Some(mime.to_string()),
+                caption: caption.map(|c| c.to_string()),
+                context_info: context_info.map(Box::new),
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+        WaMediaType::Video => WaMessage {
+            video_message: Some(Box::new(VideoMessage {
+                url: Some(upload.url),
+                direct_path: Some(upload.direct_path),
+                media_key: Some(upload.media_key),
+                file_sha256: Some(upload.file_sha256),
+                file_enc_sha256: Some(upload.file_enc_sha256),
+                file_length: Some(upload.file_length),
+                mimetype: Some(mime.to_string()),
+                caption: caption.map(|c| c.to_string()),
+                context_info: context_info.map(Box::new),
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+        WaMediaType::Audio => WaMessage {
+            audio_message: Some(Box::new(AudioMessage {
+                url: Some(upload.url),
+                direct_path: Some(upload.direct_path),
+                media_key: Some(upload.media_key),
+                file_sha256: Some(upload.file_sha256),
+                file_enc_sha256: Some(upload.file_enc_sha256),
+                file_length: Some(upload.file_length),
+                mimetype: Some(mime.to_string()),
+                context_info: context_info.map(Box::new),
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+        WaMediaType::Document | WaMediaType::Sticker | _ => WaMessage {
+            document_message: Some(Box::new(DocumentMessage {
+                url: Some(upload.url),
+                direct_path: Some(upload.direct_path),
+                media_key: Some(upload.media_key),
+                file_sha256: Some(upload.file_sha256),
+                file_enc_sha256: Some(upload.file_enc_sha256),
+                file_length: Some(upload.file_length),
+                mimetype: Some(mime.to_string()),
+                file_name: Some(filename.to_string()),
+                context_info: context_info.map(Box::new),
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+    };
+
+    Ok(msg)
 }
 
 #[async_trait]
@@ -386,7 +506,21 @@ impl Connector for WhatsAppConnector {
             .ok_or_else(|| anyhow::anyhow!("WhatsApp not connected"))?;
         let jid = parse_jid(to)?;
         info!(account_id = %self.config_id, recipient_jid = %jid, "sending WhatsApp message");
-        let msg = build_wa_message(&content, None)?;
+
+        let msg = match &content {
+            MessageContent::File { path, caption, mime_type } => {
+                upload_and_build_media_message(
+                    client,
+                    path,
+                    caption.as_deref(),
+                    mime_type.as_deref(),
+                    None,
+                )
+                .await?
+            }
+            _ => build_wa_message(&content, None)?,
+        };
+
         let msg_id = client
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
@@ -413,7 +547,7 @@ impl Connector for WhatsAppConnector {
 
         let jid = parse_jid(&chat_jid_str)?;
 
-        let context = if in_thread {
+        let context_info = if in_thread {
             Some(ContextInfo {
                 stanza_id: Some(quoted_msg_id),
                 ..Default::default()
@@ -422,7 +556,20 @@ impl Connector for WhatsAppConnector {
             None
         };
 
-        let msg = build_wa_message(&content, context)?;
+        let msg = match &content {
+            MessageContent::File { path, caption, mime_type } => {
+                upload_and_build_media_message(
+                    client,
+                    path,
+                    caption.as_deref(),
+                    mime_type.as_deref(),
+                    context_info,
+                )
+                .await?
+            }
+            _ => build_wa_message(&content, context_info)?,
+        };
+
         let msg_id = client
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
@@ -1089,7 +1236,7 @@ fn build_wa_message(
             }
         }
         MessageContent::File { .. } => {
-            anyhow::bail!("File sending not yet supported for WhatsApp");
+            anyhow::bail!("Use upload_and_build_media_message for file content");
         }
     }
 }
@@ -1144,6 +1291,30 @@ mod tests {
     #[test]
     fn normalize_phone_strips_prefix() {
         assert_eq!(normalize_phone("+33 6 12 34 56 78"), "33612345678");
+    }
+
+    #[test]
+    fn determine_media_type_from_extension() {
+        assert_eq!(
+            determine_media_type(None, "photo.jpg").0,
+            WaMediaType::Image
+        );
+        assert_eq!(
+            determine_media_type(None, "clip.mp4").0,
+            WaMediaType::Video
+        );
+        assert_eq!(
+            determine_media_type(None, "voice.ogg").0,
+            WaMediaType::Audio
+        );
+        assert_eq!(
+            determine_media_type(None, "doc.pdf").0,
+            WaMediaType::Document
+        );
+        assert_eq!(
+            determine_media_type(None, "file.unknown").0,
+            WaMediaType::Document
+        );
     }
 
     #[test]

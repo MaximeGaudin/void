@@ -118,6 +118,7 @@ impl CalendarApiClient {
         calendar_id: &str,
         event: &InsertEventRequest,
         conference_data_version: Option<u32>,
+        send_updates: Option<&str>,
     ) -> anyhow::Result<GoogleCalendarEvent> {
         debug!(
             calendar_id,
@@ -137,6 +138,9 @@ impl CalendarApiClient {
 
         if let Some(v) = conference_data_version {
             req = req.query(&[("conferenceDataVersion", v.to_string())]);
+        }
+        if let Some(su) = send_updates {
+            req = req.query(&[("sendUpdates", su)]);
         }
 
         let resp: GoogleCalendarEvent = req

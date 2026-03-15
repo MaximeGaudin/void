@@ -510,6 +510,20 @@ impl GmailMessage {
             .as_ref()
             .and_then(|p| extract_body_by_mime(p, "text/html"))
     }
+
+    /// Return the attachment_id for the text/plain part when data is absent (large body).
+    pub fn text_body_attachment_id(&self) -> Option<String> {
+        self.payload
+            .as_ref()
+            .and_then(|p| find_attachment_id_by_mime(p, "text/plain"))
+    }
+
+    /// Return the attachment_id for the text/html part when data is absent (large body).
+    pub fn html_body_attachment_id(&self) -> Option<String> {
+        self.payload
+            .as_ref()
+            .and_then(|p| find_attachment_id_by_mime(p, "text/html"))
+    }
 }
 
 fn extract_body_by_mime(payload: &MessagePayload, target_mime: &str) -> Option<String> {
@@ -555,6 +569,54 @@ fn decode_body_data(body: &Option<MessagePartBody>) -> Option<String> {
     let data = body.as_ref()?.data.as_deref()?;
     let bytes = URL_SAFE_NO_PAD.decode(data).ok()?;
     String::from_utf8(bytes).ok()
+}
+
+pub fn decode_attachment_data(data: &str) -> Option<String> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+
+    let bytes = URL_SAFE_NO_PAD.decode(data).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+fn find_attachment_id_by_mime(payload: &MessagePayload, target_mime: &str) -> Option<String> {
+    if let Some(mime) = &payload.mime_type {
+        if mime == target_mime {
+            if let Some(body) = &payload.body {
+                if body.data.is_none() {
+                    return body.attachment_id.clone();
+                }
+            }
+        }
+    }
+    if let Some(parts) = &payload.parts {
+        for part in parts {
+            if let Some(id) = find_attachment_id_in_part(part, target_mime) {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
+fn find_attachment_id_in_part(part: &MessagePart, target_mime: &str) -> Option<String> {
+    if let Some(mime) = &part.mime_type {
+        if mime == target_mime {
+            if let Some(body) = &part.body {
+                if body.data.is_none() {
+                    return body.attachment_id.clone();
+                }
+            }
+        }
+    }
+    if let Some(sub_parts) = &part.parts {
+        for sub in sub_parts {
+            if let Some(id) = find_attachment_id_in_part(sub, target_mime) {
+                return Some(id);
+            }
+        }
+    }
+    None
 }
 
 #[derive(Debug, Deserialize)]
