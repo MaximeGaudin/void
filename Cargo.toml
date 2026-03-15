@@ -47,6 +47,7 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 tokio-util = "0.7"
+croner = "2"
 tabled = "0.17"
 reqwest = { version = "0.12", features = ["json", "multipart"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }

@@ -67,6 +67,8 @@ enum Command {
     Drive(commands::gdrive::GdriveArgs),
     /// Start an AI-powered agent for processing communications
     Agent(commands::agent::AgentArgs),
+    /// Manage hooks — LLM prompts triggered by events or schedules
+    Hook(commands::hook::HookArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -117,6 +119,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
         Some(Command::Drive(args)) => commands::gdrive::run(args, !cli.pretty).await,
         Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,
+        Some(Command::Hook(args)) => commands::hook::run(args, !cli.pretty).map_err(Into::into),
         None => {
             commands::status::run();
             Ok(())

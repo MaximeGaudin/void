@@ -7,6 +7,7 @@ pub mod contacts;
 pub mod doctor;
 pub mod gdrive;
 pub mod gmail;
+pub mod hook;
 pub mod inbox;
 pub mod messages;
 pub mod mute;

@@ -33,6 +33,7 @@ fn fts5_escape(query: &str) -> String {
 
 pub struct Database {
     conn: Mutex<Connection>,
+    hook_runner: std::sync::RwLock<Option<std::sync::Arc<crate::hooks::HookRunner>>>,
 }
 
 // SAFETY: All Connection access is protected by the Mutex.
@@ -51,10 +52,18 @@ impl Database {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         let db = Self {
             conn: Mutex::new(conn),
+            hook_runner: std::sync::RwLock::new(None),
         };
         db.migrate()?;
         debug!("migration complete");
         Ok(db)
+    }
+
+    /// Attach a hook runner so that event hooks fire on new message inserts.
+    pub fn set_hook_runner(&self, runner: std::sync::Arc<crate::hooks::HookRunner>) {
+        if let Ok(mut guard) = self.hook_runner.write() {
+            *guard = Some(runner);
+        }
     }
 
     pub fn open_in_memory() -> anyhow::Result<Self> {
@@ -63,6 +72,7 @@ impl Database {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         let db = Self {
             conn: Mutex::new(conn),
+            hook_runner: std::sync::RwLock::new(None),
         };
         db.migrate()?;
         Ok(db)
@@ -162,8 +172,21 @@ impl Database {
 
     // -- Messages --
 
-    pub fn upsert_message(&self, msg: &Message) -> anyhow::Result<()> {
+    /// Returns `true` if a message with this (account_id, external_id) already exists.
+    pub fn message_exists(&self, account_id: &str, external_id: &str) -> bool {
+        self.conn()
+            .query_row(
+                "SELECT 1 FROM messages WHERE account_id = ?1 AND external_id = ?2",
+                params![account_id, external_id],
+                |_| Ok(()),
+            )
+            .is_ok()
+    }
+
+    /// Insert or update a message. Returns `true` if the message was newly inserted.
+    pub fn upsert_message(&self, msg: &Message) -> anyhow::Result<bool> {
         debug!(message_id = %msg.id, "upserting message");
+        let is_new = !self.message_exists(&msg.account_id, &msg.external_id);
         let now = chrono::Utc::now().timestamp();
         self.conn().execute(
             "INSERT INTO messages (id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
@@ -194,7 +217,16 @@ impl Database {
                 msg.context_id,
             ],
         )?;
-        Ok(())
+
+        if is_new {
+            if let Ok(guard) = self.hook_runner.read() {
+                if let Some(ref runner) = *guard {
+                    runner.on_new_message(msg);
+                }
+            }
+        }
+
+        Ok(is_new)
     }
 
     pub fn list_messages(

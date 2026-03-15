@@ -6,18 +6,26 @@ use tracing::{error, info, warn};
 
 use crate::connector::Connector;
 use crate::db::Database;
+use crate::hooks::HookRunner;
 
 pub struct SyncEngine {
     connectors: Vec<Arc<dyn Connector>>,
     db: Arc<Database>,
+    hook_runner: Option<Arc<HookRunner>>,
     lock_path: std::path::PathBuf,
 }
 
 impl SyncEngine {
-    pub fn new(connectors: Vec<Arc<dyn Connector>>, db: Arc<Database>, store_path: &Path) -> Self {
+    pub fn new(
+        connectors: Vec<Arc<dyn Connector>>,
+        db: Arc<Database>,
+        store_path: &Path,
+        hook_runner: Option<Arc<HookRunner>>,
+    ) -> Self {
         Self {
             connectors,
             db,
+            hook_runner,
             lock_path: store_path.join("LOCK"),
         }
     }
@@ -29,6 +37,13 @@ impl SyncEngine {
         if self.connectors.is_empty() {
             warn!("no connectors configured, nothing to sync");
             return Ok(());
+        }
+
+        if let Some(ref runner) = self.hook_runner {
+            self.db.set_hook_runner(Arc::clone(runner));
+            runner.start_schedules(cancel.clone());
+            let n_hooks = runner.hooks().len();
+            info!(n_hooks, "hook runner attached ({n_hooks} hook(s) loaded)");
         }
 
         info!("starting sync for {} connector(s)", self.connectors.len());

@@ -6,6 +6,7 @@ use tracing::info;
 
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
+use void_core::hooks::{self, HookRunner};
 use void_core::sync::SyncEngine;
 
 use crate::commands::connector_factory;
@@ -284,7 +285,17 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         connectors.len()
     );
 
+    let hooks_dir = hooks::hooks_dir();
+    let loaded_hooks = hooks::load_hooks(&hooks_dir);
+    let hook_runner = if loaded_hooks.is_empty() {
+        None
+    } else {
+        let enabled = loaded_hooks.iter().filter(|h| h.enabled).count();
+        eprintln!("Loaded {enabled} hook(s) from {}", hooks_dir.display());
+        Some(Arc::new(HookRunner::new(loaded_hooks)))
+    };
+
     let cancel = CancellationToken::new();
-    let engine = SyncEngine::new(connectors, db, &store_path);
+    let engine = SyncEngine::new(connectors, db, &store_path, hook_runner);
     engine.run(cancel).await
 }

@@ -443,7 +443,7 @@ impl SlackConnector {
         };
 
         match db.upsert_message(&message) {
-            Ok(()) => {
+            Ok(_) => {
                 let preview: String = text.chars().take(80).collect();
                 eprintln!(
                     "[slack:{}] new: {} — {}",
