@@ -184,6 +184,75 @@ impl SlackConnector {
         Ok(())
     }
 
+    async fn catch_up(&self, db: &Database) -> anyhow::Result<()> {
+        let latest = db.latest_message_timestamp(&self.account_id, "slack")?;
+        let oldest_ts = match latest {
+            Some(ts) => ts.to_string(),
+            None => {
+                info!(account_id = %self.account_id, "no previous messages found, skipping catch-up");
+                return Ok(());
+            }
+        };
+
+        info!(account_id = %self.account_id, since = %oldest_ts, "catching up missed Slack messages");
+
+        let user_cache = self.prefetch_users().await?;
+        let conversations = self.list_all_conversations().await?;
+
+        let mut caught_up = 0u64;
+        for conv in &conversations {
+            let conversation = map_conversation(conv, &self.account_id, &user_cache);
+            db.upsert_conversation(&conversation)?;
+
+            match self
+                .api
+                .conversations_history(&conv.id, 100, Some(&oldest_ts))
+                .await
+            {
+                Ok(history) => {
+                    let mut mapped: Vec<Message> = history
+                        .messages
+                        .iter()
+                        .filter_map(|msg| {
+                            map_message_cached(
+                                msg,
+                                conv,
+                                &conversation.id,
+                                &self.account_id,
+                                &user_cache,
+                            )
+                        })
+                        .collect();
+                    mapped.sort_by_key(|m| m.timestamp);
+                    assign_time_window_context(&mut mapped, &self.account_id, &conv.id);
+                    for message in &mapped {
+                        db.upsert_message(message)?;
+                        caught_up += 1;
+                    }
+                    if let Some(last) = history.messages.first() {
+                        let mut conv_update = conversation.clone();
+                        conv_update.last_message_at = parse_ts(&last.ts);
+                        db.upsert_conversation(&conv_update)?;
+                    }
+                }
+                Err(e) => {
+                    warn!(channel_id = %conv.id, "catch-up: failed to fetch history: {e}");
+                }
+            }
+        }
+
+        eprintln!(
+            "[slack:{}] catch-up complete: {} new messages",
+            self.account_id, caught_up
+        );
+        info!(
+            account_id = %self.account_id,
+            messages = caught_up,
+            "catch-up complete"
+        );
+        Ok(())
+    }
+
     pub async fn react(&self, channel: &str, ts: &str, emoji: &str) -> anyhow::Result<()> {
         self.api.reactions_add(channel, ts, emoji).await
     }
@@ -472,6 +541,19 @@ impl SlackConnector {
         Ok(resp.channel.id)
     }
 
+    /// Resolve a target to a proper channel ID for file uploads.
+    /// `files.completeUploadExternal` requires a channel/DM ID, not a user ID.
+    async fn resolve_channel_for_file(&self, to: &str) -> anyhow::Result<String> {
+        if to.contains(',') {
+            let users: Vec<&str> = to.split(',').map(|s| s.trim()).collect();
+            self.open_conversation(&users).await
+        } else if to.starts_with('U') || to.starts_with('W') {
+            self.open_conversation(&[to]).await
+        } else {
+            Ok(to.to_string())
+        }
+    }
+
     pub async fn upload_file(
         &self,
         channel: &str,
@@ -491,7 +573,7 @@ impl SlackConnector {
             .await
             .context("files.getUploadURLExternal failed")?;
         self.api
-            .post_raw_to_url(&upload_info.upload_url, data)
+            .post_file_to_url(&upload_info.upload_url, data, filename)
             .await
             .context("file upload to URL failed")?;
         self.api
@@ -538,8 +620,9 @@ impl Connector for SlackConnector {
         } else {
             info!(
                 account_id = %self.account_id,
-                "Slack backfill already complete, starting incremental sync"
+                "Slack backfill already complete, catching up missed messages"
             );
+            self.catch_up(&db).await?;
         }
 
         self.run_socket_mode(&db, &cancel).await
@@ -591,14 +674,7 @@ impl Connector for SlackConnector {
                 let path_str = path
                     .to_str()
                     .context("file path is not valid UTF-8")?;
-                let channel = if to.contains(',') {
-                    let users: Vec<&str> = to.split(',').map(|s| s.trim()).collect();
-                    let channel_id = self.open_conversation(&users).await?;
-                    info!(users = ?users, channel_id = %channel_id, "opened group conversation");
-                    channel_id
-                } else {
-                    to.to_string()
-                };
+                let channel = self.resolve_channel_for_file(to).await?;
                 self.upload_file(
                     &channel,
                     path_str,
@@ -1403,5 +1479,223 @@ mod tests {
             .unwrap();
 
         assert_eq!(file_id, "F12345");
+    }
+
+    #[tokio::test]
+    async fn catch_up_fetches_messages_since_latest() {
+        let server = wiremock::MockServer::start().await;
+
+        let users = serde_json::json!({
+            "ok": true,
+            "members": [
+                {
+                    "id": "U1",
+                    "name": "alice",
+                    "real_name": "Alice",
+                    "profile": {"display_name": "Alice", "real_name": "Alice"}
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/users.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+            .mount(&server)
+            .await;
+
+        let channels = serde_json::json!({
+            "ok": true,
+            "channels": [
+                {
+                    "id": "C1",
+                    "name": "general",
+                    "is_channel": true,
+                    "is_group": false,
+                    "is_im": false,
+                    "is_mpim": false,
+                    "is_private": false
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channels))
+            .mount(&server)
+            .await;
+
+        let history = serde_json::json!({
+            "ok": true,
+            "messages": [
+                {
+                    "ts": "1741800000.000200",
+                    "user": "U1",
+                    "text": "Caught up message"
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.history"))
+            .and(wiremock::matchers::query_param("channel", "C1"))
+            .and(wiremock::matchers::query_param("oldest", "1741700000"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+            .mount(&server)
+            .await;
+
+        let db = void_core::db::Database::open_in_memory().unwrap();
+
+        let existing_conv = Conversation {
+            id: "test-slack-C1".into(),
+            account_id: "test-slack".into(),
+            connector: "slack".into(),
+            external_id: "C1".into(),
+            name: Some("general".into()),
+            kind: ConversationKind::Channel,
+            last_message_at: Some(1_741_700_000),
+            unread_count: 0,
+            is_muted: false,
+            metadata: None,
+        };
+        db.upsert_conversation(&existing_conv).unwrap();
+
+        let existing_msg = Message {
+            id: "test-slack-1741700000.000100".into(),
+            conversation_id: "test-slack-C1".into(),
+            account_id: "test-slack".into(),
+            connector: "slack".into(),
+            external_id: "1741700000.000100".into(),
+            sender: "U1".into(),
+            sender_name: Some("Alice".into()),
+            body: Some("Old message".into()),
+            timestamp: 1_741_700_000,
+            synced_at: None,
+            is_archived: false,
+            reply_to_id: None,
+            media_type: None,
+            metadata: None,
+            context_id: None,
+            context: None,
+        };
+        db.upsert_message(&existing_msg).unwrap();
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec![],
+        };
+
+        connector.catch_up(&db).await.unwrap();
+
+        let new_msg = db
+            .get_message("test-slack-1741800000.000200")
+            .unwrap()
+            .unwrap();
+        assert_eq!(new_msg.body.as_deref(), Some("Caught up message"));
+        assert_eq!(new_msg.sender_name.as_deref(), Some("Alice"));
+    }
+
+    #[tokio::test]
+    async fn start_sync_runs_catch_up_when_backfill_done() {
+        let server = wiremock::MockServer::start().await;
+
+        let users = serde_json::json!({"ok": true, "members": []});
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/users.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+            .mount(&server)
+            .await;
+
+        let channels = serde_json::json!({
+            "ok": true,
+            "channels": [
+                {
+                    "id": "C1",
+                    "name": "general",
+                    "is_channel": true,
+                    "is_group": false,
+                    "is_im": false,
+                    "is_mpim": false,
+                    "is_private": false
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.list"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channels))
+            .mount(&server)
+            .await;
+
+        let history = serde_json::json!({
+            "ok": true,
+            "messages": [
+                {
+                    "ts": "1741800000.000200",
+                    "user": "U1",
+                    "text": "New message after restart"
+                }
+            ]
+        });
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/conversations.history"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+            .mount(&server)
+            .await;
+
+        let db = std::sync::Arc::new(void_core::db::Database::open_in_memory().unwrap());
+        db.set_sync_state("test-slack", "backfill_done", "1")
+            .unwrap();
+
+        let existing_conv = Conversation {
+            id: "test-slack-C1".into(),
+            account_id: "test-slack".into(),
+            connector: "slack".into(),
+            external_id: "C1".into(),
+            name: Some("general".into()),
+            kind: ConversationKind::Channel,
+            last_message_at: Some(1_741_700_000),
+            unread_count: 0,
+            is_muted: false,
+            metadata: None,
+        };
+        db.upsert_conversation(&existing_conv).unwrap();
+
+        let existing_msg = Message {
+            id: "test-slack-1741700000.000100".into(),
+            conversation_id: "test-slack-C1".into(),
+            account_id: "test-slack".into(),
+            connector: "slack".into(),
+            external_id: "1741700000.000100".into(),
+            sender: "U1".into(),
+            sender_name: Some("Alice".into()),
+            body: Some("Old message".into()),
+            timestamp: 1_741_700_000,
+            synced_at: None,
+            is_archived: false,
+            reply_to_id: None,
+            media_type: None,
+            metadata: None,
+            context_id: None,
+            context: None,
+        };
+        db.upsert_message(&existing_msg).unwrap();
+
+        let connector = SlackConnector {
+            account_id: "test-slack".to_string(),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            app_token: "xapp-test".to_string(),
+            exclude_channels: vec![],
+        };
+
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        connector
+            .start_sync(db.clone(), cancel)
+            .await
+            .unwrap();
+
+        let new_msg = db
+            .get_message("test-slack-1741800000.000200")
+            .unwrap()
+            .unwrap();
+        assert_eq!(new_msg.body.as_deref(), Some("New message after restart"));
     }
 }

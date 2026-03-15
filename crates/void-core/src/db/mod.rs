@@ -246,6 +246,20 @@ impl Database {
             .map_err(Into::into)
     }
 
+    pub fn latest_message_timestamp(
+        &self,
+        account_id: &str,
+        connector: &str,
+    ) -> anyhow::Result<Option<i64>> {
+        self.conn()
+            .query_row(
+                "SELECT MAX(timestamp) FROM messages WHERE account_id = ?1 AND connector = ?2",
+                params![account_id, connector],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .map_err(Into::into)
+    }
+
     pub fn search_messages(
         &self,
         query: &str,
