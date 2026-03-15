@@ -192,6 +192,7 @@ pub fn execute_hook_public(prompt: &str, max_turns: usize) -> anyhow::Result<Hoo
 fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::Result<HookExecResult> {
     let mut cmd = std::process::Command::new("claude");
     cmd.args(["-p", prompt]);
+    cmd.args(["--verbose"]);
     cmd.args(["--output-format", "stream-json"]);
     cmd.args(["--max-turns", &max_turns.to_string()]);
     cmd.args(["--allowedTools", "Bash(void *),Bash(date *),Bash(echo *)"]);
