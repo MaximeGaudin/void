@@ -65,6 +65,8 @@ enum Command {
     Calendar(commands::calendar::CalendarArgs),
     /// Download files from Google Drive/Docs/Sheets/Slides
     Drive(commands::gdrive::GdriveArgs),
+    /// Start an AI-powered agent for processing communications
+    Agent(commands::agent::AgentArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -114,6 +116,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args, !cli.pretty).await,
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
         Some(Command::Drive(args)) => commands::gdrive::run(args, !cli.pretty).await,
+        Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,
         None => {
             commands::status::run();
             Ok(())

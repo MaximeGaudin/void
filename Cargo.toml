@@ -8,6 +8,7 @@ members = [
     "crates/void-calendar",
     "crates/void-whatsapp",
     "crates/void-gdrive",
+    "crates/void-agent",
 ]
 
 [workspace.package]
@@ -68,3 +69,4 @@ void-gmail = { path = "crates/void-gmail" }
 void-calendar = { path = "crates/void-calendar" }
 void-whatsapp = { path = "crates/void-whatsapp" }
 void-gdrive = { path = "crates/void-gdrive" }
+void-agent = { path = "crates/void-agent" }

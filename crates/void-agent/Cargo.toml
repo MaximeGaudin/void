@@ -1,0 +1,16 @@
+[package]
+name = "void-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Agentic mode for the Void CLI — LLM-powered communication assistant"
+
+[dependencies]
+rig-core = "0.32"
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
