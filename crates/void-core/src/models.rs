@@ -39,6 +39,48 @@ mod epoch_iso8601 {
     }
 }
 
+/// Same as `epoch_iso8601` but for `Option<i64>` fields.
+mod epoch_iso8601_opt {
+    use chrono::{DateTime, Utc};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(ts: &Option<i64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match ts {
+            Some(ts) => match DateTime::<Utc>::from_timestamp(*ts, 0) {
+                Some(dt) => serializer.serialize_some(
+                    &dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                ),
+                None => serializer.serialize_some(ts),
+            },
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum TsOrString {
+            Ts(i64),
+            Str(String),
+        }
+
+        let opt: Option<TsOrString> = Option::deserialize(deserializer)?;
+        match opt {
+            None => Ok(None),
+            Some(TsOrString::Ts(ts)) => Ok(Some(ts)),
+            Some(TsOrString::Str(s)) => DateTime::parse_from_rfc3339(&s)
+                .map(|dt| Some(dt.timestamp()))
+                .map_err(serde::de::Error::custom),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectorType {
@@ -100,6 +142,7 @@ pub struct Conversation {
     pub external_id: String,
     pub name: Option<String>,
     pub kind: ConversationKind,
+    #[serde(with = "epoch_iso8601_opt")]
     pub last_message_at: Option<i64>,
     pub unread_count: i64,
     pub is_muted: bool,
@@ -117,9 +160,11 @@ pub struct Message {
     pub sender: String,
     pub sender_name: Option<String>,
     pub body: Option<String>,
-    /// When the message was originally sent (UTC epoch seconds).
+    /// When the message was originally sent (ISO 8601 in JSON, epoch seconds internally).
+    #[serde(with = "epoch_iso8601")]
     pub timestamp: i64,
-    /// When we first synced this message (UTC epoch seconds).
+    /// When we first synced this message (ISO 8601 in JSON, epoch seconds internally).
+    #[serde(with = "epoch_iso8601_opt")]
     pub synced_at: Option<i64>,
     pub is_archived: bool,
     pub reply_to_id: Option<String>,
@@ -203,6 +248,7 @@ pub struct Contact {
     /// Connector type: "slack", "gmail", "whatsapp", "calendar"
     pub connector: String,
     pub message_count: i64,
+    #[serde(with = "epoch_iso8601")]
     pub last_message_at: i64,
 }
 
@@ -229,6 +275,7 @@ pub struct HealthStatus {
     pub connector_type: ConnectorType,
     pub ok: bool,
     pub message: String,
+    #[serde(with = "epoch_iso8601_opt")]
     pub last_sync: Option<i64>,
     pub message_count: Option<i64>,
 }
@@ -282,9 +329,16 @@ mod tests {
             context: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
+
+        assert!(json.contains("2023-11-14T22:13:20Z"), "timestamp should be ISO 8601, got: {json}");
+        assert!(json.contains("2023-11-14T22:13:30Z"), "synced_at should be ISO 8601, got: {json}");
+        assert!(!json.contains("1700000000"), "should not contain raw unix timestamps");
+
         let deserialized: Message = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id, "m1");
         assert_eq!(deserialized.body.as_deref(), Some("Hello world"));
+        assert_eq!(deserialized.timestamp, 1_700_000_000);
+        assert_eq!(deserialized.synced_at, Some(1_700_000_010));
     }
 
     #[test]
