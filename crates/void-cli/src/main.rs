@@ -53,6 +53,8 @@ enum Command {
     Reply(commands::reply::ReplyArgs),
     /// Archive one or more messages (e.g., remove from Gmail inbox)
     Archive(commands::archive::ArchiveArgs),
+    /// Mute or unmute conversations/channels (hides from inbox)
+    Mute(commands::mute::MuteArgs),
     /// Gmail-specific operations (search, threads, drafts, labels, attachments)
     Gmail(commands::gmail::GmailArgs),
     /// Slack-specific operations (react, edit)
@@ -106,6 +108,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Send(args)) => commands::send::run(args).await,
         Some(Command::Reply(args)) => commands::reply::run(args).await,
         Some(Command::Archive(args)) => commands::archive::run(args, !cli.pretty).await,
+        Some(Command::Mute(args)) => commands::mute::run(args, !cli.pretty),
         Some(Command::Gmail(args)) => commands::gmail::run(args, !cli.pretty).await,
         Some(Command::Slack(args)) => commands::slack::run(args, !cli.pretty).await,
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args, !cli.pretty).await,

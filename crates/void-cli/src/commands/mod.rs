@@ -8,6 +8,7 @@ pub mod gdrive;
 pub mod gmail;
 pub mod inbox;
 pub mod messages;
+pub mod mute;
 pub mod reply;
 pub mod search;
 pub mod send;
