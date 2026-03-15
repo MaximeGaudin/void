@@ -1,5 +1,44 @@
 use serde::{Deserialize, Serialize};
 
+/// Serialize an `i64` epoch timestamp as an ISO 8601 string (UTC).
+/// Deserialize accepts both an ISO 8601 string and a raw integer for
+/// backward compatibility with older data.
+mod epoch_iso8601 {
+    use chrono::{DateTime, Utc};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(ts: &i64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match DateTime::<Utc>::from_timestamp(*ts, 0) {
+            Some(dt) => serializer.serialize_str(&dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+            None => serializer.serialize_i64(*ts),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<i64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum TsOrString {
+            Ts(i64),
+            Str(String),
+        }
+
+        match TsOrString::deserialize(deserializer)? {
+            TsOrString::Ts(ts) => Ok(ts),
+            TsOrString::Str(s) => {
+                DateTime::parse_from_rfc3339(&s)
+                    .map(|dt| dt.timestamp())
+                    .map_err(serde::de::Error::custom)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectorType {
@@ -144,7 +183,9 @@ pub struct CalendarEvent {
     pub title: String,
     pub description: Option<String>,
     pub location: Option<String>,
+    #[serde(with = "epoch_iso8601")]
     pub start_at: i64,
+    #[serde(with = "epoch_iso8601")]
     pub end_at: i64,
     pub all_day: bool,
     pub attendees: Option<serde_json::Value>,
@@ -267,6 +308,14 @@ mod tests {
         };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("meet.google.com"));
+
+        assert!(json.contains("2023-11-14T22:13:20Z"), "start_at should be ISO 8601, got: {json}");
+        assert!(json.contains("2023-11-14T22:43:20Z"), "end_at should be ISO 8601, got: {json}");
+        assert!(!json.contains("1700000000"), "should not contain raw unix timestamp");
+
+        let roundtrip: CalendarEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip.start_at, 1_700_000_000);
+        assert_eq!(roundtrip.end_at, 1_700_001_800);
     }
 
     fn make_msg_ts(id: &str, ts: i64, ctx_id: Option<&str>) -> Message {
