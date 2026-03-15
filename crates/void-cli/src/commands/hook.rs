@@ -72,6 +72,9 @@ pub enum HookCommand {
         /// Filter by hook name
         #[arg(long)]
         hook: Option<String>,
+        /// Show full detail for a specific log entry ID
+        #[arg(long)]
+        id: Option<i64>,
     },
 }
 
@@ -103,7 +106,7 @@ pub fn run(args: &HookArgs, json: bool) -> anyhow::Result<()> {
         HookCommand::Enable { name } => cmd_toggle(&dir, name, true),
         HookCommand::Disable { name } => cmd_toggle(&dir, name, false),
         HookCommand::Test { name, message_id } => cmd_test(&dir, name, message_id.as_deref()),
-        HookCommand::Log { limit, hook } => cmd_log(*limit, hook.as_deref(), json),
+        HookCommand::Log { limit, hook, id } => cmd_log(*limit, hook.as_deref(), *id, json),
     }
 }
 
@@ -256,12 +259,17 @@ fn cmd_test(
     let prompt = hooks::expand_placeholders_public(&hook.prompt.text, msg.as_ref());
     eprintln!("Executing hook '{}' (max_turns: {})...\n", hook.name, hook.max_turns);
 
-    let result = hooks::execute_hook_public(&prompt, hook.max_turns)?;
-    println!("{}", result);
+    let exec = hooks::execute_hook_public(&prompt, hook.max_turns)?;
+    if exec.success {
+        println!("{}", exec.result_summary);
+    } else {
+        eprintln!("Hook failed: {}", exec.error.as_deref().unwrap_or("unknown error"));
+        println!("{}", exec.raw_output);
+    }
     Ok(())
 }
 
-fn cmd_log(limit: usize, hook_filter: Option<&str>, json: bool) -> anyhow::Result<()> {
+fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>, json: bool) -> anyhow::Result<()> {
     let config_path = void_core::config::default_config_path();
     let cfg = void_core::config::VoidConfig::load_or_default(&config_path);
     let db = void_core::db::Database::open(&cfg.db_path())?;
@@ -270,6 +278,16 @@ fn cmd_log(limit: usize, hook_filter: Option<&str>, json: bool) -> anyhow::Resul
     if let Some(filter) = hook_filter {
         let filter_lower = filter.to_lowercase();
         logs.retain(|l| l.hook_name.to_lowercase().contains(&filter_lower));
+    }
+
+    if let Some(id) = detail_id {
+        let entry = logs.iter().find(|l| l.id == id);
+        return match entry {
+            Some(log) => print_log_detail(log, json),
+            None => {
+                anyhow::bail!("Log entry #{id} not found. Run `void hook log` to list available entries.");
+            }
+        };
     }
 
     if logs.is_empty() {
@@ -293,24 +311,143 @@ fn cmd_log(limit: usize, hook_filter: Option<&str>, json: bool) -> anyhow::Resul
             let duration = format_duration(log.duration_ms);
 
             println!(
-                "  {} [{:>4}] {} — {} ({}, {})",
-                ts, status, log.hook_name, log.trigger_type, duration,
+                "  #{:<4} {} [{:>4}] {} — {} ({}, {})",
+                log.id, ts, status, log.hook_name, log.trigger_type, duration,
                 log.message_id.as_deref().unwrap_or("-")
             );
 
             if let Some(ref err) = log.error {
-                println!("           error: {}", err);
+                println!("         error: {}", err);
             }
             if let Some(ref result) = log.result {
-                let preview: String = result.chars().take(200).collect();
+                let preview: String = result.chars().take(120).collect();
                 if !preview.is_empty() {
-                    println!("           result: {}", preview);
+                    println!("         result: {}", preview);
                 }
             }
         }
-        eprintln!("\n{} log entries shown.", logs.len());
+        eprintln!("\nShowing {} entries. Use `void hook log --id <ID>` for full detail.", logs.len());
     }
     Ok(())
+}
+
+fn print_log_detail(log: &hooks::HookLog, json: bool) -> anyhow::Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(log)?);
+        return Ok(());
+    }
+
+    let ts = chrono::DateTime::from_timestamp(log.started_at, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| log.started_at.to_string());
+    let status = if log.success { "OK" } else { "FAIL" };
+
+    println!("═══ Hook Execution #{} ═══", log.id);
+    println!("  Hook:      {}", log.hook_name);
+    println!("  Trigger:   {}", log.trigger_type);
+    println!("  Status:    {}", status);
+    println!("  Started:   {}", ts);
+    println!("  Duration:  {}", format_duration(log.duration_ms));
+    if let Some(ref mid) = log.message_id {
+        println!("  Message:   {}", mid);
+    }
+
+    if let Some(ref err) = log.error {
+        println!("\n── Error ──");
+        println!("{}", err);
+    }
+
+    if let Some(ref result) = log.result {
+        if !result.is_empty() {
+            println!("\n── Result ──");
+            println!("{}", result);
+        }
+    }
+
+    if let Some(ref prompt) = log.input_prompt {
+        println!("\n── Input Prompt ──");
+        println!("{}", prompt);
+    }
+
+    if let Some(ref raw) = log.raw_output {
+        println!("\n── Agent Session (stream-json) ──");
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                print_stream_event(&val);
+            } else {
+                println!("  {}", line);
+            }
+        }
+    }
+
+    println!("\n═══ End ═══");
+    Ok(())
+}
+
+fn print_stream_event(event: &serde_json::Value) {
+    let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("?");
+    match event_type {
+        "assistant" => {
+            if let Some(content) = event.pointer("/message/content").and_then(|c| c.as_array()) {
+                for block in content {
+                    match block.get("type").and_then(|t| t.as_str()) {
+                        Some("text") => {
+                            if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                println!("  [assistant] {}", text);
+                            }
+                        }
+                        Some("tool_use") => {
+                            let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+                            let input = block.get("input")
+                                .map(|i| serde_json::to_string(i).unwrap_or_default())
+                                .unwrap_or_default();
+                            println!("  [tool_call] {} → {}", name, input);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        "tool" | "tool_result" => {
+            let content = event.get("content")
+                .or_else(|| event.pointer("/content"))
+                .and_then(|c| {
+                    if let Some(s) = c.as_str() {
+                        Some(s.to_string())
+                    } else if let Some(arr) = c.as_array() {
+                        let texts: Vec<_> = arr.iter()
+                            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                            .collect();
+                        if texts.is_empty() { None } else { Some(texts.join("\n")) }
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            if !content.is_empty() {
+                let preview: String = content.chars().take(500).collect();
+                println!("  [tool_result] {}", preview);
+            }
+        }
+        "result" => {
+            let subtype = event.get("subtype").and_then(|s| s.as_str()).unwrap_or("?");
+            let result = event.get("result").and_then(|r| r.as_str()).unwrap_or("");
+            let turns = event.get("num_turns").and_then(|n| n.as_u64());
+            let cost = event.get("cost_usd").and_then(|c| c.as_f64());
+            print!("  [result] status={}", subtype);
+            if let Some(t) = turns { print!(", turns={}", t); }
+            if let Some(c) = cost { print!(", cost=${:.4}", c); }
+            println!();
+            if !result.is_empty() {
+                println!("           {}", result);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn format_duration(ms: i64) -> String {

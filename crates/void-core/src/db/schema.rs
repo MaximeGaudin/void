@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension};
 use tracing::debug;
 
-pub const SCHEMA_VERSION: i32 = 8;
+pub const SCHEMA_VERSION: i32 = 9;
 
 /// Run all pending migrations on the database connection.
 pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
@@ -46,6 +46,9 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
     }
     if version < 8 {
         migrate_v8(conn)?;
+    }
+    if version < 9 {
+        migrate_v9(conn)?;
     }
     Ok(())
 }
@@ -234,6 +237,19 @@ fn migrate_v8(conn: &Connection) -> anyhow::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_hook_logs_started ON hook_logs(started_at DESC);
 
         INSERT OR REPLACE INTO schema_version (version) VALUES (8);
+    ",
+    )?;
+    Ok(())
+}
+
+fn migrate_v9(conn: &Connection) -> anyhow::Result<()> {
+    debug!("running migration v9: add input_prompt and raw_output to hook_logs");
+    conn.execute_batch(
+        "
+        ALTER TABLE hook_logs ADD COLUMN input_prompt TEXT;
+        ALTER TABLE hook_logs ADD COLUMN raw_output TEXT;
+
+        INSERT OR REPLACE INTO schema_version (version) VALUES (9);
     ",
     )?;
     Ok(())

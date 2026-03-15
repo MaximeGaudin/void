@@ -26,6 +26,8 @@ pub struct HookLog {
     pub result: Option<String>,
     pub error: Option<String>,
     pub message_id: Option<String>,
+    pub input_prompt: Option<String>,
+    pub raw_output: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,14 +176,23 @@ fn expand_placeholders(template: &str, msg: Option<&Message>) -> String {
 // Executor (shared between event and schedule hooks)
 // ---------------------------------------------------------------------------
 
-pub fn execute_hook_public(prompt: &str, max_turns: usize) -> anyhow::Result<String> {
+#[derive(Debug, Clone)]
+pub struct HookExecResult {
+    pub input_prompt: String,
+    pub raw_output: String,
+    pub result_summary: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+pub fn execute_hook_public(prompt: &str, max_turns: usize) -> anyhow::Result<HookExecResult> {
     execute_hook_blocking(prompt, max_turns)
 }
 
-fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::Result<String> {
+fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::Result<HookExecResult> {
     let mut cmd = std::process::Command::new("claude");
     cmd.args(["-p", prompt]);
-    cmd.args(["--output-format", "json"]);
+    cmd.args(["--output-format", "stream-json"]);
     cmd.args(["--max-turns", &max_turns.to_string()]);
     cmd.args(["--allowedTools", "Bash(void *),Bash(date *),Bash(echo *)"]);
     cmd.stdin(std::process::Stdio::null());
@@ -189,21 +200,61 @@ fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::Result<Strin
     cmd.stderr(std::process::Stdio::piped());
 
     let output = cmd.output()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("claude exited with {}: {}", output.status, stderr.trim());
+        return Ok(HookExecResult {
+            input_prompt: prompt.to_string(),
+            raw_output: if stdout.is_empty() { stderr.clone() } else { stdout },
+            result_summary: String::new(),
+            success: false,
+            error: Some(format!("claude exited with {}: {}", output.status, stderr.trim())),
+        });
     }
 
-    let json: serde_json::Value = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|_| serde_json::json!({"result": stdout.trim()}));
+    let result_summary = extract_result_from_stream(&stdout);
 
-    Ok(json
-        .get("result")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string())
+    Ok(HookExecResult {
+        input_prompt: prompt.to_string(),
+        raw_output: stdout,
+        result_summary,
+        success: true,
+        error: None,
+    })
+}
+
+fn extract_result_from_stream(stream: &str) -> String {
+    let mut result = String::new();
+    for line in stream.lines().rev() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+            if json.get("type").and_then(|t| t.as_str()) == Some("result") {
+                if let Some(r) = json.get("result").and_then(|v| v.as_str()) {
+                    return r.to_string();
+                }
+            }
+            if json.get("type").and_then(|t| t.as_str()) == Some("assistant") {
+                if let Some(content) = json.pointer("/message/content") {
+                    if let Some(arr) = content.as_array() {
+                        for block in arr {
+                            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                    if !text.is_empty() {
+                                        result = text.to_string();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +307,7 @@ impl HookRunner {
             let max_turns = hook.max_turns;
             let hook_name = hook.name.clone();
             let msg_id = msg.id.clone();
+            let connector = msg.connector.clone();
             let sem = Arc::clone(&sem);
             let db = self.db.clone();
 
@@ -264,6 +316,8 @@ impl HookRunner {
                     Ok(p) => p,
                     Err(_) => return,
                 };
+
+                eprintln!("[hook] ▶ {} triggered by {}/{}", hook_name, connector, msg_id);
                 info!(hook = %hook_name, message_id = %msg_id, "executing event hook");
                 let started_at = chrono::Utc::now().timestamp();
                 let start = std::time::Instant::now();
@@ -276,22 +330,46 @@ impl HookRunner {
                 let duration_ms = start.elapsed().as_millis() as i64;
 
                 match outcome {
-                    Ok(Ok(ref result)) => {
-                        info!(hook = %hook_name, "hook completed: {}", result.chars().take(100).collect::<String>());
+                    Ok(Ok(ref exec)) => {
+                        let summary: String = exec.result_summary.chars().take(200).collect();
+                        if exec.success {
+                            eprintln!("[hook] ✓ {} completed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, summary);
+                            info!(hook = %hook_name, duration_ms, "hook completed: {summary}");
+                        } else {
+                            let err = exec.error.as_deref().unwrap_or("unknown error");
+                            eprintln!("[hook] ✗ {} failed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, err);
+                            error!(hook = %hook_name, duration_ms, "hook failed: {err}");
+                        }
                         if let Some(ref db) = db {
-                            db.insert_hook_log(&hook_name, "new_message", started_at, duration_ms, true, Some(result), None, Some(&msg_id)).ok();
+                            db.insert_hook_log(
+                                &hook_name, "new_message", started_at, duration_ms,
+                                exec.success,
+                                Some(&exec.result_summary),
+                                exec.error.as_deref(),
+                                Some(&msg_id),
+                                Some(&exec.input_prompt),
+                                Some(&exec.raw_output),
+                            ).ok();
                         }
                     }
                     Ok(Err(ref e)) => {
-                        error!(hook = %hook_name, "hook execution failed: {e}");
+                        eprintln!("[hook] ✗ {} crashed — {}", hook_name, e);
+                        error!(hook = %hook_name, "hook execution error: {e}");
                         if let Some(ref db) = db {
-                            db.insert_hook_log(&hook_name, "new_message", started_at, duration_ms, false, None, Some(&e.to_string()), Some(&msg_id)).ok();
+                            db.insert_hook_log(
+                                &hook_name, "new_message", started_at, duration_ms,
+                                false, None, Some(&e.to_string()), Some(&msg_id), None, None,
+                            ).ok();
                         }
                     }
                     Err(ref e) => {
+                        eprintln!("[hook] ✗ {} panicked — {}", hook_name, e);
                         error!(hook = %hook_name, "hook task panicked: {e}");
                         if let Some(ref db) = db {
-                            db.insert_hook_log(&hook_name, "new_message", started_at, duration_ms, false, None, Some(&e.to_string()), Some(&msg_id)).ok();
+                            db.insert_hook_log(
+                                &hook_name, "new_message", started_at, duration_ms,
+                                false, None, Some(&e.to_string()), Some(&msg_id), None, None,
+                            ).ok();
                         }
                     }
                 }
@@ -364,6 +442,7 @@ impl HookRunner {
                     let max_turns = hook.max_turns;
                     let name = hook_name.clone();
 
+                    eprintln!("[hook] ▶ {} (scheduled) executing", name);
                     info!(hook = %name, "executing scheduled hook");
                     let started_at = chrono::Utc::now().timestamp();
                     let start = std::time::Instant::now();
@@ -376,22 +455,46 @@ impl HookRunner {
                     let duration_ms = start.elapsed().as_millis() as i64;
 
                     match outcome {
-                        Ok(Ok(ref result)) => {
-                            info!(hook = %hook_name, "scheduled hook completed: {}", result.chars().take(100).collect::<String>());
+                        Ok(Ok(ref exec)) => {
+                            let summary: String = exec.result_summary.chars().take(200).collect();
+                            if exec.success {
+                                eprintln!("[hook] ✓ {} completed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, summary);
+                                info!(hook = %hook_name, duration_ms, "scheduled hook completed: {summary}");
+                            } else {
+                                let err = exec.error.as_deref().unwrap_or("unknown error");
+                                eprintln!("[hook] ✗ {} failed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, err);
+                                error!(hook = %hook_name, duration_ms, "scheduled hook failed: {err}");
+                            }
                             if let Some(ref db) = db {
-                                db.insert_hook_log(&hook_name, "schedule", started_at, duration_ms, true, Some(result), None, None).ok();
+                                db.insert_hook_log(
+                                    &hook_name, "schedule", started_at, duration_ms,
+                                    exec.success,
+                                    Some(&exec.result_summary),
+                                    exec.error.as_deref(),
+                                    None,
+                                    Some(&exec.input_prompt),
+                                    Some(&exec.raw_output),
+                                ).ok();
                             }
                         }
                         Ok(Err(ref e)) => {
-                            error!(hook = %hook_name, "scheduled hook failed: {e}");
+                            eprintln!("[hook] ✗ {} crashed — {}", hook_name, e);
+                            error!(hook = %hook_name, "scheduled hook error: {e}");
                             if let Some(ref db) = db {
-                                db.insert_hook_log(&hook_name, "schedule", started_at, duration_ms, false, None, Some(&e.to_string()), None).ok();
+                                db.insert_hook_log(
+                                    &hook_name, "schedule", started_at, duration_ms,
+                                    false, None, Some(&e.to_string()), None, None, None,
+                                ).ok();
                             }
                         }
                         Err(ref e) => {
+                            eprintln!("[hook] ✗ {} panicked — {}", hook_name, e);
                             error!(hook = %hook_name, "scheduled hook panicked: {e}");
                             if let Some(ref db) = db {
-                                db.insert_hook_log(&hook_name, "schedule", started_at, duration_ms, false, None, Some(&e.to_string()), None).ok();
+                                db.insert_hook_log(
+                                    &hook_name, "schedule", started_at, duration_ms,
+                                    false, None, Some(&e.to_string()), None, None, None,
+                                ).ok();
                             }
                         }
                     }
