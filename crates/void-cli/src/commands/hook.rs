@@ -64,6 +64,15 @@ pub enum HookCommand {
         #[arg(long)]
         message_id: Option<String>,
     },
+    /// Show recent hook execution logs
+    Log {
+        /// Number of log entries to show
+        #[arg(long, short = 'n', default_value = "100")]
+        limit: usize,
+        /// Filter by hook name
+        #[arg(long)]
+        hook: Option<String>,
+    },
 }
 
 pub fn run(args: &HookArgs, json: bool) -> anyhow::Result<()> {
@@ -94,6 +103,7 @@ pub fn run(args: &HookArgs, json: bool) -> anyhow::Result<()> {
         HookCommand::Enable { name } => cmd_toggle(&dir, name, true),
         HookCommand::Disable { name } => cmd_toggle(&dir, name, false),
         HookCommand::Test { name, message_id } => cmd_test(&dir, name, message_id.as_deref()),
+        HookCommand::Log { limit, hook } => cmd_log(*limit, hook.as_deref(), json),
     }
 }
 
@@ -249,4 +259,68 @@ fn cmd_test(
     let result = hooks::execute_hook_public(&prompt, hook.max_turns)?;
     println!("{}", result);
     Ok(())
+}
+
+fn cmd_log(limit: usize, hook_filter: Option<&str>, json: bool) -> anyhow::Result<()> {
+    let config_path = void_core::config::default_config_path();
+    let cfg = void_core::config::VoidConfig::load_or_default(&config_path);
+    let db = void_core::db::Database::open(&cfg.db_path())?;
+    let mut logs = db.list_hook_logs(limit)?;
+
+    if let Some(filter) = hook_filter {
+        let filter_lower = filter.to_lowercase();
+        logs.retain(|l| l.hook_name.to_lowercase().contains(&filter_lower));
+    }
+
+    if logs.is_empty() {
+        eprintln!("No hook execution logs found.");
+        if json {
+            println!("{{\"data\":[]}}");
+        }
+        return Ok(());
+    }
+
+    if json {
+        let output = serde_json::json!({ "data": logs });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        for log in &logs {
+            let ts = chrono::DateTime::from_timestamp(log.started_at, 0)
+                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                .unwrap_or_else(|| log.started_at.to_string());
+
+            let status = if log.success { "OK" } else { "FAIL" };
+            let duration = format_duration(log.duration_ms);
+
+            println!(
+                "  {} [{:>4}] {} — {} ({}, {})",
+                ts, status, log.hook_name, log.trigger_type, duration,
+                log.message_id.as_deref().unwrap_or("-")
+            );
+
+            if let Some(ref err) = log.error {
+                println!("           error: {}", err);
+            }
+            if let Some(ref result) = log.result {
+                let preview: String = result.chars().take(200).collect();
+                if !preview.is_empty() {
+                    println!("           result: {}", preview);
+                }
+            }
+        }
+        eprintln!("\n{} log entries shown.", logs.len());
+    }
+    Ok(())
+}
+
+fn format_duration(ms: i64) -> String {
+    if ms < 1000 {
+        format!("{}ms", ms)
+    } else if ms < 60_000 {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    } else {
+        let mins = ms / 60_000;
+        let secs = (ms % 60_000) / 1000;
+        format!("{}m{}s", mins, secs)
+    }
 }

@@ -88,6 +88,62 @@ impl Database {
         Ok(())
     }
 
+    // -- Hook logs --
+
+    pub fn insert_hook_log(
+        &self,
+        hook_name: &str,
+        trigger_type: &str,
+        started_at: i64,
+        duration_ms: i64,
+        success: bool,
+        result: Option<&str>,
+        error: Option<&str>,
+        message_id: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.conn().execute(
+            "INSERT INTO hook_logs (hook_name, trigger_type, started_at, duration_ms, success, result, error, message_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                hook_name,
+                trigger_type,
+                started_at,
+                duration_ms,
+                success as i32,
+                result,
+                error,
+                message_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_hook_logs(&self, limit: usize) -> anyhow::Result<Vec<crate::hooks::HookLog>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, hook_name, trigger_type, started_at, duration_ms, success, result, error, message_id
+             FROM hook_logs ORDER BY started_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok(crate::hooks::HookLog {
+                id: row.get(0)?,
+                hook_name: row.get(1)?,
+                trigger_type: row.get(2)?,
+                started_at: row.get(3)?,
+                duration_ms: row.get(4)?,
+                success: row.get::<_, i32>(5)? != 0,
+                result: row.get(6)?,
+                error: row.get(7)?,
+                message_id: row.get(8)?,
+            })
+        })?;
+        let mut logs = Vec::new();
+        for row in rows {
+            logs.push(row?);
+        }
+        Ok(logs)
+    }
+
     // -- Conversations --
 
     pub fn upsert_conversation(&self, conv: &Conversation) -> anyhow::Result<()> {

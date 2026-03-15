@@ -6,6 +6,7 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use crate::db::Database;
 use crate::models::Message;
 
 const MAX_CONCURRENT_HOOKS: usize = 2;
@@ -13,6 +14,19 @@ const MAX_CONCURRENT_HOOKS: usize = 2;
 // ---------------------------------------------------------------------------
 // Data model
 // ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookLog {
+    pub id: i64,
+    pub hook_name: String,
+    pub trigger_type: String,
+    pub started_at: i64,
+    pub duration_ms: i64,
+    pub success: bool,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub message_id: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hook {
@@ -199,6 +213,7 @@ fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::Result<Strin
 pub struct HookRunner {
     hooks: Vec<Hook>,
     semaphore: Arc<Semaphore>,
+    db: Option<Arc<Database>>,
 }
 
 impl HookRunner {
@@ -206,7 +221,13 @@ impl HookRunner {
         Self {
             hooks,
             semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_HOOKS)),
+            db: None,
         }
+    }
+
+    pub fn with_db(mut self, db: Arc<Database>) -> Self {
+        self.db = Some(db);
+        self
     }
 
     pub fn hooks(&self) -> &[Hook] {
@@ -236,6 +257,7 @@ impl HookRunner {
             let hook_name = hook.name.clone();
             let msg_id = msg.id.clone();
             let sem = Arc::clone(&sem);
+            let db = self.db.clone();
 
             tokio::spawn(async move {
                 let _permit = match sem.acquire().await {
@@ -243,20 +265,34 @@ impl HookRunner {
                     Err(_) => return,
                 };
                 info!(hook = %hook_name, message_id = %msg_id, "executing event hook");
+                let started_at = chrono::Utc::now().timestamp();
+                let start = std::time::Instant::now();
 
-                match tokio::task::spawn_blocking(move || {
+                let outcome = tokio::task::spawn_blocking(move || {
                     execute_hook_blocking(&prompt, max_turns)
                 })
-                .await
-                {
-                    Ok(Ok(result)) => {
+                .await;
+
+                let duration_ms = start.elapsed().as_millis() as i64;
+
+                match outcome {
+                    Ok(Ok(ref result)) => {
                         info!(hook = %hook_name, "hook completed: {}", result.chars().take(100).collect::<String>());
+                        if let Some(ref db) = db {
+                            db.insert_hook_log(&hook_name, "new_message", started_at, duration_ms, true, Some(result), None, Some(&msg_id)).ok();
+                        }
                     }
-                    Ok(Err(e)) => {
+                    Ok(Err(ref e)) => {
                         error!(hook = %hook_name, "hook execution failed: {e}");
+                        if let Some(ref db) = db {
+                            db.insert_hook_log(&hook_name, "new_message", started_at, duration_ms, false, None, Some(&e.to_string()), Some(&msg_id)).ok();
+                        }
                     }
-                    Err(e) => {
+                    Err(ref e) => {
                         error!(hook = %hook_name, "hook task panicked: {e}");
+                        if let Some(ref db) = db {
+                            db.insert_hook_log(&hook_name, "new_message", started_at, duration_ms, false, None, Some(&e.to_string()), Some(&msg_id)).ok();
+                        }
                     }
                 }
             });
@@ -276,6 +312,7 @@ impl HookRunner {
             let cancel = cancel.clone();
             let sem = Arc::clone(&self.semaphore);
             let hook_name = hook.name.clone();
+            let db = self.db.clone();
 
             let cron_expr = match &hook.trigger {
                 Trigger::Schedule { cron } => cron.clone(),
@@ -328,20 +365,34 @@ impl HookRunner {
                     let name = hook_name.clone();
 
                     info!(hook = %name, "executing scheduled hook");
+                    let started_at = chrono::Utc::now().timestamp();
+                    let start = std::time::Instant::now();
 
-                    match tokio::task::spawn_blocking(move || {
+                    let outcome = tokio::task::spawn_blocking(move || {
                         execute_hook_blocking(&prompt, max_turns)
                     })
-                    .await
-                    {
-                        Ok(Ok(result)) => {
+                    .await;
+
+                    let duration_ms = start.elapsed().as_millis() as i64;
+
+                    match outcome {
+                        Ok(Ok(ref result)) => {
                             info!(hook = %hook_name, "scheduled hook completed: {}", result.chars().take(100).collect::<String>());
+                            if let Some(ref db) = db {
+                                db.insert_hook_log(&hook_name, "schedule", started_at, duration_ms, true, Some(result), None, None).ok();
+                            }
                         }
-                        Ok(Err(e)) => {
+                        Ok(Err(ref e)) => {
                             error!(hook = %hook_name, "scheduled hook failed: {e}");
+                            if let Some(ref db) = db {
+                                db.insert_hook_log(&hook_name, "schedule", started_at, duration_ms, false, None, Some(&e.to_string()), None).ok();
+                            }
                         }
-                        Err(e) => {
+                        Err(ref e) => {
                             error!(hook = %hook_name, "scheduled hook panicked: {e}");
+                            if let Some(ref db) = db {
+                                db.insert_hook_log(&hook_name, "schedule", started_at, duration_ms, false, None, Some(&e.to_string()), None).ok();
+                            }
                         }
                     }
                 }

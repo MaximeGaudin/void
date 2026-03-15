@@ -292,7 +292,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     } else {
         let enabled = loaded_hooks.iter().filter(|h| h.enabled).count();
         eprintln!("Loaded {enabled} hook(s) from {}", hooks_dir.display());
-        Some(Arc::new(HookRunner::new(loaded_hooks)))
+        Some(Arc::new(HookRunner::new(loaded_hooks).with_db(Arc::clone(&db))))
     };
 
     let cancel = CancellationToken::new();
