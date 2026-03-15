@@ -3,7 +3,11 @@ use void_agent::AgentConfig;
 
 #[derive(Debug, Args)]
 pub struct AgentArgs {
-    /// LLM model to use (default: claude-sonnet-4-20250514)
+    /// LLM provider: anthropic, openai, openrouter (auto-detected if omitted)
+    #[arg(long)]
+    pub provider: Option<String>,
+
+    /// LLM model to use (provider-specific default if omitted)
     #[arg(long)]
     pub model: Option<String>,
 
@@ -32,6 +36,7 @@ pub async fn run(args: &AgentArgs, verbose: bool) -> anyhow::Result<()> {
     };
 
     let config = AgentConfig {
+        provider: args.provider.clone(),
         model: args.model.clone(),
         instructions_file: args.instructions.clone(),
         inline_instructions: args.system_prompt.clone(),
