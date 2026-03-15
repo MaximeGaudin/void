@@ -108,22 +108,38 @@ impl SlackConnector {
     }
 
     async fn backfill(&self, db: &Database) -> anyhow::Result<()> {
-        info!(account_id = %self.account_id, "starting Slack backfill (last 7 days)");
-
-        let user_cache = self.prefetch_users().await?;
-        let conversations = self.list_all_conversations().await?;
-
-        eprintln!(
-            "[slack:{}] found {} conversations, fetching history…",
-            self.account_id,
-            conversations.len()
-        );
-
         let oldest_ts = chrono::Utc::now()
             .checked_sub_signed(chrono::Duration::days(7))
             .unwrap_or_else(chrono::Utc::now)
             .timestamp()
             .to_string();
+
+        info!(account_id = %self.account_id, since = %oldest_ts, "starting Slack backfill (last 7 days)");
+        self.fetch_history(db, &oldest_ts, "backfill").await
+    }
+
+    async fn catch_up(&self, db: &Database) -> anyhow::Result<()> {
+        let latest = db.latest_message_timestamp(&self.account_id, "slack")?;
+        let oldest_ts = match latest {
+            Some(ts) => ts.to_string(),
+            None => {
+                info!(account_id = %self.account_id, "no previous messages found, skipping catch-up");
+                return Ok(());
+            }
+        };
+
+        info!(account_id = %self.account_id, since = %oldest_ts, "catching up missed Slack messages");
+        self.fetch_history(db, &oldest_ts, "catch-up").await
+    }
+
+    async fn fetch_history(&self, db: &Database, oldest_ts: &str, label: &str) -> anyhow::Result<()> {
+        let user_cache = self.prefetch_users().await?;
+        let conversations = self.list_all_conversations().await?;
+
+        eprintln!(
+            "[slack:{}] {} — {} conversations, fetching since {}…",
+            self.account_id, label, conversations.len(), oldest_ts
+        );
 
         let mut progress = void_core::progress::BackfillProgress::new(
             &format!("slack:{}", self.account_id),
@@ -139,7 +155,7 @@ impl SlackConnector {
 
             match self
                 .api
-                .conversations_history(&conv.id, 100, Some(&oldest_ts))
+                .conversations_history(&conv.id, 100, Some(oldest_ts))
                 .await
             {
                 Ok(history) => {
@@ -169,7 +185,7 @@ impl SlackConnector {
                     }
                 }
                 Err(e) => {
-                    warn!(channel_id = %conv.id, "failed to fetch history: {e}");
+                    warn!(channel_id = %conv.id, "{label}: failed to fetch history: {e}");
                 }
             }
         }
@@ -179,76 +195,7 @@ impl SlackConnector {
             account_id = %self.account_id,
             conversations = progress.items,
             messages = progress.secondary,
-            "backfill complete"
-        );
-        Ok(())
-    }
-
-    async fn catch_up(&self, db: &Database) -> anyhow::Result<()> {
-        let latest = db.latest_message_timestamp(&self.account_id, "slack")?;
-        let oldest_ts = match latest {
-            Some(ts) => ts.to_string(),
-            None => {
-                info!(account_id = %self.account_id, "no previous messages found, skipping catch-up");
-                return Ok(());
-            }
-        };
-
-        info!(account_id = %self.account_id, since = %oldest_ts, "catching up missed Slack messages");
-
-        let user_cache = self.prefetch_users().await?;
-        let conversations = self.list_all_conversations().await?;
-
-        let mut caught_up = 0u64;
-        for conv in &conversations {
-            let conversation = map_conversation(conv, &self.account_id, &user_cache);
-            db.upsert_conversation(&conversation)?;
-
-            match self
-                .api
-                .conversations_history(&conv.id, 100, Some(&oldest_ts))
-                .await
-            {
-                Ok(history) => {
-                    let mut mapped: Vec<Message> = history
-                        .messages
-                        .iter()
-                        .filter_map(|msg| {
-                            map_message_cached(
-                                msg,
-                                conv,
-                                &conversation.id,
-                                &self.account_id,
-                                &user_cache,
-                            )
-                        })
-                        .collect();
-                    mapped.sort_by_key(|m| m.timestamp);
-                    assign_time_window_context(&mut mapped, &self.account_id, &conv.id);
-                    for message in &mapped {
-                        db.upsert_message(message)?;
-                        caught_up += 1;
-                    }
-                    if let Some(last) = history.messages.first() {
-                        let mut conv_update = conversation.clone();
-                        conv_update.last_message_at = parse_ts(&last.ts);
-                        db.upsert_conversation(&conv_update)?;
-                    }
-                }
-                Err(e) => {
-                    warn!(channel_id = %conv.id, "catch-up: failed to fetch history: {e}");
-                }
-            }
-        }
-
-        eprintln!(
-            "[slack:{}] catch-up complete: {} new messages",
-            self.account_id, caught_up
-        );
-        info!(
-            account_id = %self.account_id,
-            messages = caught_up,
-            "catch-up complete"
+            "{label} complete"
         );
         Ok(())
     }
