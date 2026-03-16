@@ -4054,7 +4054,6 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "void-core",
  "void-gmail",
  "wiremock",
 ]
