@@ -95,6 +95,63 @@ pub fn stop_daemon() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Double-fork to fully detach a background daemon, redirect stdout/stderr to
+/// `log_file`/`log_err`, and set the working directory.  The parent process
+/// exits with `_exit(0)` after the first fork; the intermediate child calls
+/// `setsid` and forks again; only the grandchild survives and returns `Ok(())`.
+fn fork_daemon(
+    work_dir: &std::path::Path,
+    log_out: std::fs::File,
+    log_err: std::fs::File,
+) -> anyhow::Result<()> {
+    use std::os::unix::io::IntoRawFd;
+
+    unsafe {
+        // First fork – parent exits immediately so the shell gets its prompt back.
+        let pid = libc::fork();
+        if pid < 0 {
+            anyhow::bail!("First fork failed: {}", std::io::Error::last_os_error());
+        }
+        if pid > 0 {
+            libc::_exit(0);
+        }
+
+        // Child: become session leader, detach from controlling terminal.
+        if libc::setsid() < 0 {
+            anyhow::bail!("setsid failed: {}", std::io::Error::last_os_error());
+        }
+
+        // Second fork – prevent re-acquiring a controlling terminal.
+        let pid2 = libc::fork();
+        if pid2 < 0 {
+            anyhow::bail!("Second fork failed: {}", std::io::Error::last_os_error());
+        }
+        if pid2 > 0 {
+            libc::_exit(0);
+        }
+
+        // Grandchild: redirect stdin/stdout/stderr and chdir.
+        let dev_null = libc::open(b"/dev/null\0".as_ptr().cast(), libc::O_RDWR);
+        if dev_null >= 0 {
+            libc::dup2(dev_null, libc::STDIN_FILENO);
+            libc::close(dev_null);
+        }
+
+        let out_fd = log_out.into_raw_fd();
+        libc::dup2(out_fd, libc::STDOUT_FILENO);
+        libc::close(out_fd);
+
+        let err_fd = log_err.into_raw_fd();
+        libc::dup2(err_fd, libc::STDERR_FILENO);
+        libc::close(err_fd);
+
+        let dir = std::ffi::CString::new(work_dir.to_string_lossy().as_bytes()).unwrap_or_default();
+        libc::chdir(dir.as_ptr());
+    }
+
+    Ok(())
+}
+
 /// Fork into a background daemon, then run sync in the child process.
 /// Must be called *before* any tokio runtime is created.
 pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
@@ -134,14 +191,7 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
 
     eprintln!("Starting sync daemon... logs at {}", log_path.display());
 
-    let daemon = daemonize::Daemonize::new()
-        .working_directory(&store_path)
-        .stdout(log_file)
-        .stderr(log_err);
-
-    daemon
-        .start()
-        .map_err(|e| anyhow::anyhow!("Failed to daemonize: {e}"))?;
+    fork_daemon(&store_path, log_file, log_err)?;
 
     // We're now in the detached child process -- build a fresh tokio runtime
     let rt = tokio::runtime::Runtime::new()?;

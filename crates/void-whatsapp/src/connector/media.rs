@@ -135,19 +135,27 @@ impl WhatsAppConnector {
         file_enc_sha256_b64: &str,
         file_length: u64,
         media_type_str: &str,
-    ) -> anyhow::Result<Vec<u8>> {
+    ) -> Result<Vec<u8>, crate::error::WhatsAppError> {
         use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
 
-        self.ensure_connected().await?;
+        self.ensure_connected()
+            .await
+            .map_err(|e| crate::error::WhatsAppError::Connection(e.to_string()))?;
         let guard = self.client.lock().await;
-        let client = guard
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("WhatsApp not connected"))?;
+        let client = guard.as_ref().ok_or_else(|| {
+            crate::error::WhatsAppError::Connection("WhatsApp not connected".into())
+        })?;
 
-        let media_key = STANDARD.decode(media_key_b64)?;
-        let file_sha256 = STANDARD.decode(file_sha256_b64)?;
-        let file_enc_sha256 = STANDARD.decode(file_enc_sha256_b64)?;
+        let media_key = STANDARD
+            .decode(media_key_b64)
+            .map_err(|e| crate::error::WhatsAppError::Decode(e.to_string()))?;
+        let file_sha256 = STANDARD
+            .decode(file_sha256_b64)
+            .map_err(|e| crate::error::WhatsAppError::Decode(e.to_string()))?;
+        let file_enc_sha256 = STANDARD
+            .decode(file_enc_sha256_b64)
+            .map_err(|e| crate::error::WhatsAppError::Decode(e.to_string()))?;
 
         let media_type = match media_type_str {
             "image" => WaMediaType::Image,
@@ -155,7 +163,11 @@ impl WhatsAppConnector {
             "audio" => WaMediaType::Audio,
             "document" => WaMediaType::Document,
             "sticker" => WaMediaType::Sticker,
-            other => anyhow::bail!("unsupported media type: {other}"),
+            other => {
+                return Err(crate::error::WhatsAppError::Media(format!(
+                    "unsupported media type: {other}"
+                )))
+            }
         };
 
         let data = client
@@ -168,7 +180,7 @@ impl WhatsAppConnector {
                 media_type,
             )
             .await
-            .map_err(|e| anyhow::anyhow!("download failed: {e}"))?;
+            .map_err(|e| crate::error::WhatsAppError::Media(format!("download failed: {e}")))?;
 
         Ok(data)
     }

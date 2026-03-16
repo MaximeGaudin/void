@@ -53,7 +53,6 @@ reqwest = { version = "0.12", features = ["json", "multipart"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 futures-util = "0.3"
 base64 = "0.22"
-daemonize = "0.5"
 libc = "0.2"
 html-to-markdown-rs = "2"
 open = "5"

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::Context;
+use crate::error::CalendarError;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -31,7 +31,7 @@ impl CalendarApiClient {
         }
     }
 
-    pub async fn list_calendars(&self) -> anyhow::Result<CalendarListResponse> {
+    pub async fn list_calendars(&self) -> Result<CalendarListResponse, CalendarError> {
         debug!("calendar: list_calendars");
         let resp: CalendarListResponse = self
             .http
@@ -44,7 +44,7 @@ impl CalendarApiClient {
             .await?
             .json()
             .await
-            .context("calendar: failed to list calendars")?;
+            .map_err(CalendarError::from)?;
         let count = resp.items.as_ref().map(|i| i.len()).unwrap_or(0);
         debug!(count, "calendar: list_calendars ok");
         Ok(resp)
@@ -57,7 +57,7 @@ impl CalendarApiClient {
         time_max: Option<&str>,
         sync_token: Option<&str>,
         page_token: Option<&str>,
-    ) -> anyhow::Result<EventListResponse> {
+    ) -> Result<EventListResponse, CalendarError> {
         debug!(
             calendar_id,
             time_min = ?time_min,
@@ -99,10 +99,10 @@ impl CalendarApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("calendar: failed to list events")?;
+            .map_err(CalendarError::from)?;
         let count = resp.items.as_ref().map(|i| i.len()).unwrap_or(0);
         let has_sync_token = resp.next_sync_token.is_some();
         let has_page_token = resp.next_page_token.is_some();
@@ -119,7 +119,7 @@ impl CalendarApiClient {
         event: &InsertEventRequest,
         conference_data_version: Option<u32>,
         send_updates: Option<&str>,
-    ) -> anyhow::Result<GoogleCalendarEvent> {
+    ) -> Result<GoogleCalendarEvent, CalendarError> {
         debug!(
             calendar_id,
             summary = event.summary.as_str(),
@@ -148,7 +148,7 @@ impl CalendarApiClient {
             .await?
             .json()
             .await
-            .context("calendar: failed to insert event")?;
+            .map_err(CalendarError::from)?;
         let event_id = resp.id.as_deref().unwrap_or("(none)");
         debug!(event_id, "calendar: insert_event ok");
         Ok(resp)
@@ -158,7 +158,7 @@ impl CalendarApiClient {
         &self,
         calendar_id: &str,
         event_id: &str,
-    ) -> anyhow::Result<GoogleCalendarEvent> {
+    ) -> Result<GoogleCalendarEvent, CalendarError> {
         debug!(calendar_id, event_id, "calendar: get_event");
         let url = format!(
             "{}/calendar/v3/calendars/{}/events/{}",
@@ -173,10 +173,10 @@ impl CalendarApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("calendar: failed to get event")?;
+            .map_err(CalendarError::from)?;
         debug!(event_id, "calendar: get_event ok");
         Ok(resp)
     }
@@ -187,7 +187,7 @@ impl CalendarApiClient {
         query: &str,
         time_min: Option<&str>,
         time_max: Option<&str>,
-    ) -> anyhow::Result<EventListResponse> {
+    ) -> Result<EventListResponse, CalendarError> {
         debug!(calendar_id, query, "calendar: search_events");
         let mut params: Vec<(&str, String)> = vec![
             ("singleEvents", "true".into()),
@@ -214,10 +214,10 @@ impl CalendarApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("calendar: failed to search events")?;
+            .map_err(CalendarError::from)?;
         let count = resp.items.as_ref().map(|i| i.len()).unwrap_or(0);
         debug!(count, "calendar: search_events ok");
         Ok(resp)
@@ -229,7 +229,7 @@ impl CalendarApiClient {
         event_id: &str,
         update: &UpdateEventRequest,
         send_updates: Option<&str>,
-    ) -> anyhow::Result<GoogleCalendarEvent> {
+    ) -> Result<GoogleCalendarEvent, CalendarError> {
         debug!(calendar_id, event_id, "calendar: update_event");
         let url = format!(
             "{}/calendar/v3/calendars/{}/events/{}",
@@ -249,10 +249,10 @@ impl CalendarApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("calendar: failed to update event")?;
+            ?;
         debug!(event_id, "calendar: update_event ok");
         Ok(resp)
     }
@@ -262,7 +262,7 @@ impl CalendarApiClient {
         time_min: &str,
         time_max: &str,
         emails: &[String],
-    ) -> anyhow::Result<FreeBusyResponse> {
+    ) -> Result<FreeBusyResponse, CalendarError> {
         debug!(
             time_min,
             time_max,
@@ -287,10 +287,10 @@ impl CalendarApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("calendar: failed to query freebusy")?;
+            ?;
         debug!(calendars = resp.calendars.len(), "calendar: freebusy ok");
         Ok(resp)
     }
@@ -300,7 +300,7 @@ impl CalendarApiClient {
         calendar_id: &str,
         event_id: &str,
         send_updates: Option<&str>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), CalendarError> {
         debug!(calendar_id, event_id, "calendar: delete_event");
         let url = format!(
             "{}/calendar/v3/calendars/{}/events/{}",
@@ -315,7 +315,7 @@ impl CalendarApiClient {
         req.send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?;
+            ?;
         debug!(event_id, "calendar: delete_event ok");
         Ok(())
     }

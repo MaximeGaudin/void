@@ -228,6 +228,7 @@ fn build_drive_client(
             cred_path.as_deref().and_then(|p| p.to_str()),
         )
         .await
+        .map_err(Into::into)
     });
 
     Ok((fut, cfg))

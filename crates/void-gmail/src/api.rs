@@ -1,4 +1,4 @@
-use anyhow::Context;
+use crate::error::GmailError;
 use serde::Deserialize;
 use tracing::{debug, info};
 
@@ -33,7 +33,7 @@ impl GmailApiClient {
         self.access_token = token.to_string();
     }
 
-    pub async fn get_profile(&self) -> anyhow::Result<GmailProfile> {
+    pub async fn get_profile(&self) -> Result<GmailProfile, GmailError> {
         debug!("gmail: get_profile");
         let resp: GmailProfile = self
             .http
@@ -43,7 +43,7 @@ impl GmailApiClient {
             .await?
             .json()
             .await
-            .context("gmail: failed to get profile")?;
+            ?;
         debug!(email = ?resp.email_address, "gmail: got profile");
         Ok(resp)
     }
@@ -54,7 +54,7 @@ impl GmailApiClient {
         page_token: Option<&str>,
         label_ids: Option<&[&str]>,
         query: Option<&str>,
-    ) -> anyhow::Result<MessageListResponse> {
+    ) -> Result<MessageListResponse, GmailError> {
         debug!(
             max_results,
             has_page_token = page_token.is_some(),
@@ -82,7 +82,7 @@ impl GmailApiClient {
             .await?
             .json()
             .await
-            .context("gmail: failed to list messages")?;
+            ?;
         let count = resp.messages.as_ref().map(|m| m.len()).unwrap_or(0);
         debug!(
             message_count = count,
@@ -92,7 +92,7 @@ impl GmailApiClient {
         Ok(resp)
     }
 
-    pub async fn get_message(&self, message_id: &str) -> anyhow::Result<GmailMessage> {
+    pub async fn get_message(&self, message_id: &str) -> Result<GmailMessage, GmailError> {
         debug!(message_id, "gmail: get_message");
         let resp: GmailMessage = self
             .http
@@ -106,14 +106,14 @@ impl GmailApiClient {
             .await?
             .json()
             .await
-            .context("gmail: failed to get message")?;
+            ?;
         Ok(resp)
     }
 
     pub async fn list_history(
         &self,
         start_history_id: &str,
-    ) -> anyhow::Result<HistoryListResponse> {
+    ) -> Result<HistoryListResponse, GmailError> {
         debug!(start_history_id, "gmail: list_history");
         let resp: HistoryListResponse = self
             .http
@@ -124,7 +124,7 @@ impl GmailApiClient {
             .await?
             .json()
             .await
-            .context("gmail: failed to list history")?;
+            ?;
         let count = resp.history.as_ref().map(|h| h.len()).unwrap_or(0);
         debug!(record_count = count, "gmail: listed history");
         Ok(resp)
@@ -135,7 +135,7 @@ impl GmailApiClient {
         message_id: &str,
         add_labels: &[&str],
         remove_labels: &[&str],
-    ) -> anyhow::Result<GmailMessage> {
+    ) -> Result<GmailMessage, GmailError> {
         debug!(
             message_id,
             ?add_labels,
@@ -158,12 +158,12 @@ impl GmailApiClient {
             .await?
             .json()
             .await
-            .context("gmail: failed to modify message")?;
+            ?;
         debug!(message_id, "gmail: message modified");
         Ok(resp)
     }
 
-    pub async fn send_message(&self, raw: &str) -> anyhow::Result<GmailMessage> {
+    pub async fn send_message(&self, raw: &str) -> Result<GmailMessage, GmailError> {
         info!("gmail: send_message");
         let body = serde_json::json!({ "raw": raw });
         let resp: GmailMessage = self
@@ -175,12 +175,12 @@ impl GmailApiClient {
             .await?
             .json()
             .await
-            .context("gmail: failed to send message")?;
+            ?;
         debug!(message_id = ?resp.id, "gmail: sent message");
         Ok(resp)
     }
 
-    pub async fn get_thread(&self, thread_id: &str) -> anyhow::Result<GmailThread> {
+    pub async fn get_thread(&self, thread_id: &str) -> Result<GmailThread, GmailError> {
         debug!(thread_id, "gmail: get_thread");
         let resp: GmailThread = self
             .http
@@ -193,10 +193,10 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to get thread")?;
+            ?;
         let msg_count = resp.messages.as_ref().map(|m| m.len()).unwrap_or(0);
         debug!(thread_id, msg_count, "gmail: get_thread ok");
         Ok(resp)
@@ -206,7 +206,7 @@ impl GmailApiClient {
         &self,
         message_id: &str,
         attachment_id: &str,
-    ) -> anyhow::Result<AttachmentResponse> {
+    ) -> Result<AttachmentResponse, GmailError> {
         debug!(message_id, attachment_id, "gmail: get_attachment");
         let resp: AttachmentResponse = self
             .http
@@ -218,15 +218,15 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to get attachment")?;
+            ?;
         debug!(message_id, attachment_id, "gmail: get_attachment ok");
         Ok(resp)
     }
 
-    pub async fn list_labels(&self) -> anyhow::Result<LabelListResponse> {
+    pub async fn list_labels(&self) -> Result<LabelListResponse, GmailError> {
         debug!("gmail: list_labels");
         let resp: LabelListResponse = self
             .http
@@ -235,10 +235,10 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to list labels")?;
+            ?;
         let count = resp.labels.as_ref().map(|l| l.len()).unwrap_or(0);
         debug!(count, "gmail: list_labels ok");
         Ok(resp)
@@ -249,7 +249,7 @@ impl GmailApiClient {
         thread_id: &str,
         add_labels: &[&str],
         remove_labels: &[&str],
-    ) -> anyhow::Result<GmailThread> {
+    ) -> Result<GmailThread, GmailError> {
         debug!(
             thread_id,
             ?add_labels,
@@ -271,10 +271,10 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to modify thread")?;
+            ?;
         debug!(thread_id, "gmail: modify_thread ok");
         Ok(resp)
     }
@@ -284,7 +284,7 @@ impl GmailApiClient {
         message_ids: &[&str],
         add_labels: &[&str],
         remove_labels: &[&str],
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), GmailError> {
         debug!(
             ?message_ids,
             ?add_labels,
@@ -306,12 +306,12 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?;
+            ?;
         debug!("gmail: batch_modify ok");
         Ok(())
     }
 
-    pub async fn list_drafts(&self, max_results: u32) -> anyhow::Result<DraftListResponse> {
+    pub async fn list_drafts(&self, max_results: u32) -> Result<DraftListResponse, GmailError> {
         debug!(max_results, "gmail: list_drafts");
         let resp: DraftListResponse = self
             .http
@@ -321,16 +321,16 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to list drafts")?;
+            ?;
         let count = resp.drafts.as_ref().map(|d| d.len()).unwrap_or(0);
         debug!(count, "gmail: list_drafts ok");
         Ok(resp)
     }
 
-    pub async fn get_draft(&self, draft_id: &str) -> anyhow::Result<GmailDraft> {
+    pub async fn get_draft(&self, draft_id: &str) -> Result<GmailDraft, GmailError> {
         debug!(draft_id, "gmail: get_draft");
         let resp: GmailDraft = self
             .http
@@ -343,10 +343,10 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to get draft")?;
+            ?;
         debug!(draft_id, "gmail: get_draft ok");
         Ok(resp)
     }
@@ -355,7 +355,7 @@ impl GmailApiClient {
         &self,
         raw: &str,
         thread_id: Option<&str>,
-    ) -> anyhow::Result<GmailDraft> {
+    ) -> Result<GmailDraft, GmailError> {
         info!("gmail: create_draft");
         let mut message = serde_json::json!({ "raw": raw });
         if let Some(tid) = thread_id {
@@ -370,15 +370,15 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to create draft")?;
+            ?;
         debug!(draft_id = ?resp.id, "gmail: create_draft ok");
         Ok(resp)
     }
 
-    pub async fn update_draft(&self, draft_id: &str, raw: &str) -> anyhow::Result<GmailDraft> {
+    pub async fn update_draft(&self, draft_id: &str, raw: &str) -> Result<GmailDraft, GmailError> {
         debug!(draft_id, "gmail: update_draft");
         let body = serde_json::json!({
             "message": { "raw": raw }
@@ -394,15 +394,15 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?
+            ?
             .json()
             .await
-            .context("gmail: failed to update draft")?;
+            ?;
         debug!(draft_id, "gmail: update_draft ok");
         Ok(resp)
     }
 
-    pub async fn delete_draft(&self, draft_id: &str) -> anyhow::Result<()> {
+    pub async fn delete_draft(&self, draft_id: &str) -> Result<(), GmailError> {
         debug!(draft_id, "gmail: delete_draft");
         self.http
             .delete(format!(
@@ -413,7 +413,7 @@ impl GmailApiClient {
             .send()
             .await?
             .error_for_status()
-            .map_err(anyhow::Error::from)?;
+            ?;
         debug!(draft_id, "gmail: delete_draft ok");
         Ok(())
     }

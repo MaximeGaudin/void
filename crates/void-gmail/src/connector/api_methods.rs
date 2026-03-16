@@ -58,7 +58,7 @@ impl GmailConnector {
 
     pub async fn get_thread(&self, thread_id: &str) -> anyhow::Result<crate::api::GmailThread> {
         let api = self.get_client().await?;
-        api.get_thread(thread_id).await
+        api.get_thread(thread_id).await.map_err(Into::into)
     }
 
     pub async fn get_attachment_data(
@@ -100,7 +100,9 @@ impl GmailConnector {
         remove: &[&str],
     ) -> anyhow::Result<()> {
         let api = self.get_client().await?;
-        api.batch_modify_messages(message_ids, add, remove).await
+        api.batch_modify_messages(message_ids, add, remove)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn list_drafts(
@@ -142,7 +144,7 @@ impl GmailConnector {
         headers.push_str(&format!("\r\n{body}"));
 
         let encoded = URL_SAFE_NO_PAD.encode(headers.as_bytes());
-        api.create_draft(&encoded, thread_id).await
+        api.create_draft(&encoded, thread_id).await.map_err(Into::into)
     }
 
     pub async fn update_draft(
@@ -158,11 +160,11 @@ impl GmailConnector {
             "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
         );
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-        api.update_draft(draft_id, &encoded).await
+        api.update_draft(draft_id, &encoded).await.map_err(Into::into)
     }
 
     pub async fn delete_draft(&self, draft_id: &str) -> anyhow::Result<()> {
         let api = self.get_client().await?;
-        api.delete_draft(draft_id).await
+        api.delete_draft(draft_id).await.map_err(Into::into)
     }
 }

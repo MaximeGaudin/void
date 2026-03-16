@@ -264,7 +264,7 @@ impl SlackConnector {
                     "[slack:{}] failed to fetch conversation {}: {}",
                     self.account_id, channel_id, e
                 );
-                Err(e)
+                Err(e.into())
             }
         }
     }

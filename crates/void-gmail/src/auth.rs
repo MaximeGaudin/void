@@ -2,7 +2,7 @@ use std::io::{BufRead, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use crate::error::GmailError;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
@@ -33,19 +33,19 @@ pub struct InstalledCredentials {
 }
 
 impl TokenCache {
-    pub fn load(path: &Path) -> anyhow::Result<Self> {
+    pub fn load(path: &Path) -> Result<Self, GmailError> {
         debug!(path = %path.display(), "loading token cache");
         let content = std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read token cache at {}", path.display()))?;
-        serde_json::from_str(&content).context("failed to parse token cache")
+            .map_err(|e| GmailError::Auth(format!("failed to read token cache at {}: {e}", path.display())))?;
+        serde_json::from_str(&content).map_err(|e| GmailError::Parse(e.to_string()))
     }
 
-    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+    pub fn save(&self, path: &Path) -> Result<(), GmailError> {
         debug!(path = %path.display(), "saving token cache");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(self)?;
+        let content = serde_json::to_string_pretty(self).map_err(GmailError::from)?;
         std::fs::write(path, content)?;
         Ok(())
     }
@@ -60,13 +60,13 @@ const EMBEDDED_CREDENTIALS: &str = include_str!("../google-credentials.json");
 /// Load credentials from a file, or use the embedded default if no path is given.
 pub fn load_client_credentials(
     credentials_file: Option<&str>,
-) -> anyhow::Result<InstalledCredentials> {
+) -> Result<InstalledCredentials, GmailError> {
     let content = match credentials_file {
         Some(path) if !path.is_empty() => {
             let expanded = void_core::config::expand_tilde(path);
             debug!(path = %expanded.display(), "loading client credentials from file");
-            std::fs::read_to_string(&expanded).with_context(|| {
-                format!("failed to read credentials file at {}", expanded.display())
+            std::fs::read_to_string(&expanded).map_err(|e| {
+                GmailError::Auth(format!("failed to read credentials file at {}: {e}", expanded.display()))
             })?
         }
         _ => {
@@ -75,10 +75,10 @@ pub fn load_client_credentials(
         }
     };
     let creds: ClientCredentials =
-        serde_json::from_str(&content).context("failed to parse credentials")?;
+        serde_json::from_str(&content).map_err(|e| GmailError::Parse(e.to_string()))?;
     creds
         .installed
-        .ok_or_else(|| anyhow::anyhow!("credentials missing 'installed' key"))
+        .ok_or_else(|| GmailError::Auth("credentials missing 'installed' key".into()))
 }
 
 pub fn scopes() -> &'static str {
@@ -90,8 +90,8 @@ pub fn scopes() -> &'static str {
 pub async fn authorize_interactive(
     creds: &InstalledCredentials,
     custom_scopes: Option<&str>,
-) -> anyhow::Result<TokenCache> {
-    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind loopback port")?;
+) -> Result<TokenCache, GmailError> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| GmailError::Auth(format!("failed to bind loopback port: {e}")))?;
     let port = listener.local_addr()?.port();
     info!(port, "starting OAuth flow");
     let redirect_uri = format!("http://127.0.0.1:{port}");
@@ -118,8 +118,8 @@ pub async fn authorize_interactive(
 }
 
 /// Block until the OAuth redirect hits our local server, extract the `code` param.
-fn wait_for_auth_code(listener: &TcpListener) -> anyhow::Result<String> {
-    let (mut stream, _) = listener.accept().context("failed to accept connection")?;
+fn wait_for_auth_code(listener: &TcpListener) -> Result<String, GmailError> {
+    let (mut stream, _) = listener.accept().map_err(|e| GmailError::Auth(format!("failed to accept connection: {e}")))?;
     let mut reader = std::io::BufReader::new(&stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -127,7 +127,7 @@ fn wait_for_auth_code(listener: &TcpListener) -> anyhow::Result<String> {
     let path = request_line
         .split_whitespace()
         .nth(1)
-        .ok_or_else(|| anyhow::anyhow!("malformed HTTP request from redirect"))?;
+        .ok_or_else(|| GmailError::Auth("malformed HTTP request from redirect".into()))?;
 
     let code = url::Url::parse(&format!("http://localhost{path}"))
         .ok()
@@ -137,7 +137,7 @@ fn wait_for_auth_code(listener: &TcpListener) -> anyhow::Result<String> {
                 .map(|(_, v)| v.to_string())
         })
         .ok_or_else(|| {
-            anyhow::anyhow!("no authorization code found in redirect (did you deny access?)")
+            GmailError::Auth("no authorization code found in redirect (did you deny access?)".into())
         })?;
     debug!(code_len = code.len(), "authorization code extracted");
 
@@ -157,7 +157,7 @@ async fn exchange_code_for_tokens(
     creds: &InstalledCredentials,
     code: &str,
     redirect_uri: &str,
-) -> anyhow::Result<TokenCache> {
+) -> Result<TokenCache, GmailError> {
     let http = reqwest::Client::new();
     let resp = http
         .post(&creds.token_uri)
@@ -175,19 +175,19 @@ async fn exchange_code_for_tokens(
     let body: serde_json::Value = resp.json().await?;
 
     if !status.is_success() {
-        anyhow::bail!(
+        return Err(GmailError::Auth(format!(
             "token exchange failed ({}): {}",
             status,
             body.get("error_description")
                 .or(body.get("error"))
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| body.to_string())
-        );
+        )));
     }
 
     let access_token = body["access_token"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("no access_token in token response"))?
+        .ok_or_else(|| GmailError::Auth("no access_token in token response".into()))?
         .to_string();
     let refresh_token = body["refresh_token"].as_str().map(|s| s.to_string());
     let expires_in = body["expires_in"].as_i64().unwrap_or(3600);
@@ -205,7 +205,7 @@ pub async fn refresh_access_token(
     http: &reqwest::Client,
     creds: &InstalledCredentials,
     refresh_token: &str,
-) -> anyhow::Result<TokenCache> {
+) -> Result<TokenCache, GmailError> {
     let resp = http
         .post(&creds.token_uri)
         .form(&[
@@ -220,7 +220,7 @@ pub async fn refresh_access_token(
     let body: serde_json::Value = resp.json().await?;
     let access_token = body["access_token"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("no access_token in refresh response"))?
+        .ok_or_else(|| GmailError::Auth("no access_token in refresh response".into()))?
         .to_string();
 
     let expires_in = body["expires_in"].as_i64().unwrap_or(3600);

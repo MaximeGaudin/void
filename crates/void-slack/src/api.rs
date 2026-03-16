@@ -1,4 +1,4 @@
-use anyhow::Context;
+use crate::error::SlackError;
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::{debug, error, warn};
@@ -56,7 +56,7 @@ impl SlackApiClient {
         url: &str,
         params: &[(&str, String)],
         label: &str,
-    ) -> anyhow::Result<T> {
+    ) -> Result<T, SlackError> {
         for attempt in 0..=MAX_RETRIES {
             let resp = self
                 .http
@@ -76,7 +76,7 @@ impl SlackApiClient {
                     tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
                     continue;
                 }
-                anyhow::bail!("rate limited after {MAX_RETRIES} retries: {label}");
+                return Err(SlackError::RateLimited(MAX_RETRIES, label.to_string()));
             }
 
             let slack_resp: SlackResponse<T> = resp.json().await?;
@@ -87,7 +87,7 @@ impl SlackApiClient {
                     continue;
                 }
             }
-            return slack_resp.into_result().context(format!("{label} failed"));
+            return slack_resp.into_result();
         }
         unreachable!()
     }
@@ -98,7 +98,7 @@ impl SlackApiClient {
         url: &str,
         body: &serde_json::Value,
         label: &str,
-    ) -> anyhow::Result<T> {
+    ) -> Result<T, SlackError> {
         for attempt in 0..=MAX_RETRIES {
             let resp = self
                 .http
@@ -118,7 +118,7 @@ impl SlackApiClient {
                     tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
                     continue;
                 }
-                anyhow::bail!("rate limited after {MAX_RETRIES} retries: {label}");
+                return Err(SlackError::RateLimited(MAX_RETRIES, label.to_string()));
             }
 
             let slack_resp: SlackResponse<T> = resp.json().await?;
@@ -129,12 +129,12 @@ impl SlackApiClient {
                     continue;
                 }
             }
-            return slack_resp.into_result().context(format!("{label} failed"));
+            return slack_resp.into_result();
         }
         unreachable!()
     }
 
-    pub async fn auth_test(&self) -> anyhow::Result<AuthTestResponse> {
+    pub async fn auth_test(&self) -> Result<AuthTestResponse, SlackError> {
         self.post_with_retry(
             &format!("{}/auth.test", self.base_url),
             &serde_json::json!({}),
@@ -147,7 +147,7 @@ impl SlackApiClient {
         &self,
         cursor: Option<&str>,
         limit: u32,
-    ) -> anyhow::Result<ConversationsListResponse> {
+    ) -> Result<ConversationsListResponse, SlackError> {
         let mut params: Vec<(&str, String)> = vec![
             ("types", "public_channel,private_channel,mpim,im".into()),
             ("limit", limit.to_string()),
@@ -169,7 +169,7 @@ impl SlackApiClient {
         channel_id: &str,
         limit: u32,
         oldest: Option<&str>,
-    ) -> anyhow::Result<ConversationsHistoryResponse> {
+    ) -> Result<ConversationsHistoryResponse, SlackError> {
         let mut params: Vec<(&str, String)> = vec![
             ("channel", channel_id.to_string()),
             ("limit", limit.to_string()),
@@ -189,7 +189,7 @@ impl SlackApiClient {
         &self,
         channel_id: &str,
         ts: &str,
-    ) -> anyhow::Result<Option<SlackMessage>> {
+    ) -> Result<Option<SlackMessage>, SlackError> {
         debug!(channel_id, ts, "slack: get single message");
         let params: Vec<(&str, String)> = vec![
             ("channel", channel_id.to_string()),
@@ -208,7 +208,7 @@ impl SlackApiClient {
         Ok(resp.messages.into_iter().next())
     }
 
-    pub async fn users_info(&self, user_id: &str) -> anyhow::Result<UserInfoResponse> {
+    pub async fn users_info(&self, user_id: &str) -> Result<UserInfoResponse, SlackError> {
         debug!(user_id, "slack: users.info");
         let params: Vec<(&str, String)> = vec![("user", user_id.to_string())];
         let result: UserInfoResponse = self
@@ -226,7 +226,7 @@ impl SlackApiClient {
         &self,
         cursor: Option<&str>,
         limit: u32,
-    ) -> anyhow::Result<UsersListResponse> {
+    ) -> Result<UsersListResponse, SlackError> {
         let mut params: Vec<(&str, String)> = vec![("limit", limit.to_string())];
         if let Some(c) = cursor {
             params.push(("cursor", c.to_string()));
@@ -239,7 +239,7 @@ impl SlackApiClient {
         .await
     }
 
-    pub async fn conversations_info(&self, channel: &str) -> anyhow::Result<SlackConversation> {
+    pub async fn conversations_info(&self, channel: &str) -> Result<SlackConversation, SlackError> {
         debug!(channel, "slack: conversations.info");
         let resp: ConversationInfoResponse = self
             .get_with_retry(
@@ -251,7 +251,7 @@ impl SlackApiClient {
         Ok(resp.channel)
     }
 
-    pub async fn conversations_mark(&self, channel: &str, ts: &str) -> anyhow::Result<()> {
+    pub async fn conversations_mark(&self, channel: &str, ts: &str) -> Result<(), SlackError> {
         debug!(channel, ts, "slack: conversations.mark");
         let body = serde_json::json!({
             "channel": channel,
@@ -271,7 +271,7 @@ impl SlackApiClient {
     pub async fn conversations_open(
         &self,
         users: &[&str],
-    ) -> anyhow::Result<ConversationsOpenResponse> {
+    ) -> Result<ConversationsOpenResponse, SlackError> {
         debug!(users = ?users, "slack: conversations.open");
         let body = serde_json::json!({
             "users": users.join(","),
@@ -292,7 +292,7 @@ impl SlackApiClient {
         channel: &str,
         text: &str,
         thread_ts: Option<&str>,
-    ) -> anyhow::Result<ChatPostMessageResponse> {
+    ) -> Result<ChatPostMessageResponse, SlackError> {
         debug!(channel, thread_ts, "slack: chat.postMessage");
         let mut body = serde_json::json!({
             "channel": channel,
@@ -317,7 +317,7 @@ impl SlackApiClient {
         channel: &str,
         ts: &str,
         text: &str,
-    ) -> anyhow::Result<ChatUpdateResponse> {
+    ) -> Result<ChatUpdateResponse, SlackError> {
         debug!(channel, ts, "slack: chat.update");
         let body = serde_json::json!({
             "channel": channel,
@@ -339,7 +339,7 @@ impl SlackApiClient {
     pub async fn connections_open(
         &self,
         app_token: &str,
-    ) -> anyhow::Result<ConnectionsOpenResponse> {
+    ) -> Result<ConnectionsOpenResponse, SlackError> {
         let resp = self
             .http
             .post(format!("{}/apps.connections.open", self.base_url))
@@ -349,9 +349,7 @@ impl SlackApiClient {
             .await?;
 
         let slack_resp: SlackResponse<ConnectionsOpenResponse> = resp.json().await?;
-        slack_resp
-            .into_result()
-            .context("apps.connections.open failed")
+        slack_resp.into_result()
     }
 
     pub async fn chat_schedule_message(
@@ -437,10 +435,8 @@ impl SlackApiClient {
             .post(url)
             .multipart(form)
             .send()
-            .await
-            .context("failed to upload file to URL")?;
-        resp.error_for_status()
-            .context("file upload returned error status")?;
+            .await?;
+        resp.error_for_status()?;
         Ok(())
     }
 
@@ -491,14 +487,16 @@ struct SlackResponse<T> {
 }
 
 impl<T> SlackResponse<T> {
-    fn into_result(self) -> anyhow::Result<T> {
+    fn into_result(self) -> Result<T, SlackError> {
         if self.ok {
-            self.data
-                .ok_or_else(|| anyhow::anyhow!("Slack returned ok=true but no data"))
+            self.data.ok_or_else(|| {
+                error!("slack: ok=true but no data");
+                SlackError::Api("Slack returned ok=true but no data".into())
+            })
         } else {
             let err = self.error.unwrap_or_else(|| "unknown".into());
             error!(error = %err, "slack: API error");
-            Err(anyhow::anyhow!("Slack API error: {}", err))
+            Err(SlackError::Api(format!("Slack API error: {err}")))
         }
     }
 }

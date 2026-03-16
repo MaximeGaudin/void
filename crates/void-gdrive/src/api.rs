@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Context;
+use crate::error::DriveError;
 use serde::Deserialize;
 use tracing::debug;
 
@@ -64,8 +64,8 @@ pub struct ParsedGoogleUrl {
 /// - `https://docs.google.com/drawings/d/{id}/...`
 /// - `https://drive.google.com/file/d/{id}/...`
 /// - `https://drive.google.com/open?id={id}`
-pub fn parse_google_url(url_str: &str) -> anyhow::Result<ParsedGoogleUrl> {
-    let url = url::Url::parse(url_str).context("invalid URL")?;
+pub fn parse_google_url(url_str: &str) -> Result<ParsedGoogleUrl, DriveError> {
+    let url = url::Url::parse(url_str).map_err(|e| DriveError::UrlParse(e.to_string()))?;
 
     let host = url.host_str().unwrap_or("");
     let path_segments: Vec<&str> = url.path_segments().map_or(vec![], |s| s.collect());
@@ -77,7 +77,7 @@ pub fn parse_google_url(url_str: &str) -> anyhow::Result<ParsedGoogleUrl> {
                 Some("spreadsheets") => GoogleFileKind::Spreadsheet,
                 Some("presentation") => GoogleFileKind::Presentation,
                 Some("drawings") => GoogleFileKind::Drawing,
-                _ => anyhow::bail!("unrecognized docs.google.com path: {}", url.path()),
+                _ => return Err(DriveError::UrlParse(format!("unrecognized docs.google.com path: {}", url.path()))),
             };
             // Pattern: /{type}/d/{file_id}/...
             if path_segments.get(1).copied() == Some("d") {
@@ -90,7 +90,7 @@ pub fn parse_google_url(url_str: &str) -> anyhow::Result<ParsedGoogleUrl> {
                     }
                 }
             }
-            anyhow::bail!("could not extract file ID from: {url_str}")
+            Err(DriveError::UrlParse(format!("could not extract file ID from: {url_str}")))
         }
         "drive.google.com" => {
             // Pattern: /file/d/{file_id}/...
@@ -115,9 +115,9 @@ pub fn parse_google_url(url_str: &str) -> anyhow::Result<ParsedGoogleUrl> {
                     });
                 }
             }
-            anyhow::bail!("could not extract file ID from: {url_str}")
+            Err(DriveError::UrlParse(format!("could not extract file ID from: {url_str}")))
         }
-        _ => anyhow::bail!("not a recognized Google URL (host: {host})"),
+        _ => Err(DriveError::UrlParse(format!("not a recognized Google URL (host: {host})"))),
     }
 }
 
@@ -248,7 +248,7 @@ impl DriveApiClient {
         let meta: FileMetadata = resp
             .json()
             .await
-            .context("gdrive: failed to parse file metadata")?;
+            ?;
         debug!(file_id, name = %meta.name, mime = %meta.mime_type, "gdrive: metadata ok");
         Ok(meta)
     }
@@ -337,7 +337,7 @@ impl DriveApiClient {
     pub fn save_to_disk(
         result: &DownloadResult,
         output: Option<&Path>,
-    ) -> anyhow::Result<std::path::PathBuf> {
+    ) -> Result<std::path::PathBuf, DriveError> {
         let dest = if let Some(path) = output {
             path.to_path_buf()
         } else {
@@ -369,7 +369,7 @@ fn urlencoded(s: &str) -> String {
 
 /// Check HTTP response status, extracting the Google API error message on failure.
 /// Produces actionable hints for common errors (missing scopes, Drive API not enabled).
-async fn check_response(resp: reqwest::Response) -> anyhow::Result<reqwest::Response> {
+async fn check_response(resp: reqwest::Response) -> Result<reqwest::Response, DriveError> {
     if resp.status().is_success() {
         return Ok(resp);
     }
@@ -388,23 +388,25 @@ async fn check_response(resp: reqwest::Response) -> anyhow::Result<reqwest::Resp
     if status == reqwest::StatusCode::FORBIDDEN
         && lower.contains("insufficient authentication scopes")
     {
-        anyhow::bail!(
-            "your current token does not include Google Drive scopes.\n\
+        return Err(DriveError::Auth(
+            "your current token does not include Google Drive scopes. \
              Run `void drive auth` to authorize Drive access."
-        )
+                .into(),
+        ));
     }
     if (status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND)
         && lower.contains("drive api")
         && lower.contains("not been used")
     {
-        anyhow::bail!(
-            "the Google Drive API is not enabled for your Cloud project.\n\
-             Enable it at: https://console.cloud.google.com/apis/library/drive.googleapis.com\n\
+        return Err(DriveError::Auth(
+            "the Google Drive API is not enabled for your Cloud project. \
+             Enable it at: https://console.cloud.google.com/apis/library/drive.googleapis.com \
              Then run `void drive auth`."
-        )
+                .into(),
+        ));
     }
 
-    anyhow::bail!("Google API error ({status}): {detail}")
+    Err(DriveError::Api(format!("Google API error ({status}): {detail}")))
 }
 
 /// Token path dedicated to Drive (avoids overwriting Gmail/Calendar tokens).
@@ -418,7 +420,7 @@ pub async fn build_drive_client(
     store_path: &Path,
     account_id: &str,
     credentials_file: Option<&str>,
-) -> anyhow::Result<DriveApiClient> {
+) -> Result<DriveApiClient, DriveError> {
     let drive_path = drive_token_cache_path(store_path, account_id);
     let gmail_path = void_gmail::auth::token_cache_path(store_path, account_id);
 
@@ -427,13 +429,14 @@ pub async fn build_drive_client(
     } else if gmail_path.exists() {
         gmail_path
     } else {
-        anyhow::bail!(
+        return Err(DriveError::Auth(format!(
             "no Google token found for \"{account_id}\". \
              Run `void drive auth --account {account_id}` first."
-        );
+        )));
     };
 
-    let mut cache = void_gmail::auth::TokenCache::load(&token_path)?;
+    let mut cache = void_gmail::auth::TokenCache::load(&token_path)
+        .map_err(|e| DriveError::Auth(e.to_string()))?;
 
     let is_expired = cache
         .expires_at
@@ -443,12 +446,17 @@ pub async fn build_drive_client(
     if is_expired {
         debug!(account_id, "refreshing Drive access token");
         if let Some(ref refresh_token) = cache.refresh_token {
-            let creds = void_gmail::auth::load_client_credentials(credentials_file)?;
+            let creds =
+                void_gmail::auth::load_client_credentials(credentials_file).map_err(|e| DriveError::Auth(e.to_string()))?;
             let http = reqwest::Client::new();
-            cache = void_gmail::auth::refresh_access_token(&http, &creds, refresh_token).await?;
-            cache.save(&token_path)?;
+            cache = void_gmail::auth::refresh_access_token(&http, &creds, refresh_token)
+                .await
+                .map_err(|e| DriveError::Auth(e.to_string()))?;
+            cache.save(&token_path).map_err(|e| DriveError::Auth(e.to_string()))?;
         } else {
-            anyhow::bail!("token expired and no refresh token. Run `void drive auth`");
+            return Err(DriveError::Auth(
+                "token expired and no refresh token. Run `void drive auth`".into(),
+            ));
         }
     }
 
@@ -461,11 +469,14 @@ pub async fn authenticate_drive(
     store_path: &Path,
     account_id: &str,
     credentials_file: Option<&str>,
-) -> anyhow::Result<()> {
-    let creds = void_gmail::auth::load_client_credentials(credentials_file)?;
+) -> Result<(), DriveError> {
+    let creds =
+        void_gmail::auth::load_client_credentials(credentials_file).map_err(|e| DriveError::Auth(e.to_string()))?;
     let token_path = drive_token_cache_path(store_path, account_id);
-    let cache = void_gmail::auth::authorize_interactive(&creds, Some(DRIVE_SCOPES)).await?;
-    cache.save(&token_path)?;
+    let cache = void_gmail::auth::authorize_interactive(&creds, Some(DRIVE_SCOPES))
+        .await
+        .map_err(|e| DriveError::Auth(e.to_string()))?;
+    cache.save(&token_path).map_err(|e| DriveError::Auth(e.to_string()))?;
     Ok(())
 }
 

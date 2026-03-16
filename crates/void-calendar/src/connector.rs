@@ -186,7 +186,7 @@ impl CalendarConnector {
                         info!(calendar = %cal_id, "syncToken invalidated, re-syncing");
                         self.initial_sync(db).await?;
                     } else {
-                        return Err(e);
+                        return Err(e.into());
                     }
                 }
             }
@@ -351,7 +351,9 @@ impl CalendarConnector {
             .map(|s| s.as_str())
             .unwrap_or("primary");
         info!(account_id = %self.account_id, event_id, "deleting Calendar event");
-        api.delete_event(cal_id, event_id, send_updates).await
+        api.delete_event(cal_id, event_id, send_updates)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn respond_to_event(
@@ -472,7 +474,9 @@ impl CalendarConnector {
         emails: &[String],
     ) -> anyhow::Result<crate::api::FreeBusyResponse> {
         let api = self.get_client().await?;
-        api.freebusy(time_min, time_max, emails).await
+        api.freebusy(time_min, time_max, emails)
+            .await
+            .map_err(Into::into)
     }
 }
 
@@ -765,7 +769,7 @@ mod tests {
                         )
                         .await?;
                     } else {
-                        return Err(e);
+                        return Err(e.into());
                     }
                 }
             }
