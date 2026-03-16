@@ -2,6 +2,7 @@ use clap::Args;
 use tracing::{debug, info};
 
 use void_core::config::{self, AccountType, VoidConfig};
+use void_core::db::Database;
 use void_core::models::MessageContent;
 
 use crate::commands::connector_factory;
@@ -63,6 +64,8 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
     let conn = connector_factory::build_connector(account, &store_path)?;
     debug!("connector built");
 
+    let to = resolve_target(&args.to, &target_type, &cfg)?;
+
     let content = if let Some(ref path) = args.file {
         MessageContent::File {
             path: path.into(),
@@ -73,7 +76,7 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         MessageContent::Text(args.message.clone())
     };
 
-    let msg_id = conn.send_message(&args.to, content).await?;
+    let msg_id = conn.send_message(&to, content).await?;
     eprintln!("Message sent (id: {msg_id})");
     Ok(())
 }
@@ -124,4 +127,22 @@ async fn run_slack_scheduled_send(
 
     eprintln!("Message scheduled for {dt} (id: {scheduled_id})");
     Ok(())
+}
+
+/// Resolve `#channel-name` to a channel ID using the local database.
+/// Returns the original value if not a `#name` target or not found (the
+/// connector will handle the final resolution via the Slack API).
+fn resolve_target(to: &str, connector_type: &str, cfg: &VoidConfig) -> anyhow::Result<String> {
+    if !to.starts_with('#') {
+        return Ok(to.to_string());
+    }
+    let name = &to[1..];
+    let db = Database::open(&cfg.db_path())?;
+    if let Some(conv) = db.find_conversation_by_name(name, connector_type)? {
+        debug!(name, external_id = %conv.external_id, "resolved channel name to ID from DB");
+        Ok(conv.external_id)
+    } else {
+        debug!(name, "channel not in local DB, passing through for API resolution");
+        Ok(to.to_string())
+    }
 }

@@ -83,6 +83,8 @@ impl SlackConnector {
             self.open_conversation(&users).await
         } else if to.starts_with('U') || to.starts_with('W') {
             self.open_conversation(&[to]).await
+        } else if to.starts_with('#') {
+            self.api.resolve_channel_id_by_name(&to[1..]).await
         } else {
             Ok(to.to_string())
         }

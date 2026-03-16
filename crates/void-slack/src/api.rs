@@ -243,6 +243,28 @@ impl SlackApiClient {
         .await
     }
 
+    /// Resolve a channel name (without `#`) to its ID via `conversations.list` pagination.
+    pub async fn resolve_channel_id_by_name(&self, name: &str) -> anyhow::Result<String> {
+        let mut cursor: Option<String> = None;
+        loop {
+            let resp = self
+                .conversations_list(cursor.as_deref(), 1000)
+                .await
+                .map_err(|e| anyhow::anyhow!("conversations.list failed: {e}"))?;
+            if let Some(ch) = resp.channels.iter().find(|c| c.name.as_deref() == Some(name)) {
+                return Ok(ch.id.clone());
+            }
+            match resp
+                .response_metadata
+                .and_then(|m| m.next_cursor)
+                .filter(|c| !c.is_empty())
+            {
+                Some(next) => cursor = Some(next),
+                None => anyhow::bail!("channel #{name} not found"),
+            }
+        }
+    }
+
     pub async fn conversations_info(&self, channel: &str) -> Result<SlackConversation, SlackError> {
         debug!(channel, "slack: conversations.info");
         let resp: ConversationInfoResponse = self

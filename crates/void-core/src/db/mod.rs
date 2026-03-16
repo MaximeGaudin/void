@@ -193,6 +193,22 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn find_conversation_by_name(
+        &self,
+        name: &str,
+        connector: &str,
+    ) -> Result<Option<Conversation>, DbError> {
+        self.conn()?
+            .query_row(
+                "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+                 FROM conversations WHERE name = ?1 AND connector = ?2 LIMIT 1",
+                params![name, connector],
+                row::row_to_conversation,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>, DbError> {
         self.conn()?
             .query_row(
