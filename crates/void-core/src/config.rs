@@ -96,12 +96,8 @@ impl<'de> Deserialize<'de> for AccountConfig {
             },
             AccountType::WhatsApp => AccountSettings::WhatsApp {},
             AccountType::Telegram => AccountSettings::Telegram {
-                api_id: raw
-                    .api_id
-                    .ok_or_else(|| serde::de::Error::missing_field("api_id"))?,
-                api_hash: raw
-                    .api_hash
-                    .ok_or_else(|| serde::de::Error::missing_field("api_hash"))?,
+                api_id: raw.api_id,
+                api_hash: raw.api_hash,
             },
         };
         Ok(AccountConfig {
@@ -176,8 +172,10 @@ pub enum AccountSettings {
     },
     WhatsApp {},
     Telegram {
-        api_id: i32,
-        api_hash: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        api_id: Option<i32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        api_hash: Option<String>,
     },
 }
 
@@ -267,8 +265,9 @@ calendar_poll_interval_secs = 60
 # [[accounts]]
 # id = "telegram"
 # type = "telegram"
-# api_id = 12345
-# api_hash = "0123456789abcdef0123456789abcdef"
+# # Optional: override built-in API credentials
+# # api_id = 12345
+# # api_hash = "0123456789abcdef0123456789abcdef"
 "#
     .to_string()
 }

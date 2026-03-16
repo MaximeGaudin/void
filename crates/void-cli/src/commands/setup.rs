@@ -398,8 +398,15 @@ fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                 }
                 config::AccountSettings::WhatsApp {} => {}
                 config::AccountSettings::Telegram { api_id, api_hash } => {
-                    eprintln!("    api_id:   {api_id}");
-                    eprintln!("    api_hash: {}", config::redact_token(api_hash));
+                    if let Some(id) = api_id {
+                        eprintln!("    api_id:   {id}");
+                    }
+                    if let Some(hash) = api_hash {
+                        eprintln!("    api_hash: {}", config::redact_token(hash));
+                    }
+                    if api_id.is_none() && api_hash.is_none() {
+                        eprintln!("    (using built-in API credentials)");
+                    }
                 }
             }
         }
@@ -824,8 +831,8 @@ async fn setup_telegram(
 ) -> anyhow::Result<()> {
     eprintln!("✈️  TELEGRAM");
     eprintln!();
-    eprintln!("Connects your Telegram account using the MTProto API.");
-    eprintln!("You need an API ID and API hash from https://my.telegram.org");
+    eprintln!("Connects your Telegram account via QR code (like WhatsApp).");
+    eprintln!("No credentials or API keys needed.");
 
     if !add_only {
         let existing: Vec<usize> = cfg
@@ -847,48 +854,34 @@ async fn setup_telegram(
         }
     }
 
-    eprintln!();
-    eprintln!("To get your API credentials:");
-    eprintln!("  1. Go to https://my.telegram.org");
-    eprintln!("  2. Log in with your phone number");
-    eprintln!("  3. Go to \"API development tools\"");
-    eprintln!("  4. Create an application (if you haven't already)");
-    eprintln!("  5. Copy the api_id (integer) and api_hash (hex string)");
-    eprintln!();
-
-    let api_id_str = prompt("API ID (integer): ");
-    if api_id_str.is_empty() {
-        eprintln!("  Skipped (no API ID provided).");
-        return Ok(());
-    }
-    let api_id: i32 = api_id_str
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid API ID: must be an integer"))?;
-
-    let api_hash = prompt("API hash (hex string): ");
-    if api_hash.is_empty() {
-        eprintln!("  Skipped (no API hash provided).");
-        return Ok(());
-    }
-
-    let account_id = prompt_default("Account name", "telegram");
+    let account_id = prompt_default("\nAccount name", "telegram");
 
     let account = AccountConfig {
         id: account_id.clone(),
         account_type: AccountType::Telegram,
-        settings: AccountSettings::Telegram { api_id, api_hash },
+        settings: AccountSettings::Telegram {
+            api_id: None,
+            api_hash: None,
+        },
     };
 
-    if confirm_default_yes("Authenticate now? (will ask for phone number and code)") {
+    eprintln!();
+    eprintln!("Telegram authentication requires scanning a QR code.");
+    eprintln!("When you proceed, a QR code will appear in this terminal.");
+    eprintln!("Open Telegram on your phone > Settings > Devices > Link Desktop Device,");
+    eprintln!("then scan the code.");
+    eprintln!();
+
+    if confirm_default_yes("Pair now?") {
         match authenticate_account(&account, store_path).await {
-            Ok(()) => eprintln!("  ✓ Telegram authenticated successfully."),
+            Ok(()) => eprintln!("  ✓ Telegram paired successfully."),
             Err(e) => {
-                eprintln!("  ✗ Authentication failed: {e}");
+                eprintln!("  ✗ Pairing failed: {e}");
                 eprintln!("    You can retry later with: void setup");
             }
         }
     } else {
-        eprintln!("  You can authenticate later with: void setup");
+        eprintln!("  You can pair later with: void setup");
     }
 
     cfg.accounts.push(account);

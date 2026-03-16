@@ -3,22 +3,27 @@ mod media;
 mod send;
 mod sync;
 
-use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use grammers_client::client::{Client, SignInError};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use grammers_client::client::Client;
 use grammers_client::message::Message as TgMessage;
 use grammers_mtsender::SenderPool;
 use grammers_session::storages::SqliteSession;
+use grammers_tl_types as tl;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::{ConnectorType, HealthStatus, MessageContent};
 
 use crate::error::TelegramError;
+
+const DEFAULT_API_ID: i32 = 2040;
+const DEFAULT_API_HASH: &str = "b18441a1ff607e10a989891a5462e627";
 
 pub struct TelegramConnector {
     config_id: String,
@@ -28,12 +33,17 @@ pub struct TelegramConnector {
 }
 
 impl TelegramConnector {
-    pub fn new(account_id: &str, session_path: &str, api_id: i32, api_hash: &str) -> Self {
+    pub fn new(
+        account_id: &str,
+        session_path: &str,
+        api_id: Option<i32>,
+        api_hash: Option<&str>,
+    ) -> Self {
         Self {
             config_id: account_id.to_string(),
             session_path: session_path.to_string(),
-            api_id,
-            api_hash: api_hash.to_string(),
+            api_id: api_id.unwrap_or(DEFAULT_API_ID),
+            api_hash: api_hash.unwrap_or(DEFAULT_API_HASH).to_string(),
         }
     }
 
@@ -118,49 +128,15 @@ impl Connector for TelegramConnector {
             return Ok(());
         }
 
-        eprintln!("Enter your phone number (international format, e.g. +1234567890):");
-        let phone = read_line()?;
+        eprintln!("Scan this QR code with Telegram on your phone:");
+        eprintln!("  Open Telegram > Settings > Devices > Link Desktop Device\n");
 
-        let token = client.request_login_code(&phone, &self.api_hash).await?;
-
-        eprintln!("A login code has been sent to your Telegram app.");
-        eprintln!("Enter the code:");
-        let code = read_line()?;
-
-        match client.sign_in(&token, &code).await {
-            Ok(user) => {
-                let name = user
-                    .first_name()
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "Unknown".to_string());
-                info!(user = %name, "telegram sign-in successful");
-                eprintln!("Signed in as {name}");
-            }
-            Err(SignInError::PasswordRequired(password_token)) => {
-                let hint = password_token.hint().unwrap_or("no hint").to_string();
-                eprintln!("Two-factor authentication is enabled (hint: {hint}).");
-                eprintln!("Enter your password:");
-                let password = read_line()?;
-
-                let user = client
-                    .check_password(password_token, password.as_bytes())
-                    .await
-                    .map_err(|e| anyhow::anyhow!("2FA check failed: {e}"))?;
-                let name = user
-                    .first_name()
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "Unknown".to_string());
-                info!(user = %name, "telegram 2FA sign-in successful");
-                eprintln!("Signed in as {name}");
-            }
-            Err(e) => {
-                anyhow::bail!("sign-in failed: {e}");
-            }
-        }
+        let result = qr_login_loop(&client, &self.api_hash, self.api_id).await;
 
         client.disconnect();
         runner.abort();
-        Ok(())
+
+        result
     }
 
     async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
@@ -422,9 +398,69 @@ impl Connector for TelegramConnector {
     }
 }
 
-fn read_line() -> anyhow::Result<String> {
-    io::stderr().flush().ok();
-    let mut line = String::new();
-    io::stdin().lock().read_line(&mut line)?;
-    Ok(line.trim().to_string())
+async fn qr_login_loop(client: &Client, api_hash: &str, api_id: i32) -> anyhow::Result<()> {
+    loop {
+        let export = tl::functions::auth::ExportLoginToken {
+            api_id,
+            api_hash: api_hash.to_string(),
+            except_ids: vec![],
+        };
+
+        let response = client.invoke(&export).await?;
+
+        match response {
+            tl::enums::auth::LoginToken::Token(token) => {
+                let encoded = URL_SAFE_NO_PAD.encode(&token.token);
+                let url = format!("tg://login?token={encoded}");
+                render_qr(&url);
+
+                let wait_secs = (token.expires as i64)
+                    - std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                let wait = std::cmp::max(wait_secs, 1).min(30) as u64;
+                debug!(expires_in = wait, "waiting for QR code scan");
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+            }
+            tl::enums::auth::LoginToken::MigrateTo(migrate) => {
+                let import = tl::functions::auth::ImportLoginToken {
+                    token: migrate.token,
+                };
+                let imported = client.invoke_in_dc(migrate.dc_id, &import).await?;
+
+                if let tl::enums::auth::LoginToken::Success(success) = imported {
+                    log_auth_success(&success);
+                    return Ok(());
+                }
+                anyhow::bail!("unexpected response after DC migration");
+            }
+            tl::enums::auth::LoginToken::Success(success) => {
+                log_auth_success(&success);
+                return Ok(());
+            }
+        }
+    }
+}
+
+fn log_auth_success(success: &tl::types::auth::LoginTokenSuccess) {
+    match &success.authorization {
+        tl::enums::auth::Authorization::Authorization(auth) => {
+            if let tl::enums::User::User(user) = &auth.user {
+                let name = user.first_name.as_deref().unwrap_or("Unknown");
+                info!(user = %name, "telegram QR sign-in successful");
+                eprintln!("\nSigned in as {name}");
+            }
+        }
+        tl::enums::auth::Authorization::SignUpRequired(_) => {
+            warn!("QR login returned sign-up required (unexpected)");
+        }
+    }
+}
+
+fn render_qr(url: &str) {
+    if let Err(e) = qr2term::print_qr(url) {
+        eprintln!("Could not render QR code: {e}");
+        eprintln!("Open this URL in a QR reader: {url}");
+    }
 }

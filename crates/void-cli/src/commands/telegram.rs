@@ -114,6 +114,6 @@ fn build_tg_connector(
         &account.id,
         session_path.to_str().unwrap_or(""),
         api_id,
-        &api_hash,
+        api_hash.as_deref(),
     ))
 }

@@ -193,8 +193,6 @@ user_token = "xoxp-..."
 [[accounts]]
 id = "telegram"
 type = "telegram"
-api_id = 12345
-api_hash = "0123456789abcdef0123456789abcdef"
 
 [[accounts]]
 id = "mgaudin@gladia.io"
@@ -216,10 +214,7 @@ No external credentials needed. Run `void setup`, select WhatsApp, and scan the 
 
 ### Telegram
 
-1. Go to [my.telegram.org](https://my.telegram.org) and log in with your phone number
-2. Navigate to "API development tools" and create an application
-3. Run `void setup`, select Telegram, and enter your `api_id` and `api_hash`
-4. Follow the prompts to enter your phone number and login code
+No external credentials needed. Run `void setup`, select Telegram, and scan the QR code with your phone (Telegram > Settings > Devices > Link Desktop Device).
 
 ### Slack
 

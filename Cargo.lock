@@ -4600,10 +4600,13 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "chrono",
  "grammers-client",
  "grammers-mtsender",
  "grammers-session",
+ "grammers-tl-types",
+ "qr2term",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
