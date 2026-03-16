@@ -587,6 +587,53 @@ impl Connector for GmailConnector {
         debug!(reply_id = %reply_id, "Gmail reply sent");
         Ok(reply_id)
     }
+
+    async fn forward(
+        &self,
+        external_id: &str,
+        _conversation_external_id: &str,
+        to: &str,
+        comment: Option<&str>,
+    ) -> anyhow::Result<String> {
+        info!(message_id = %external_id, to = %to, "forwarding Gmail message");
+
+        let api = self.get_client().await?;
+        let orig = api.get_message(external_id).await?;
+
+        let orig_from = orig.get_header("From").unwrap_or_else(|| "unknown".into());
+        let orig_to = orig.get_header("To").unwrap_or_default();
+        let orig_date = orig.get_header("Date").unwrap_or_default();
+        let orig_subject = orig.get_header("Subject").unwrap_or_else(|| "(no subject)".into());
+
+        let subject = if orig_subject.starts_with("Fwd:") || orig_subject.starts_with("Fw:") {
+            orig_subject.clone()
+        } else {
+            format!("Fwd: {orig_subject}")
+        };
+
+        let orig_body = orig.text_body().unwrap_or_default();
+
+        let mut body = String::new();
+        if let Some(c) = comment {
+            body.push_str(c);
+            body.push_str("\r\n\r\n");
+        }
+        body.push_str("---------- Forwarded message ---------\r\n");
+        body.push_str(&format!("From: {orig_from}\r\n"));
+        body.push_str(&format!("Date: {orig_date}\r\n"));
+        body.push_str(&format!("Subject: {orig_subject}\r\n"));
+        body.push_str(&format!("To: {orig_to}\r\n"));
+        body.push_str("\r\n");
+        body.push_str(&orig_body);
+
+        let raw = compose_rfc2822(to, &subject, &body);
+        let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
+
+        let resp = api.send_message(&encoded).await?;
+        let fwd_id = resp.id.clone().unwrap_or_default();
+        debug!(fwd_id = %fwd_id, "Gmail message forwarded");
+        Ok(fwd_id)
+    }
 }
 
 fn compose_rfc2822(to: &str, subject: &str, body: &str) -> String {

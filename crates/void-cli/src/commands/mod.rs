@@ -4,6 +4,7 @@ pub mod calendar;
 pub mod channels;
 pub mod connector_factory;
 pub mod contacts;
+pub mod forward;
 pub mod doctor;
 pub mod gdrive;
 pub mod gmail;

@@ -53,4 +53,21 @@ pub trait Connector: Send + Sync {
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
+    /// Forward a message to another recipient.
+    /// `external_id` is the platform-specific message identifier.
+    /// `conversation_external_id` is the platform-specific conversation/channel ID.
+    /// `to` is the recipient (email address, channel ID, etc.).
+    async fn forward(
+        &self,
+        _external_id: &str,
+        _conversation_external_id: &str,
+        _to: &str,
+        _comment: Option<&str>,
+    ) -> anyhow::Result<String> {
+        anyhow::bail!(
+            "Forward is not supported for {}",
+            self.connector_type()
+        )
+    }
 }

@@ -185,6 +185,29 @@ impl SlackApiClient {
         .await
     }
 
+    pub async fn get_single_message(
+        &self,
+        channel_id: &str,
+        ts: &str,
+    ) -> anyhow::Result<Option<SlackMessage>> {
+        debug!(channel_id, ts, "slack: get single message");
+        let params: Vec<(&str, String)> = vec![
+            ("channel", channel_id.to_string()),
+            ("latest", ts.to_string()),
+            ("oldest", ts.to_string()),
+            ("inclusive", "true".to_string()),
+            ("limit", "1".to_string()),
+        ];
+        let resp: ConversationsHistoryResponse = self
+            .get_with_retry(
+                &format!("{}/conversations.history", self.base_url),
+                &params,
+                "conversations.history (single)",
+            )
+            .await?;
+        Ok(resp.messages.into_iter().next())
+    }
+
     pub async fn users_info(&self, user_id: &str) -> anyhow::Result<UserInfoResponse> {
         debug!(user_id, "slack: users.info");
         let params: Vec<(&str, String)> = vec![("user", user_id.to_string())];

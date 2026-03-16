@@ -51,6 +51,8 @@ enum Command {
     Send(commands::send::SendArgs),
     /// Reply to a message
     Reply(commands::reply::ReplyArgs),
+    /// Forward a message to another recipient
+    Forward(commands::forward::ForwardArgs),
     /// Archive one or more messages (e.g., remove from Gmail inbox)
     Archive(commands::archive::ArchiveArgs),
     /// Mute or unmute conversations/channels (hides from inbox)
@@ -111,6 +113,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Search(args)) => commands::search::run(args, !cli.pretty, !cli.no_context),
         Some(Command::Send(args)) => commands::send::run(args).await,
         Some(Command::Reply(args)) => commands::reply::run(args).await,
+        Some(Command::Forward(args)) => commands::forward::run(args).await,
         Some(Command::Archive(args)) => commands::archive::run(args, !cli.pretty).await,
         Some(Command::Mute(args)) => commands::mute::run(args, !cli.pretty),
         Some(Command::Gmail(args)) => commands::gmail::run(args, !cli.pretty).await,

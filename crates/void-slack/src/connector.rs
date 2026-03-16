@@ -693,6 +693,64 @@ impl Connector for SlackConnector {
             }
         }
     }
+
+    async fn forward(
+        &self,
+        external_id: &str,
+        conversation_external_id: &str,
+        to: &str,
+        comment: Option<&str>,
+    ) -> anyhow::Result<String> {
+        info!(
+            account_id = %self.account_id,
+            message_ts = %external_id,
+            channel = %conversation_external_id,
+            to = %to,
+            "forwarding Slack message"
+        );
+
+        let orig = self
+            .api
+            .get_single_message(conversation_external_id, external_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Original message not found (ts={external_id})"))?;
+
+        let sender_name = if let Some(ref user_id) = orig.user {
+            self.api
+                .users_info(user_id)
+                .await
+                .ok()
+                .and_then(|r| r.user)
+                .map(|u| u.real_name.unwrap_or(u.name))
+                .unwrap_or_else(|| user_id.clone())
+        } else {
+            "someone".into()
+        };
+
+        let orig_text = orig.text.as_deref().unwrap_or("");
+
+        let mut forwarded = String::new();
+        if let Some(c) = comment {
+            forwarded.push_str(c);
+            forwarded.push_str("\n\n");
+        }
+        forwarded.push_str(&format!("_Forwarded from {sender_name}:_\n"));
+        for line in orig_text.lines() {
+            forwarded.push_str(&format!("> {line}\n"));
+        }
+
+        let target = if to.contains(',') {
+            let users: Vec<&str> = to.split(',').map(|s| s.trim()).collect();
+            self.open_conversation(&users).await?
+        } else {
+            to.to_string()
+        };
+
+        let resp = self.api.chat_post_message(&target, &forwarded, None).await?;
+        let ts = resp.ts.unwrap_or_default();
+        debug!(account_id = %self.account_id, ts = %ts, "Slack message forwarded");
+        Ok(ts)
+    }
 }
 
 fn map_conversation(
