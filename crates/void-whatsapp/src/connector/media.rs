@@ -3,15 +3,16 @@
 use anyhow::Context;
 use wa_rs::client::Client;
 use wa_rs::download::MediaType as WaMediaType;
-use wa_rs_proto::whatsapp::message::{
-    AudioMessage, DocumentMessage, ImageMessage, VideoMessage,
-};
+use wa_rs_proto::whatsapp::message::{AudioMessage, DocumentMessage, ImageMessage, VideoMessage};
 use wa_rs_proto::whatsapp::{ContextInfo, Message as WaMessage};
 
 use super::WhatsAppConnector;
 
 /// Maps MIME type and filename to wa_rs MediaType and default MIME string.
-pub(crate) fn determine_media_type(mime: Option<&str>, filename: &str) -> (WaMediaType, &'static str) {
+pub(crate) fn determine_media_type(
+    mime: Option<&str>,
+    filename: &str,
+) -> (WaMediaType, &'static str) {
     let ext = std::path::Path::new(filename)
         .extension()
         .and_then(|e| e.to_str())

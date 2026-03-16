@@ -144,7 +144,11 @@ impl Connector for SlackConnector {
         Ok(())
     }
 
-    async fn start_sync(&self, db: Arc<Database>, cancel: tokio_util::sync::CancellationToken) -> anyhow::Result<()> {
+    async fn start_sync(
+        &self,
+        db: Arc<Database>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
         let needs_backfill = db
             .get_sync_state(&self.account_id, "backfill_done")?
             .is_none();

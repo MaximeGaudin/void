@@ -42,8 +42,7 @@ impl GmailApiClient {
             .send()
             .await?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(email = ?resp.email_address, "gmail: got profile");
         Ok(resp)
     }
@@ -81,8 +80,7 @@ impl GmailApiClient {
             .send()
             .await?
             .json()
-            .await
-            ?;
+            .await?;
         let count = resp.messages.as_ref().map(|m| m.len()).unwrap_or(0);
         debug!(
             message_count = count,
@@ -105,8 +103,7 @@ impl GmailApiClient {
             .send()
             .await?
             .json()
-            .await
-            ?;
+            .await?;
         Ok(resp)
     }
 
@@ -123,8 +120,7 @@ impl GmailApiClient {
             .send()
             .await?
             .json()
-            .await
-            ?;
+            .await?;
         let count = resp.history.as_ref().map(|h| h.len()).unwrap_or(0);
         debug!(record_count = count, "gmail: listed history");
         Ok(resp)
@@ -157,8 +153,7 @@ impl GmailApiClient {
             .send()
             .await?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(message_id, "gmail: message modified");
         Ok(resp)
     }
@@ -174,8 +169,7 @@ impl GmailApiClient {
             .send()
             .await?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(message_id = ?resp.id, "gmail: sent message");
         Ok(resp)
     }
@@ -192,11 +186,9 @@ impl GmailApiClient {
             .query(&[("format", "full")])
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         let msg_count = resp.messages.as_ref().map(|m| m.len()).unwrap_or(0);
         debug!(thread_id, msg_count, "gmail: get_thread ok");
         Ok(resp)
@@ -217,11 +209,9 @@ impl GmailApiClient {
             .bearer_auth(&self.access_token)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(message_id, attachment_id, "gmail: get_attachment ok");
         Ok(resp)
     }
@@ -234,11 +224,9 @@ impl GmailApiClient {
             .bearer_auth(&self.access_token)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         let count = resp.labels.as_ref().map(|l| l.len()).unwrap_or(0);
         debug!(count, "gmail: list_labels ok");
         Ok(resp)
@@ -270,11 +258,9 @@ impl GmailApiClient {
             .json(&body)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(thread_id, "gmail: modify_thread ok");
         Ok(resp)
     }
@@ -305,8 +291,7 @@ impl GmailApiClient {
             .json(&body)
             .send()
             .await?
-            .error_for_status()
-            ?;
+            .error_for_status()?;
         debug!("gmail: batch_modify ok");
         Ok(())
     }
@@ -320,11 +305,9 @@ impl GmailApiClient {
             .query(&[("maxResults", max_results.to_string())])
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         let count = resp.drafts.as_ref().map(|d| d.len()).unwrap_or(0);
         debug!(count, "gmail: list_drafts ok");
         Ok(resp)
@@ -342,11 +325,9 @@ impl GmailApiClient {
             .query(&[("format", "full")])
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(draft_id, "gmail: get_draft ok");
         Ok(resp)
     }
@@ -369,11 +350,9 @@ impl GmailApiClient {
             .json(&body)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(draft_id = ?resp.id, "gmail: create_draft ok");
         Ok(resp)
     }
@@ -393,11 +372,9 @@ impl GmailApiClient {
             .json(&body)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(draft_id, "gmail: update_draft ok");
         Ok(resp)
     }
@@ -412,8 +389,7 @@ impl GmailApiClient {
             .bearer_auth(&self.access_token)
             .send()
             .await?
-            .error_for_status()
-            ?;
+            .error_for_status()?;
         debug!(draft_id, "gmail: delete_draft ok");
         Ok(())
     }

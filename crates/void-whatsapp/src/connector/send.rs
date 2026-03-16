@@ -29,9 +29,9 @@ pub(crate) fn build_wa_message(
                 })
             }
         }
-        MessageContent::File { .. } => {
-            Err(anyhow::Error::msg("Use upload_and_build_media_message for file content"))
-        }
+        MessageContent::File { .. } => Err(anyhow::Error::msg(
+            "Use upload_and_build_media_message for file content",
+        )),
     }
 }
 

@@ -98,8 +98,7 @@ impl CalendarApiClient {
             .query(&params)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
             .await
             .map_err(CalendarError::from)?;
@@ -172,8 +171,7 @@ impl CalendarApiClient {
             .bearer_auth(&self.access_token)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
             .await
             .map_err(CalendarError::from)?;
@@ -213,8 +211,7 @@ impl CalendarApiClient {
             .query(&params)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
             .await
             .map_err(CalendarError::from)?;
@@ -245,14 +242,7 @@ impl CalendarApiClient {
         if let Some(su) = send_updates {
             req = req.query(&[("sendUpdates", su)]);
         }
-        let resp: GoogleCalendarEvent = req
-            .send()
-            .await?
-            .error_for_status()
-            ?
-            .json()
-            .await
-            ?;
+        let resp: GoogleCalendarEvent = req.send().await?.error_for_status()?.json().await?;
         debug!(event_id, "calendar: update_event ok");
         Ok(resp)
     }
@@ -286,11 +276,9 @@ impl CalendarApiClient {
             .json(&body)
             .send()
             .await?
-            .error_for_status()
-            ?
+            .error_for_status()?
             .json()
-            .await
-            ?;
+            .await?;
         debug!(calendars = resp.calendars.len(), "calendar: freebusy ok");
         Ok(resp)
     }
@@ -312,10 +300,7 @@ impl CalendarApiClient {
         if let Some(su) = send_updates {
             req = req.query(&[("sendUpdates", su)]);
         }
-        req.send()
-            .await?
-            .error_for_status()
-            ?;
+        req.send().await?.error_for_status()?;
         debug!(event_id, "calendar: delete_event ok");
         Ok(())
     }

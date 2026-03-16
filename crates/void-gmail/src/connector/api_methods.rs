@@ -144,7 +144,9 @@ impl GmailConnector {
         headers.push_str(&format!("\r\n{body}"));
 
         let encoded = URL_SAFE_NO_PAD.encode(headers.as_bytes());
-        api.create_draft(&encoded, thread_id).await.map_err(Into::into)
+        api.create_draft(&encoded, thread_id)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn update_draft(
@@ -160,7 +162,9 @@ impl GmailConnector {
             "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
         );
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-        api.update_draft(draft_id, &encoded).await.map_err(Into::into)
+        api.update_draft(draft_id, &encoded)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn delete_draft(&self, draft_id: &str) -> anyhow::Result<()> {

@@ -35,8 +35,12 @@ pub struct InstalledCredentials {
 impl TokenCache {
     pub fn load(path: &Path) -> Result<Self, GmailError> {
         debug!(path = %path.display(), "loading token cache");
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| GmailError::Auth(format!("failed to read token cache at {}: {e}", path.display())))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            GmailError::Auth(format!(
+                "failed to read token cache at {}: {e}",
+                path.display()
+            ))
+        })?;
         serde_json::from_str(&content).map_err(|e| GmailError::Parse(e.to_string()))
     }
 
@@ -66,7 +70,10 @@ pub fn load_client_credentials(
             let expanded = void_core::config::expand_tilde(path);
             debug!(path = %expanded.display(), "loading client credentials from file");
             std::fs::read_to_string(&expanded).map_err(|e| {
-                GmailError::Auth(format!("failed to read credentials file at {}: {e}", expanded.display()))
+                GmailError::Auth(format!(
+                    "failed to read credentials file at {}: {e}",
+                    expanded.display()
+                ))
             })?
         }
         _ => {
@@ -91,7 +98,8 @@ pub async fn authorize_interactive(
     creds: &InstalledCredentials,
     custom_scopes: Option<&str>,
 ) -> Result<TokenCache, GmailError> {
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| GmailError::Auth(format!("failed to bind loopback port: {e}")))?;
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| GmailError::Auth(format!("failed to bind loopback port: {e}")))?;
     let port = listener.local_addr()?.port();
     info!(port, "starting OAuth flow");
     let redirect_uri = format!("http://127.0.0.1:{port}");
@@ -119,7 +127,9 @@ pub async fn authorize_interactive(
 
 /// Block until the OAuth redirect hits our local server, extract the `code` param.
 fn wait_for_auth_code(listener: &TcpListener) -> Result<String, GmailError> {
-    let (mut stream, _) = listener.accept().map_err(|e| GmailError::Auth(format!("failed to accept connection: {e}")))?;
+    let (mut stream, _) = listener
+        .accept()
+        .map_err(|e| GmailError::Auth(format!("failed to accept connection: {e}")))?;
     let mut reader = std::io::BufReader::new(&stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -137,7 +147,9 @@ fn wait_for_auth_code(listener: &TcpListener) -> Result<String, GmailError> {
                 .map(|(_, v)| v.to_string())
         })
         .ok_or_else(|| {
-            GmailError::Auth("no authorization code found in redirect (did you deny access?)".into())
+            GmailError::Auth(
+                "no authorization code found in redirect (did you deny access?)".into(),
+            )
         })?;
     debug!(code_len = code.len(), "authorization code extracted");
 

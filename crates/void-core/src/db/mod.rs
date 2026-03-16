@@ -209,7 +209,8 @@ impl Database {
 
     /// Returns `true` if a message with this (account_id, external_id) already exists.
     pub fn message_exists(&self, account_id: &str, external_id: &str) -> Result<bool, DbError> {
-        Ok(self.conn()?
+        Ok(self
+            .conn()?
             .query_row(
                 "SELECT 1 FROM messages WHERE account_id = ?1 AND external_id = ?2",
                 params![account_id, external_id],

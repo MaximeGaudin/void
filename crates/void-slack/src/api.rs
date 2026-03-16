@@ -430,12 +430,7 @@ impl SlackApiClient {
             .file_name(filename.to_string())
             .mime_str("application/octet-stream")?;
         let form = reqwest::multipart::Form::new().part("file", part);
-        let resp = self
-            .http
-            .post(url)
-            .multipart(form)
-            .send()
-            .await?;
+        let resp = self.http.post(url).multipart(form).send().await?;
         resp.error_for_status()?;
         Ok(())
     }

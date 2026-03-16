@@ -465,7 +465,10 @@ mod tests {
             media::determine_media_type(None, "photo.jpg").0,
             WaMediaType::Image
         );
-        assert_eq!(media::determine_media_type(None, "clip.mp4").0, WaMediaType::Video);
+        assert_eq!(
+            media::determine_media_type(None, "clip.mp4").0,
+            WaMediaType::Video
+        );
         assert_eq!(
             media::determine_media_type(None, "voice.ogg").0,
             WaMediaType::Audio
@@ -532,7 +535,10 @@ mod tests {
             })),
             ..Default::default()
         };
-        assert_eq!(extract::extract_text(&msg), Some("from other device".into()));
+        assert_eq!(
+            extract::extract_text(&msg),
+            Some("from other device".into())
+        );
     }
 
     #[test]
@@ -550,7 +556,10 @@ mod tests {
             })),
             ..Default::default()
         };
-        assert_eq!(extract::extract_text(&msg), Some("view once caption".into()));
+        assert_eq!(
+            extract::extract_text(&msg),
+            Some("view once caption".into())
+        );
     }
 
     #[test]
@@ -598,7 +607,10 @@ mod tests {
             sticker_message: Some(Box::new(StickerMessage::default())),
             ..Default::default()
         };
-        assert_eq!(extract::extract_text(&msg), Some("\u{1f5bc}\u{fe0f} Sticker".into()));
+        assert_eq!(
+            extract::extract_text(&msg),
+            Some("\u{1f5bc}\u{fe0f} Sticker".into())
+        );
     }
 
     #[test]
@@ -695,7 +707,10 @@ mod tests {
             })),
             ..Default::default()
         };
-        assert_eq!(extract::extract_text(&msg), Some("📊 Favorite color?".into()));
+        assert_eq!(
+            extract::extract_text(&msg),
+            Some("📊 Favorite color?".into())
+        );
         assert_eq!(extract::extract_media_type(&msg), Some("poll".into()));
     }
 
@@ -709,7 +724,10 @@ mod tests {
             })),
             ..Default::default()
         };
-        assert_eq!(extract::extract_text(&msg), Some("👥 Group invite: My Group".into()));
+        assert_eq!(
+            extract::extract_text(&msg),
+            Some("👥 Group invite: My Group".into())
+        );
         assert_eq!(extract::extract_media_type(&msg), Some("invite".into()));
     }
 
