@@ -459,3 +459,148 @@ fn read_user_input() -> Result<String> {
     }
     Ok(input.trim().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_kind_from_str_claude_code() {
+        assert_eq!(
+            "claude-code".parse::<ProviderKind>().unwrap(),
+            ProviderKind::ClaudeCode
+        );
+        assert_eq!(
+            "claudecode".parse::<ProviderKind>().unwrap(),
+            ProviderKind::ClaudeCode
+        );
+        assert_eq!(
+            "cc".parse::<ProviderKind>().unwrap(),
+            ProviderKind::ClaudeCode
+        );
+    }
+
+    #[test]
+    fn provider_kind_from_str_anthropic() {
+        assert_eq!(
+            "anthropic".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Anthropic
+        );
+        assert_eq!(
+            "claude".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Anthropic
+        );
+        assert_eq!(
+            "ANTHROPIC".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Anthropic
+        );
+    }
+
+    #[test]
+    fn provider_kind_from_str_openai() {
+        assert_eq!(
+            "openai".parse::<ProviderKind>().unwrap(),
+            ProviderKind::OpenAI
+        );
+        assert_eq!("gpt".parse::<ProviderKind>().unwrap(), ProviderKind::OpenAI);
+    }
+
+    #[test]
+    fn provider_kind_from_str_openrouter() {
+        assert_eq!(
+            "openrouter".parse::<ProviderKind>().unwrap(),
+            ProviderKind::OpenRouter
+        );
+        assert_eq!(
+            "or".parse::<ProviderKind>().unwrap(),
+            ProviderKind::OpenRouter
+        );
+    }
+
+    #[test]
+    fn provider_kind_from_str_invalid() {
+        assert!("unknown".parse::<ProviderKind>().is_err());
+        assert!("".parse::<ProviderKind>().is_err());
+    }
+
+    #[test]
+    fn provider_kind_display() {
+        assert_eq!(ProviderKind::ClaudeCode.to_string(), "claude-code");
+        assert_eq!(ProviderKind::Anthropic.to_string(), "anthropic");
+        assert_eq!(ProviderKind::OpenAI.to_string(), "openai");
+        assert_eq!(ProviderKind::OpenRouter.to_string(), "openrouter");
+    }
+
+    #[test]
+    fn default_model_per_provider() {
+        assert!(default_model(&ProviderKind::ClaudeCode).contains("claude"));
+        assert!(default_model(&ProviderKind::Anthropic).contains("claude"));
+        assert_eq!(default_model(&ProviderKind::OpenAI), "gpt-4o");
+        assert!(default_model(&ProviderKind::OpenRouter).contains("claude"));
+    }
+
+    #[test]
+    fn load_instructions_none() {
+        let config = AgentConfig {
+            provider: None,
+            model: None,
+            instructions_file: None,
+            inline_instructions: None,
+            verbose: false,
+            max_turns: None,
+            initial_prompt: None,
+        };
+        assert!(load_instructions(&config).unwrap().is_none());
+    }
+
+    #[test]
+    fn load_instructions_inline() {
+        let config = AgentConfig {
+            provider: None,
+            model: None,
+            instructions_file: None,
+            inline_instructions: Some("Be brief.".to_string()),
+            verbose: false,
+            max_turns: None,
+            initial_prompt: None,
+        };
+        assert_eq!(load_instructions(&config).unwrap().unwrap(), "Be brief.");
+    }
+
+    #[test]
+    fn load_instructions_from_file() {
+        let dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("instructions.txt");
+        std::fs::write(&path, "Custom instructions").unwrap();
+
+        let config = AgentConfig {
+            provider: None,
+            model: None,
+            instructions_file: Some(path.to_string_lossy().to_string()),
+            inline_instructions: None,
+            verbose: false,
+            max_turns: None,
+            initial_prompt: None,
+        };
+        assert_eq!(
+            load_instructions(&config).unwrap().unwrap(),
+            "Custom instructions"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_instructions_missing_file() {
+        let config = AgentConfig {
+            provider: None,
+            model: None,
+            instructions_file: Some("/nonexistent/path.txt".to_string()),
+            inline_instructions: None,
+            verbose: false,
+            max_turns: None,
+            initial_prompt: None,
+        };
+        assert!(load_instructions(&config).is_err());
+    }
+}

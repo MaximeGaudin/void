@@ -81,3 +81,28 @@ pub fn build_system_prompt(custom_instructions: Option<&str>) -> String {
         None => DEFAULT_SYSTEM_PROMPT.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_system_prompt_without_instructions() {
+        let result = build_system_prompt(None);
+        assert_eq!(result, DEFAULT_SYSTEM_PROMPT);
+    }
+
+    #[test]
+    fn build_system_prompt_with_instructions() {
+        let result = build_system_prompt(Some("Be extra concise."));
+        assert!(result.starts_with(DEFAULT_SYSTEM_PROMPT));
+        assert!(result.contains("## Additional Instructions"));
+        assert!(result.ends_with("Be extra concise."));
+    }
+
+    #[test]
+    fn build_system_prompt_with_empty_instructions() {
+        let result = build_system_prompt(Some(""));
+        assert!(result.contains("## Additional Instructions"));
+    }
+}

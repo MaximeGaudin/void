@@ -75,3 +75,57 @@ fn truncate(s: &str, max: usize) -> &str {
         &s[..max]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_command_preview_void_cli() {
+        let args = r#"{"command": "inbox --pretty"}"#;
+        let result = extract_command_preview("void_cli", args);
+        assert_eq!(result, "void inbox --pretty");
+    }
+
+    #[test]
+    fn extract_command_preview_shell() {
+        let args = r#"{"command": "date +%Y-%m-%d"}"#;
+        let result = extract_command_preview("shell", args);
+        assert_eq!(result, "$ date +%Y-%m-%d");
+    }
+
+    #[test]
+    fn extract_command_preview_unknown_tool() {
+        let args = r#"{"command": "test"}"#;
+        let result = extract_command_preview("custom_tool", args);
+        assert_eq!(result, "custom_tool: test");
+    }
+
+    #[test]
+    fn extract_command_preview_invalid_json() {
+        let result = extract_command_preview("void_cli", "not json");
+        assert_eq!(result, "void_cli(…)");
+    }
+
+    #[test]
+    fn extract_command_preview_missing_command_field() {
+        let args = r#"{"other": "value"}"#;
+        let result = extract_command_preview("void_cli", args);
+        assert_eq!(result, "void_cli(…)");
+    }
+
+    #[test]
+    fn truncate_short_string() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_exact_length() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_long_string() {
+        assert_eq!(truncate("hello world", 5), "hello");
+    }
+}
