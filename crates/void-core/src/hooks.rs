@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+
+use crate::error::HookError;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -125,16 +127,16 @@ pub fn load_hooks(dir: &Path) -> Vec<Hook> {
     hooks
 }
 
-pub fn save_hook(dir: &Path, hook: &Hook) -> anyhow::Result<()> {
+pub fn save_hook(dir: &Path, hook: &Hook) -> Result<(), HookError> {
     std::fs::create_dir_all(dir)?;
     let filename = format!("{}.toml", slugify(&hook.name));
     let path = dir.join(filename);
-    let content = toml::to_string_pretty(hook)?;
+    let content = toml::to_string_pretty(hook).map_err(|e| HookError::Other(e.to_string()))?;
     std::fs::write(&path, content)?;
     Ok(())
 }
 
-pub fn delete_hook(dir: &Path, name: &str) -> anyhow::Result<bool> {
+pub fn delete_hook(dir: &Path, name: &str) -> Result<bool, HookError> {
     let filename = format!("{}.toml", slugify(name));
     let path = dir.join(&filename);
     if path.exists() {
@@ -145,19 +147,22 @@ pub fn delete_hook(dir: &Path, name: &str) -> anyhow::Result<bool> {
     }
 }
 
-pub fn find_hook(dir: &Path, name: &str) -> Option<Hook> {
+pub fn find_hook(dir: &Path, name: &str) -> Result<Hook, HookError> {
     load_hooks(dir)
         .into_iter()
         .find(|h| slugify(&h.name) == slugify(name))
+        .ok_or_else(|| HookError::NotFound(name.to_string()))
 }
 
-pub fn update_hook_enabled(dir: &Path, name: &str, enabled: bool) -> anyhow::Result<bool> {
-    if let Some(mut hook) = find_hook(dir, name) {
-        hook.enabled = enabled;
-        save_hook(dir, &hook)?;
-        Ok(true)
-    } else {
-        Ok(false)
+pub fn update_hook_enabled(dir: &Path, name: &str, enabled: bool) -> Result<bool, HookError> {
+    match find_hook(dir, name) {
+        Ok(mut hook) => {
+            hook.enabled = enabled;
+            save_hook(dir, &hook)?;
+            Ok(true)
+        }
+        Err(HookError::NotFound(_)) => Ok(false),
+        Err(e) => Err(e),
     }
 }
 

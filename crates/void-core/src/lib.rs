@@ -1,6 +1,7 @@
 pub mod config;
 pub mod connector;
 pub mod db;
+pub mod error;
 pub mod hooks;
 pub mod models;
 pub mod progress;

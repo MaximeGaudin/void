@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use tracing::{debug, info};
 
+use crate::error::DbError;
 use crate::models::{CalendarEvent, Contact, Conversation, Message};
 
 pub use schema::SCHEMA_VERSION;
@@ -25,7 +26,7 @@ unsafe impl Send for Database {}
 unsafe impl Sync for Database {}
 
 impl Database {
-    pub fn open(path: &Path) -> anyhow::Result<Self> {
+    pub fn open(path: &Path) -> Result<Self, DbError> {
         info!(path = %path.display(), "opening database");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -50,7 +51,7 @@ impl Database {
         }
     }
 
-    pub fn open_in_memory() -> anyhow::Result<Self> {
+    pub fn open_in_memory() -> Result<Self, DbError> {
         debug!("opening in-memory database");
         let conn = Connection::open_in_memory()?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
@@ -62,20 +63,20 @@ impl Database {
         Ok(db)
     }
 
-    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().expect("database mutex poisoned")
+    pub(crate) fn conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, DbError> {
+        self.conn.lock().map_err(|_| DbError::LockPoisoned)
     }
 
-    fn migrate(&self) -> anyhow::Result<()> {
-        let conn = self.conn();
+    fn migrate(&self) -> Result<(), DbError> {
+        let conn = self.conn()?;
         schema::run_migrations(&conn)?;
         Ok(())
     }
 
     // -- Hook logs --
 
-    pub fn insert_hook_log(&self, log: &crate::hooks::HookLogInsert<'_>) -> anyhow::Result<()> {
-        self.conn().execute(
+    pub fn insert_hook_log(&self, log: &crate::hooks::HookLogInsert<'_>) -> Result<(), DbError> {
+        self.conn()?.execute(
             "INSERT INTO hook_logs (hook_name, trigger_type, started_at, duration_ms, success, result, error, message_id, input_prompt, raw_output)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
@@ -94,8 +95,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_hook_logs(&self, limit: usize) -> anyhow::Result<Vec<crate::hooks::HookLog>> {
-        let conn = self.conn();
+    pub fn list_hook_logs(&self, limit: usize) -> Result<Vec<crate::hooks::HookLog>, DbError> {
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, hook_name, trigger_type, started_at, duration_ms, success, result, error, message_id, input_prompt, raw_output
              FROM (SELECT * FROM hook_logs ORDER BY started_at DESC LIMIT ?1) ORDER BY started_at ASC",
@@ -124,9 +125,9 @@ impl Database {
 
     // -- Conversations --
 
-    pub fn upsert_conversation(&self, conv: &Conversation) -> anyhow::Result<()> {
+    pub fn upsert_conversation(&self, conv: &Conversation) -> Result<(), DbError> {
         debug!(conversation_id = %conv.id, "upserting conversation");
-        self.conn().execute(
+        self.conn()?.execute(
             "INSERT INTO conversations (id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
@@ -158,7 +159,7 @@ impl Database {
         connector_filter: Option<&str>,
         limit: i64,
         include_muted: bool,
-    ) -> anyhow::Result<Vec<Conversation>> {
+    ) -> Result<Vec<Conversation>, DbError> {
         let mut sql = String::from(
             "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
              FROM conversations WHERE 1=1",
@@ -184,7 +185,7 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -192,8 +193,8 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn get_conversation(&self, id: &str) -> anyhow::Result<Option<Conversation>> {
-        self.conn()
+    pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>, DbError> {
+        self.conn()?
             .query_row(
                 "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
                  FROM conversations WHERE id = ?1",
@@ -207,22 +208,22 @@ impl Database {
     // -- Messages --
 
     /// Returns `true` if a message with this (account_id, external_id) already exists.
-    pub fn message_exists(&self, account_id: &str, external_id: &str) -> bool {
-        self.conn()
+    pub fn message_exists(&self, account_id: &str, external_id: &str) -> Result<bool, DbError> {
+        Ok(self.conn()?
             .query_row(
                 "SELECT 1 FROM messages WHERE account_id = ?1 AND external_id = ?2",
                 params![account_id, external_id],
                 |_| Ok(()),
             )
-            .is_ok()
+            .is_ok())
     }
 
     /// Insert or update a message. Returns `true` if the message was newly inserted.
-    pub fn upsert_message(&self, msg: &Message) -> anyhow::Result<bool> {
+    pub fn upsert_message(&self, msg: &Message) -> Result<bool, DbError> {
         debug!(message_id = %msg.id, "upserting message");
-        let is_new = !self.message_exists(&msg.account_id, &msg.external_id);
+        let is_new = !self.message_exists(&msg.account_id, &msg.external_id)?;
         let now = chrono::Utc::now().timestamp();
-        self.conn().execute(
+        self.conn()?.execute(
             "INSERT INTO messages (id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
@@ -269,7 +270,7 @@ impl Database {
         limit: i64,
         since: Option<i64>,
         until: Option<i64>,
-    ) -> anyhow::Result<Vec<Message>> {
+    ) -> Result<Vec<Message>, DbError> {
         let mut sql = String::from(
             "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE conversation_id = ?1",
@@ -292,7 +293,7 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -300,8 +301,8 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn get_message(&self, id: &str) -> anyhow::Result<Option<Message>> {
-        self.conn()
+    pub fn get_message(&self, id: &str) -> Result<Option<Message>, DbError> {
+        self.conn()?
             .query_row(
                 "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE id = ?1",
@@ -316,8 +317,8 @@ impl Database {
         &self,
         account_id: &str,
         connector: &str,
-    ) -> anyhow::Result<Option<i64>> {
-        self.conn()
+    ) -> Result<Option<i64>, DbError> {
+        self.conn()?
             .query_row(
                 "SELECT MAX(timestamp) FROM messages WHERE account_id = ?1 AND connector = ?2",
                 params![account_id, connector],
@@ -333,7 +334,7 @@ impl Database {
         limit: i64,
         include_archived: bool,
         include_muted: bool,
-    ) -> anyhow::Result<Vec<Message>> {
+    ) -> Result<Vec<Message>, DbError> {
         let mut sql = String::from(
             "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE 1=1",
@@ -364,7 +365,7 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -372,9 +373,9 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn mark_message_archived(&self, id: &str) -> anyhow::Result<bool> {
+    pub fn mark_message_archived(&self, id: &str) -> Result<bool, DbError> {
         debug!(message_id = %id, "marking message as archived");
-        let updated = self.conn().execute(
+        let updated = self.conn()?.execute(
             "UPDATE messages SET is_archived = 1 WHERE id = ?1",
             params![id],
         )?;
@@ -385,10 +386,10 @@ impl Database {
         &self,
         id: &str,
         metadata: &serde_json::Value,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, DbError> {
         debug!(message_id = %id, "updating message metadata");
-        let json = serde_json::to_string(metadata)?;
-        let updated = self.conn().execute(
+        let json = serde_json::to_string(metadata).map_err(|e| DbError::Other(e.to_string()))?;
+        let updated = self.conn()?.execute(
             "UPDATE messages SET metadata = ?2 WHERE id = ?1",
             params![id, json],
         )?;
@@ -399,8 +400,8 @@ impl Database {
         &self,
         account_id: &str,
         external_id: &str,
-    ) -> anyhow::Result<Option<Message>> {
-        self.conn()
+    ) -> Result<Option<Message>, DbError> {
+        self.conn()?
             .query_row(
                 "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE account_id = ?1 AND external_id = ?2",
@@ -412,7 +413,7 @@ impl Database {
     }
 
     /// Populate the `context` field on each message by fetching all messages sharing the same `context_id`.
-    pub fn enrich_with_context(&self, messages: &mut [Message]) -> anyhow::Result<()> {
+    pub fn enrich_with_context(&self, messages: &mut [Message]) -> Result<(), DbError> {
         use std::collections::{HashMap, HashSet};
 
         let context_ids: HashSet<&str> = messages
@@ -426,7 +427,7 @@ impl Database {
 
         let mut context_map: HashMap<String, Vec<Message>> = HashMap::new();
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE context_id = ?1 ORDER BY timestamp ASC LIMIT 50",
@@ -455,8 +456,8 @@ impl Database {
     pub fn last_message_in_conversation(
         &self,
         conversation_id: &str,
-    ) -> anyhow::Result<Option<Message>> {
-        self.conn()
+    ) -> Result<Option<Message>, DbError> {
+        self.conn()?
             .query_row(
                 "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT 1",
@@ -469,9 +470,9 @@ impl Database {
 
     // -- Calendar events --
 
-    pub fn upsert_event(&self, event: &CalendarEvent) -> anyhow::Result<()> {
+    pub fn upsert_event(&self, event: &CalendarEvent) -> Result<(), DbError> {
         debug!(event_id = %event.id, "upserting event");
-        self.conn().execute(
+        self.conn()?.execute(
             "INSERT INTO events (id, account_id, connector, external_id, title, description, location, start_at, end_at, all_day, attendees, status, calendar_name, meet_link, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(account_id, external_id) DO UPDATE SET
@@ -508,9 +509,9 @@ impl Database {
         Ok(())
     }
 
-    pub fn delete_event(&self, account_id: &str, external_id: &str) -> anyhow::Result<bool> {
+    pub fn delete_event(&self, account_id: &str, external_id: &str) -> Result<bool, DbError> {
         debug!(account_id, external_id, "deleting event");
-        let deleted = self.conn().execute(
+        let deleted = self.conn()?.execute(
             "DELETE FROM events WHERE account_id = ?1 AND external_id = ?2",
             params![account_id, external_id],
         )?;
@@ -522,8 +523,8 @@ impl Database {
     pub fn clear_connector_data(
         &self,
         connector_type: &str,
-    ) -> anyhow::Result<(usize, usize, usize, usize)> {
-        let conn = self.conn();
+    ) -> Result<(usize, usize, usize, usize), DbError> {
+        let conn = self.conn()?;
 
         let account_ids: Vec<String> = {
             let mut stmt = conn.prepare(
@@ -564,7 +565,7 @@ impl Database {
         account_filter: Option<&str>,
         connector_filter: Option<&str>,
         limit: i64,
-    ) -> anyhow::Result<Vec<CalendarEvent>> {
+    ) -> Result<Vec<CalendarEvent>, DbError> {
         let mut sql = String::from(
             "SELECT id, account_id, connector, external_id, title, description, location, start_at, end_at, all_day, attendees, status, calendar_name, meet_link, metadata FROM events WHERE 1=1",
         );
@@ -594,7 +595,7 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -610,7 +611,7 @@ impl Database {
         connector_filter: Option<&str>,
         search: Option<&str>,
         limit: i64,
-    ) -> anyhow::Result<Vec<Contact>> {
+    ) -> Result<Vec<Contact>, DbError> {
         let mut sql = String::from(
             "SELECT sender, sender_name, account_id, connector, COUNT(*) as msg_count, MAX(timestamp) as last_ts
              FROM messages WHERE sender != account_id",
@@ -644,7 +645,7 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -670,7 +671,7 @@ impl Database {
         search: Option<&str>,
         limit: i64,
         include_muted: bool,
-    ) -> anyhow::Result<Vec<Conversation>> {
+    ) -> Result<Vec<Conversation>, DbError> {
         let mut sql = String::from(
             "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
              FROM conversations WHERE kind IN ('group', 'channel')",
@@ -702,7 +703,7 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -716,12 +717,12 @@ impl Database {
         &self,
         conversation_id: &str,
         is_muted: bool,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, DbError> {
         debug!(
             conversation_id,
             is_muted, "updating conversation mute state"
         );
-        let updated = self.conn().execute(
+        let updated = self.conn()?.execute(
             "UPDATE conversations SET is_muted = ?2 WHERE id = ?1",
             params![conversation_id, is_muted as i32],
         )?;
@@ -735,12 +736,12 @@ impl Database {
         account_id: &str,
         external_id: &str,
         is_muted: bool,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool, DbError> {
         debug!(
             account_id,
             external_id, is_muted, "setting mute by external_id"
         );
-        let updated = self.conn().execute(
+        let updated = self.conn()?.execute(
             "UPDATE conversations SET is_muted = ?3 WHERE account_id = ?1 AND external_id = ?2",
             params![account_id, external_id, is_muted as i32],
         )?;
@@ -749,8 +750,8 @@ impl Database {
 
     // -- Sync state --
 
-    pub fn get_sync_state(&self, account_id: &str, key: &str) -> anyhow::Result<Option<String>> {
-        self.conn()
+    pub fn get_sync_state(&self, account_id: &str, key: &str) -> Result<Option<String>, DbError> {
+        self.conn()?
             .query_row(
                 "SELECT value FROM sync_state WHERE account_id = ?1 AND key = ?2",
                 params![account_id, key],
@@ -760,9 +761,9 @@ impl Database {
             .map_err(Into::into)
     }
 
-    pub fn set_sync_state(&self, account_id: &str, key: &str, value: &str) -> anyhow::Result<()> {
+    pub fn set_sync_state(&self, account_id: &str, key: &str, value: &str) -> Result<(), DbError> {
         debug!(account_id, key, "setting sync state");
-        self.conn().execute(
+        self.conn()?.execute(
             "INSERT INTO sync_state (account_id, key, value) VALUES (?1, ?2, ?3)
              ON CONFLICT(account_id, key) DO UPDATE SET value = excluded.value",
             params![account_id, key, value],
@@ -770,8 +771,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn rename_account(&self, old_id: &str, new_id: &str) -> anyhow::Result<()> {
-        let conn = self.conn();
+    pub fn rename_account(&self, old_id: &str, new_id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
         // Temporarily disable FKs: we update conversation ids first, which orphans
         // messages; then we update messages. With FKs on, the order would violate.
         conn.execute("PRAGMA foreign_keys = OFF", [])?;
@@ -840,7 +841,7 @@ mod tests {
     #[test]
     fn migration_runs() {
         let db = test_db();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let version: i32 = conn
             .query_row(
                 "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",

@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use serde::de::Deserializer;
+
+use crate::error::ConfigError;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_CONFIG_DIR: &str = ".config/void";
@@ -162,7 +164,7 @@ pub enum AccountSettings {
 }
 
 impl VoidConfig {
-    pub fn load(path: &Path) -> anyhow::Result<Self> {
+    pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
         let config: Self = toml::from_str(&content)?;
         Ok(config)
@@ -172,7 +174,7 @@ impl VoidConfig {
         Self::load(path).unwrap_or_default()
     }
 
-    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

@@ -194,8 +194,7 @@ fn cmd_create(
 }
 
 fn cmd_show(dir: &std::path::Path, name: &str, json: bool) -> anyhow::Result<()> {
-    let hook =
-        hooks::find_hook(dir, name).ok_or_else(|| anyhow::anyhow!("Hook '{}' not found", name))?;
+    let hook = hooks::find_hook(dir, name)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&hook)?);
@@ -225,8 +224,7 @@ fn cmd_toggle(dir: &std::path::Path, name: &str, enabled: bool) -> anyhow::Resul
 }
 
 fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyhow::Result<()> {
-    let hook =
-        hooks::find_hook(dir, name).ok_or_else(|| anyhow::anyhow!("Hook '{}' not found", name))?;
+    let hook = hooks::find_hook(dir, name)?;
 
     let msg = match (&hook.trigger, message_id) {
         (Trigger::NewMessage { .. }, Some(mid)) => {

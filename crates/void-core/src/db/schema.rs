@@ -3,10 +3,12 @@
 use rusqlite::{Connection, OptionalExtension};
 use tracing::debug;
 
+use crate::error::DbError;
+
 pub const SCHEMA_VERSION: i32 = 9;
 
 /// Run all pending migrations on the database connection.
-pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
+pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);")?;
 
     let current: Option<i32> = conn
@@ -53,7 +55,7 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v1(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v1(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v1");
     conn.execute_batch(
         "
@@ -140,7 +142,7 @@ fn migrate_v1(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v2(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v2(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v2");
     conn.execute_batch(
         "
@@ -153,7 +155,7 @@ fn migrate_v2(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v3(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v3(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v3");
     conn.execute_batch(
         "
@@ -166,7 +168,7 @@ fn migrate_v3(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v4(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v4(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v4");
     conn.execute_batch(
         "
@@ -180,7 +182,7 @@ fn migrate_v4(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v5(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v5(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v5");
     conn.execute_batch(
         "
@@ -192,7 +194,7 @@ fn migrate_v5(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v6(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v6(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v6");
     conn.execute_batch(
         "
@@ -205,7 +207,7 @@ fn migrate_v6(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v7(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v7(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v7: drop is_read and is_from_me");
     conn.execute_batch(
         "
@@ -218,7 +220,7 @@ fn migrate_v7(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v8(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v8(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v8: create hook_logs table");
     conn.execute_batch(
         "
@@ -242,7 +244,7 @@ fn migrate_v8(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn migrate_v9(conn: &Connection) -> anyhow::Result<()> {
+fn migrate_v9(conn: &Connection) -> Result<(), DbError> {
     debug!("running migration v9: add input_prompt and raw_output to hook_logs");
     conn.execute_batch(
         "

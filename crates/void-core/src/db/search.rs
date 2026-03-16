@@ -32,7 +32,7 @@ impl Database {
         connector_filter: Option<&str>,
         limit: i64,
         include_muted: bool,
-    ) -> anyhow::Result<Vec<Message>> {
+    ) -> Result<Vec<Message>, crate::error::DbError> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
             "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
@@ -66,7 +66,7 @@ impl Database {
         ));
         param_values.push(Box::new(limit));
 
-        let conn = self.conn();
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
