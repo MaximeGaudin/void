@@ -167,7 +167,7 @@ impl Connector for TelegramConnector {
                 account_id: self.config_id.clone(),
                 connector_type: ConnectorType::Telegram,
                 ok: false,
-                message: "Session file not found. Run `void setup` to authenticate.".to_string(),
+                message: "Session file not found".to_string(),
                 last_sync: None,
                 message_count: None,
             });
