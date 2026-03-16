@@ -119,11 +119,10 @@ impl SlackConnector {
         let conversations = self.list_all_conversations().await?;
 
         let oldest_secs: u64 = oldest_ts.parse().unwrap_or(0);
-        let oldest_ms = oldest_secs * 1000;
 
         let active: Vec<_> = conversations
             .iter()
-            .filter(|c| c.updated.map_or(true, |u| u >= oldest_ms))
+            .filter(|c| c.updated.map_or(true, |u| u >= oldest_secs))
             .collect();
 
         eprintln!(
@@ -147,39 +146,68 @@ impl SlackConnector {
             db.upsert_conversation(&conversation)?;
             progress.inc(1);
 
-            match self
-                .api
-                .conversations_history(&conv.id, 100, Some(oldest_ts))
-                .await
-            {
-                Ok(history) => {
-                    let mut mapped: Vec<Message> = history
-                        .messages
-                        .iter()
-                        .filter_map(|msg| {
-                            map_message_cached(
-                                msg,
-                                conv,
-                                &conversation.id,
-                                &self.account_id,
-                                &user_cache,
-                            )
-                        })
-                        .collect();
-                    mapped.sort_by_key(|m| m.timestamp);
-                    assign_time_window_context(&mut mapped, &self.account_id, &conv.id);
-                    for message in &mapped {
-                        db.upsert_message(message)?;
-                        progress.inc_secondary(1);
+            let mut all_messages = Vec::new();
+            let mut cursor: Option<String> = None;
+            let max_pages = 10;
+            let mut page = 0;
+
+            loop {
+                match self
+                    .api
+                    .conversations_history(
+                        &conv.id,
+                        200,
+                        Some(oldest_ts),
+                        cursor.as_deref(),
+                    )
+                    .await
+                {
+                    Ok(history) => {
+                        all_messages.extend(history.messages);
+                        page += 1;
+
+                        cursor = history
+                            .response_metadata
+                            .and_then(|m| m.next_cursor)
+                            .filter(|c| !c.is_empty());
+
+                        if cursor.is_none()
+                            || !history.has_more.unwrap_or(false)
+                            || page >= max_pages
+                        {
+                            break;
+                        }
                     }
-                    if let Some(last) = history.messages.first() {
-                        let mut conv_update = conversation.clone();
-                        conv_update.last_message_at = parse_ts(&last.ts);
-                        db.upsert_conversation(&conv_update)?;
+                    Err(e) => {
+                        warn!(channel_id = %conv.id, "{label}: failed to fetch history: {e}");
+                        break;
                     }
                 }
-                Err(e) => {
-                    warn!(channel_id = %conv.id, "{label}: failed to fetch history: {e}");
+            }
+
+            if !all_messages.is_empty() {
+                let mut mapped: Vec<Message> = all_messages
+                    .iter()
+                    .filter_map(|msg| {
+                        map_message_cached(
+                            msg,
+                            conv,
+                            &conversation.id,
+                            &self.account_id,
+                            &user_cache,
+                        )
+                    })
+                    .collect();
+                mapped.sort_by_key(|m| m.timestamp);
+                assign_time_window_context(&mut mapped, &self.account_id, &conv.id);
+                for message in &mapped {
+                    db.upsert_message(message)?;
+                    progress.inc_secondary(1);
+                }
+                if let Some(last) = all_messages.first() {
+                    let mut conv_update = conversation.clone();
+                    conv_update.last_message_at = parse_ts(&last.ts);
+                    db.upsert_conversation(&conv_update)?;
                 }
             }
         }

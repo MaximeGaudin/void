@@ -169,6 +169,7 @@ impl SlackApiClient {
         channel_id: &str,
         limit: u32,
         oldest: Option<&str>,
+        cursor: Option<&str>,
     ) -> Result<ConversationsHistoryResponse, SlackError> {
         let mut params: Vec<(&str, String)> = vec![
             ("channel", channel_id.to_string()),
@@ -176,6 +177,9 @@ impl SlackApiClient {
         ];
         if let Some(o) = oldest {
             params.push(("oldest", o.to_string()));
+        }
+        if let Some(c) = cursor {
+            params.push(("cursor", c.to_string()));
         }
         self.get_with_retry(
             &format!("{}/conversations.history", self.base_url),
@@ -526,7 +530,6 @@ pub struct SlackConversation {
     pub is_mpim: Option<bool>,
     pub is_private: Option<bool>,
     pub user: Option<String>,
-    /// Millisecond timestamp of last activity in the conversation.
     pub updated: Option<u64>,
 }
 
@@ -544,6 +547,7 @@ pub struct ConversationsOpenResponse {
 pub struct ConversationsHistoryResponse {
     pub messages: Vec<SlackMessage>,
     pub has_more: Option<bool>,
+    pub response_metadata: Option<ResponseMetadata>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

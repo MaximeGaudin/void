@@ -159,9 +159,12 @@ impl SlackConnector {
         }
 
         let subtype = event.get("subtype").and_then(|v| v.as_str());
-        if subtype.is_some() {
-            debug!(subtype, "ignoring message subtype");
-            return;
+        match subtype {
+            None | Some("file_share") | Some("me_message") | Some("thread_broadcast") => {}
+            Some(st) => {
+                debug!(subtype = st, "ignoring message subtype");
+                return;
+            }
         }
 
         let channel_id = match event.get("channel").and_then(|v| v.as_str()) {
@@ -178,7 +181,28 @@ impl SlackConnector {
             .unwrap_or("unknown");
         let text = event.get("text").and_then(|v| v.as_str()).unwrap_or("");
 
-        if text.is_empty() {
+        let file_summary = if subtype == Some("file_share") {
+            event
+                .get("files")
+                .and_then(|f| f.as_array())
+                .map(|files| {
+                    files
+                        .iter()
+                        .filter_map(|f| {
+                            f.get("name")
+                                .or_else(|| f.get("title"))
+                                .and_then(|v| v.as_str())
+                                .map(|name| format!("📎 {name}"))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .filter(|s| !s.is_empty())
+        } else {
+            None
+        };
+
+        if text.is_empty() && file_summary.is_none() {
             return;
         }
 
@@ -200,6 +224,12 @@ impl SlackConnector {
         let thread_ts = event.get("thread_ts").and_then(|v| v.as_str());
         let context_id = thread_ts.map(|tts| format!("{}-thread-{tts}", self.account_id));
 
+        let body = match (&file_summary, text.is_empty()) {
+            (Some(files), true) => files.clone(),
+            (Some(files), false) => format!("{text}\n{files}"),
+            _ => text.to_string(),
+        };
+
         let timestamp = parse_ts(ts).unwrap_or(0);
         let message = Message {
             id: format!("{}-{}", self.account_id, ts),
@@ -209,7 +239,7 @@ impl SlackConnector {
             external_id: ts.to_string(),
             sender: user_id.to_string(),
             sender_name: Some(sender_name.clone()),
-            body: Some(text.to_string()),
+            body: Some(body),
             timestamp,
             synced_at: None,
             is_archived: false,
