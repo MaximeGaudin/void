@@ -16,13 +16,19 @@ if [ ! -f "$SRC" ]; then
 fi
 
 mkdir -p "$INSTALL_DIR"
-cp "$SRC" "$DEST"
-chmod 755 "$DEST"
+
+# Use a temp file + atomic rename so zombie processes holding the old inode
+# don't block new executions (macOS keeps the old inode alive for them).
+TMP_DEST="$INSTALL_DIR/.$BIN_NAME.tmp.$$"
+cp "$SRC" "$TMP_DEST"
+chmod 755 "$TMP_DEST"
 
 # macOS: strip quarantine / provenance attributes that block unsigned binaries
 if [ "$(uname)" = "Darwin" ]; then
-  xattr -cr "$DEST" 2>/dev/null || true
+  xattr -cr "$TMP_DEST" 2>/dev/null || true
 fi
+
+mv -f "$TMP_DEST" "$DEST"
 
 echo "==> Installed $BIN_NAME → $DEST"
 

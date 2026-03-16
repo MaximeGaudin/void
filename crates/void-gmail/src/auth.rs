@@ -170,7 +170,7 @@ async fn exchange_code_for_tokens(
     code: &str,
     redirect_uri: &str,
 ) -> Result<TokenCache, GmailError> {
-    let http = reqwest::Client::new();
+    let http = crate::api::build_http_client();
     let resp = http
         .post(&creds.token_uri)
         .form(&[

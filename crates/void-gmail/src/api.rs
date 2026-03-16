@@ -1,8 +1,20 @@
+use std::time::Duration;
+
 use crate::error::GmailError;
 use serde::Deserialize;
 use tracing::{debug, info};
 
 const DEFAULT_BASE_URL: &str = "https://gmail.googleapis.com";
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub fn build_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .build()
+        .expect("failed to build HTTP client")
+}
 
 /// Low-level Gmail API client.
 pub struct GmailApiClient {
@@ -14,7 +26,7 @@ pub struct GmailApiClient {
 impl GmailApiClient {
     pub fn new(access_token: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: build_http_client(),
             access_token: access_token.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
         }
@@ -23,7 +35,7 @@ impl GmailApiClient {
     #[cfg(test)]
     pub fn with_base_url(access_token: &str, base_url: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: build_http_client(),
             access_token: access_token.to_string(),
             base_url: base_url.to_string(),
         }

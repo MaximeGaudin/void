@@ -16,7 +16,7 @@ pub struct CalendarApiClient {
 impl CalendarApiClient {
     pub fn new(access_token: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: void_gmail::api::build_http_client(),
             access_token: access_token.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
         }
@@ -25,7 +25,7 @@ impl CalendarApiClient {
     #[cfg(test)]
     pub fn with_base_url(access_token: &str, base_url: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: void_gmail::api::build_http_client(),
             access_token: access_token.to_string(),
             base_url: base_url.to_string(),
         }

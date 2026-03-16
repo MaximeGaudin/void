@@ -228,7 +228,7 @@ pub struct DownloadResult {
 impl DriveApiClient {
     pub fn new(access_token: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: void_gmail::api::build_http_client(),
             access_token: access_token.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
         }
@@ -237,7 +237,7 @@ impl DriveApiClient {
     #[cfg(test)]
     pub fn with_base_url(access_token: &str, base_url: &str) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: void_gmail::api::build_http_client(),
             access_token: access_token.to_string(),
             base_url: base_url.to_string(),
         }
@@ -458,7 +458,7 @@ pub async fn build_drive_client(
         if let Some(ref refresh_token) = cache.refresh_token {
             let creds = void_gmail::auth::load_client_credentials(credentials_file)
                 .map_err(|e| DriveError::Auth(e.to_string()))?;
-            let http = reqwest::Client::new();
+            let http = void_gmail::api::build_http_client();
             cache = void_gmail::auth::refresh_access_token(&http, &creds, refresh_token)
                 .await
                 .map_err(|e| DriveError::Auth(e.to_string()))?;

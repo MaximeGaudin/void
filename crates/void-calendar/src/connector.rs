@@ -76,7 +76,7 @@ impl CalendarConnector {
             if let Some(ref refresh_token) = cache.refresh_token {
                 let creds =
                     void_gmail::auth::load_client_credentials(self.credentials_file.as_deref())?;
-                let http = reqwest::Client::new();
+                let http = void_gmail::api::build_http_client();
                 cache =
                     void_gmail::auth::refresh_access_token(&http, &creds, refresh_token).await?;
                 cache.save(&token_path)?;

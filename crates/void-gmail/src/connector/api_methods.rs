@@ -22,7 +22,7 @@ impl GmailConnector {
             debug!(config_id = %self.config_id, "refreshing access token");
             if let Some(ref refresh_token) = cache.refresh_token {
                 let creds = auth::load_client_credentials(self.credentials_file.as_deref())?;
-                let http = reqwest::Client::new();
+                let http = crate::api::build_http_client();
                 cache = auth::refresh_access_token(&http, &creds, refresh_token).await?;
                 cache.save(&token_path)?;
             } else {
