@@ -231,7 +231,7 @@ impl Database {
                 body = excluded.body,
                 connector = excluded.connector,
                 sender_name = excluded.sender_name,
-                is_archived = MAX(is_archived, excluded.is_archived),
+                is_archived = excluded.is_archived,
                 media_type = excluded.media_type,
                 metadata = excluded.metadata,
                 context_id = COALESCE(excluded.context_id, context_id)",
