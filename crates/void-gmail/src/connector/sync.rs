@@ -74,7 +74,7 @@ impl GmailConnector {
         };
 
         let api = self.get_client().await?;
-        let resp = api.list_history(&history_id).await?;
+        let resp = api.list_history(&history_id, Some("INBOX")).await?;
 
         if let Some(records) = resp.history {
             for record in &records {
@@ -82,13 +82,24 @@ impl GmailConnector {
                     for item in added {
                         match api.get_message(&item.message.id).await {
                             Ok(msg) => {
+                                let labels = msg.label_ids.as_deref().unwrap_or(&[]);
+                                let is_sent = labels.iter().any(|l| l == "SENT");
+                                let is_inbox = labels.iter().any(|l| l == "INBOX");
+
+                                if is_sent && !is_inbox {
+                                    debug!(message_id = %item.message.id, "skipping sent-only message");
+                                    continue;
+                                }
+
                                 let from = msg.get_header("From").unwrap_or_default();
                                 let subject = msg
                                     .get_header("Subject")
                                     .unwrap_or_else(|| "(no subject)".into());
+                                let direction = if is_sent { "sent" } else { "new" };
                                 eprintln!(
-                                    "[gmail:{}] new: {} — {}",
+                                    "[gmail:{}] {}: {} — {}",
                                     self.display_account_id(),
+                                    direction,
                                     from,
                                     subject
                                 );

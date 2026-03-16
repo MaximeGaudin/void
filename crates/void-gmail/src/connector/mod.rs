@@ -524,6 +524,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/gmail/v1/users/me/history"))
             .and(query_param("startHistoryId", "12345"))
+            .and(query_param("labelId", "INBOX"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "history": [{
                     "messagesAdded": [{
@@ -567,7 +568,7 @@ mod tests {
         let history_id = db.get_sync_state(config_id, "history_id").unwrap();
         let history_id = history_id.expect("history_id should be set");
 
-        let resp = api.list_history(&history_id).await.unwrap();
+        let resp = api.list_history(&history_id, Some("INBOX")).await.unwrap();
 
         if let Some(records) = resp.history {
             for record in &records {

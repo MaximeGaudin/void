@@ -110,13 +110,18 @@ impl GmailApiClient {
     pub async fn list_history(
         &self,
         start_history_id: &str,
+        label_id: Option<&str>,
     ) -> Result<HistoryListResponse, GmailError> {
-        debug!(start_history_id, "gmail: list_history");
+        debug!(start_history_id, ?label_id, "gmail: list_history");
+        let mut params = vec![("startHistoryId", start_history_id.to_string())];
+        if let Some(label) = label_id {
+            params.push(("labelId", label.to_string()));
+        }
         let resp: HistoryListResponse = self
             .http
             .get(format!("{}/gmail/v1/users/me/history", self.base_url))
             .bearer_auth(&self.access_token)
-            .query(&[("startHistoryId", start_history_id)])
+            .query(&params)
             .send()
             .await?
             .json()
