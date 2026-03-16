@@ -164,10 +164,19 @@ impl GmailConnector {
             (None, None) => msg.snippet.clone(),
         };
 
-        let metadata = if html_body.is_some() {
-            Some(serde_json::json!({ "has_html": true, "snippet": msg.snippet }))
-        } else {
+        let attachments = msg.file_attachments();
+        let mut metadata = serde_json::Map::new();
+        if html_body.is_some() {
+            metadata.insert("has_html".into(), serde_json::json!(true));
+            metadata.insert("snippet".into(), serde_json::json!(msg.snippet));
+        }
+        if !attachments.is_empty() {
+            metadata.insert("attachments".into(), serde_json::json!(attachments));
+        }
+        let metadata = if metadata.is_empty() {
             None
+        } else {
+            Some(serde_json::Value::Object(metadata))
         };
 
         let message = Message {

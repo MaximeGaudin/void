@@ -505,6 +505,27 @@ impl GmailMessage {
             .as_ref()
             .and_then(|p| find_attachment_id_by_mime(p, "text/html"))
     }
+
+    /// Extract all file attachments (parts with a non-empty filename and an attachment_id).
+    pub fn file_attachments(&self) -> Vec<FileAttachment> {
+        let mut result = Vec::new();
+        if let Some(payload) = &self.payload {
+            if let Some(parts) = &payload.parts {
+                for part in parts {
+                    collect_file_attachments(part, &mut result);
+                }
+            }
+        }
+        result
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FileAttachment {
+    pub filename: String,
+    pub mime_type: Option<String>,
+    pub size: Option<u64>,
+    pub attachment_id: String,
 }
 
 fn extract_body_by_mime(payload: &MessagePayload, target_mime: &str) -> Option<String> {
@@ -558,6 +579,26 @@ pub fn decode_attachment_data(data: &str) -> Option<String> {
 
     let bytes = URL_SAFE_NO_PAD.decode(data).ok()?;
     String::from_utf8(bytes).ok()
+}
+
+fn collect_file_attachments(part: &MessagePart, out: &mut Vec<FileAttachment>) {
+    if let Some(filename) = &part.filename {
+        if !filename.is_empty() {
+            if let Some(aid) = part.body.as_ref().and_then(|b| b.attachment_id.as_ref()) {
+                out.push(FileAttachment {
+                    filename: filename.clone(),
+                    mime_type: part.mime_type.clone(),
+                    size: part.body.as_ref().and_then(|b| b.size),
+                    attachment_id: aid.clone(),
+                });
+            }
+        }
+    }
+    if let Some(sub_parts) = &part.parts {
+        for sub in sub_parts {
+            collect_file_attachments(sub, out);
+        }
+    }
 }
 
 fn find_attachment_id_by_mime(payload: &MessagePayload, target_mime: &str) -> Option<String> {

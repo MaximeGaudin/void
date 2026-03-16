@@ -205,6 +205,11 @@ async fn run_search(args: &SearchArgs, json: bool) -> anyhow::Result<()> {
         let items: Vec<serde_json::Value> = messages
             .iter()
             .map(|m| {
+                let attachments: Vec<serde_json::Value> = m
+                    .file_attachments()
+                    .iter()
+                    .map(|a| serde_json::json!(a))
+                    .collect();
                 serde_json::json!({
                     "id": m.id,
                     "threadId": m.thread_id,
@@ -214,6 +219,7 @@ async fn run_search(args: &SearchArgs, json: bool) -> anyhow::Result<()> {
                     "date": m.get_header("Date"),
                     "snippet": m.snippet,
                     "labels": m.label_ids,
+                    "attachments": attachments,
                 })
             })
             .collect();
@@ -237,6 +243,12 @@ async fn run_search(args: &SearchArgs, json: bool) -> anyhow::Result<()> {
             println!("[{id}] {date}  {from}");
             println!("  Subject: {subject}");
             println!("  Thread: {thread}");
+            let attachments = m.file_attachments();
+            if !attachments.is_empty() {
+                for a in &attachments {
+                    println!("  📎 {} (id: {})", a.filename, a.attachment_id);
+                }
+            }
             println!();
         }
     }
@@ -254,6 +266,11 @@ async fn run_thread(args: &ThreadArgs, json: bool) -> anyhow::Result<()> {
             .map(|msgs| {
                 msgs.iter()
                     .map(|m| {
+                        let attachments: Vec<serde_json::Value> = m
+                            .file_attachments()
+                            .iter()
+                            .map(|a| serde_json::json!(a))
+                            .collect();
                         serde_json::json!({
                             "id": m.id,
                             "from": m.get_header("From"),
@@ -263,6 +280,7 @@ async fn run_thread(args: &ThreadArgs, json: bool) -> anyhow::Result<()> {
                             "snippet": m.snippet,
                             "labels": m.label_ids,
                             "body": m.text_body(),
+                            "attachments": attachments,
                         })
                     })
                     .collect()
@@ -295,6 +313,12 @@ async fn run_thread(args: &ThreadArgs, json: bool) -> anyhow::Result<()> {
             println!("--- [{id}] {date} ---");
             println!("From: {from}");
             println!("Subject: {subject}");
+            let attachments = m.file_attachments();
+            if !attachments.is_empty() {
+                for a in &attachments {
+                    println!("  📎 {} (id: {})", a.filename, a.attachment_id);
+                }
+            }
             if let Some(body) = m.text_body() {
                 println!();
                 println!("{body}");
