@@ -200,10 +200,7 @@ async fn upload_and_build_media_message(
     let data = tokio::fs::read(path)
         .await
         .with_context(|| format!("failed to read file {}", path.display()))?;
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
+    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     let (media_type, default_mime) = determine_media_type(mime_type, filename);
     let mime = mime_type.unwrap_or(default_mime);
 
@@ -212,6 +209,7 @@ async fn upload_and_build_media_message(
         .await
         .context("WhatsApp media upload failed")?;
 
+    #[allow(clippy::wildcard_in_or_patterns)]
     let msg = match media_type {
         WaMediaType::Image => WaMessage {
             image_message: Some(Box::new(ImageMessage {
@@ -257,7 +255,7 @@ async fn upload_and_build_media_message(
             })),
             ..Default::default()
         },
-        WaMediaType::Document | WaMediaType::Sticker | _ => WaMessage {
+        _ => WaMessage {
             document_message: Some(Box::new(DocumentMessage {
                 url: Some(upload.url),
                 direct_path: Some(upload.direct_path),
@@ -508,7 +506,11 @@ impl Connector for WhatsAppConnector {
         info!(account_id = %self.config_id, recipient_jid = %jid, "sending WhatsApp message");
 
         let msg = match &content {
-            MessageContent::File { path, caption, mime_type } => {
+            MessageContent::File {
+                path,
+                caption,
+                mime_type,
+            } => {
                 upload_and_build_media_message(
                     client,
                     path,
@@ -557,7 +559,11 @@ impl Connector for WhatsAppConnector {
         };
 
         let msg = match &content {
-            MessageContent::File { path, caption, mime_type } => {
+            MessageContent::File {
+                path,
+                caption,
+                mime_type,
+            } => {
                 upload_and_build_media_message(
                     client,
                     path,
@@ -1299,10 +1305,7 @@ mod tests {
             determine_media_type(None, "photo.jpg").0,
             WaMediaType::Image
         );
-        assert_eq!(
-            determine_media_type(None, "clip.mp4").0,
-            WaMediaType::Video
-        );
+        assert_eq!(determine_media_type(None, "clip.mp4").0, WaMediaType::Video);
         assert_eq!(
             determine_media_type(None, "voice.ogg").0,
             WaMediaType::Audio

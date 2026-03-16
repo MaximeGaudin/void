@@ -502,7 +502,15 @@ impl Connector for GmailConnector {
                     .unwrap_or("(attachment)");
                 let body = caption.clone().unwrap_or_default();
                 info!(recipient = %to, subject = %subject, "sending Gmail message with attachment");
-                compose_rfc2822_with_attachment(to, subject, &body, path, mime_type.as_deref(), None, None)?
+                compose_rfc2822_with_attachment(
+                    to,
+                    subject,
+                    &body,
+                    path,
+                    mime_type.as_deref(),
+                    None,
+                    None,
+                )?
             }
         };
 
@@ -559,14 +567,16 @@ impl Connector for GmailConnector {
             } => {
                 let orig = api.get_message(message_id).await?;
                 let to = orig.get_header("From").unwrap_or_default();
-                let subj = orig.get_header("Subject").unwrap_or_else(|| "(no subject)".into());
+                let subj = orig
+                    .get_header("Subject")
+                    .unwrap_or_else(|| "(no subject)".into());
                 let subject = if subj.starts_with("Re:") {
                     subj
                 } else {
                     format!("Re: {subj}")
                 };
                 let in_reply_to = orig.get_header("Message-ID");
-                let references = in_reply_to.as_ref().map(|s| s.as_str());
+                let references = in_reply_to.as_deref();
                 let body = caption.clone().unwrap_or_default();
                 compose_rfc2822_with_attachment(
                     &to,
@@ -603,7 +613,9 @@ impl Connector for GmailConnector {
         let orig_from = orig.get_header("From").unwrap_or_else(|| "unknown".into());
         let orig_to = orig.get_header("To").unwrap_or_default();
         let orig_date = orig.get_header("Date").unwrap_or_default();
-        let orig_subject = orig.get_header("Subject").unwrap_or_else(|| "(no subject)".into());
+        let orig_subject = orig
+            .get_header("Subject")
+            .unwrap_or_else(|| "(no subject)".into());
 
         let subject = if orig_subject.starts_with("Fwd:") || orig_subject.starts_with("Fw:") {
             orig_subject.clone()
@@ -1131,16 +1143,9 @@ mod tests {
         let name = format!("void_gmail_test_{}.txt", uuid::Uuid::new_v4());
         let path = dir.join(&name);
         std::fs::write(&path, "test content").unwrap();
-        let result = compose_rfc2822_with_attachment(
-            "a@b.com",
-            "Subj",
-            "body",
-            &path,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let result =
+            compose_rfc2822_with_attachment("a@b.com", "Subj", "body", &path, None, None, None)
+                .unwrap();
         std::fs::remove_file(&path).ok();
         assert!(result.contains("void_boundary_001"));
         assert!(result.contains("Content-Type: multipart/mixed"));

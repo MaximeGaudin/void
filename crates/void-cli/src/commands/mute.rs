@@ -67,10 +67,7 @@ pub fn run(args: &MuteArgs, json: bool) -> anyhow::Result<()> {
             args.connector.as_deref(),
         )?;
 
-        let all_matches: Vec<_> = matches
-            .into_iter()
-            .chain(dm_matches)
-            .collect();
+        let all_matches: Vec<_> = matches.into_iter().chain(dm_matches).collect();
 
         if all_matches.is_empty() {
             eprintln!("no conversation matching \"{target}\" found");
@@ -122,15 +119,13 @@ fn list_muted(db: &Database, args: &MuteArgs, json: bool) -> anyhow::Result<()> 
             })
             .collect();
         println!("{}", serde_json::json!({ "data": items, "error": null }));
+    } else if muted.is_empty() {
+        eprintln!("no muted conversations");
     } else {
-        if muted.is_empty() {
-            eprintln!("no muted conversations");
-        } else {
-            eprintln!("{} muted conversation(s):\n", muted.len());
-            for c in &muted {
-                let name = c.name.as_deref().unwrap_or(&c.id);
-                eprintln!("  {} [{}] ({})", name, c.connector, c.id);
-            }
+        eprintln!("{} muted conversation(s):\n", muted.len());
+        for c in &muted {
+            let name = c.name.as_deref().unwrap_or(&c.id);
+            eprintln!("  {} [{}] ({})", name, c.connector, c.id);
         }
     }
     Ok(())

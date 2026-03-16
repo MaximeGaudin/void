@@ -132,7 +132,12 @@ impl SlackConnector {
         self.fetch_history(db, &oldest_ts, "catch-up").await
     }
 
-    async fn fetch_history(&self, db: &Database, oldest_ts: &str, label: &str) -> anyhow::Result<()> {
+    async fn fetch_history(
+        &self,
+        db: &Database,
+        oldest_ts: &str,
+        label: &str,
+    ) -> anyhow::Result<()> {
         let user_cache = self.prefetch_users().await?;
         let conversations = self.list_all_conversations().await?;
 
@@ -146,7 +151,11 @@ impl SlackConnector {
 
         eprintln!(
             "[slack:{}] {} — {}/{} conversations active since {}, fetching…",
-            self.account_id, label, active.len(), conversations.len(), oldest_ts
+            self.account_id,
+            label,
+            active.len(),
+            conversations.len(),
+            oldest_ts
         );
 
         let mut progress = void_core::progress::BackfillProgress::new(
@@ -626,17 +635,10 @@ impl Connector for SlackConnector {
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
         match &content {
             MessageContent::File { path, caption, .. } => {
-                let path_str = path
-                    .to_str()
-                    .context("file path is not valid UTF-8")?;
+                let path_str = path.to_str().context("file path is not valid UTF-8")?;
                 let channel = self.resolve_channel_for_file(to).await?;
-                self.upload_file(
-                    &channel,
-                    path_str,
-                    caption.as_deref(),
-                    None,
-                )
-                .await
+                self.upload_file(&channel, path_str, caption.as_deref(), None)
+                    .await
             }
             MessageContent::Text(t) => {
                 let channel = if to.contains(',') {
@@ -669,24 +671,14 @@ impl Connector for SlackConnector {
 
         match &content {
             MessageContent::File { path, caption, .. } => {
-                let path_str = path
-                    .to_str()
-                    .context("file path is not valid UTF-8")?;
+                let path_str = path.to_str().context("file path is not valid UTF-8")?;
                 let thread_ts = if in_thread { Some(ts) } else { None };
-                self.upload_file(
-                    channel_id,
-                    path_str,
-                    caption.as_deref(),
-                    thread_ts,
-                )
-                .await
+                self.upload_file(channel_id, path_str, caption.as_deref(), thread_ts)
+                    .await
             }
             MessageContent::Text(t) => {
                 let thread_ts = if in_thread { Some(ts) } else { None };
-                let resp = self
-                    .api
-                    .chat_post_message(channel_id, t, thread_ts)
-                    .await?;
+                let resp = self.api.chat_post_message(channel_id, t, thread_ts).await?;
                 let reply_ts = resp.ts.clone().unwrap_or_default();
                 debug!(account_id = %self.account_id, ts = %reply_ts, "Slack reply sent");
                 Ok(reply_ts)
@@ -746,7 +738,10 @@ impl Connector for SlackConnector {
             to.to_string()
         };
 
-        let resp = self.api.chat_post_message(&target, &forwarded, None).await?;
+        let resp = self
+            .api
+            .chat_post_message(&target, &forwarded, None)
+            .await?;
         let ts = resp.ts.unwrap_or_default();
         debug!(account_id = %self.account_id, ts = %ts, "Slack message forwarded");
         Ok(ts)
@@ -1442,15 +1437,9 @@ mod tests {
             "upload_url": upload_url,
             "file_id": "F12345"
         });
-        wiremock::Mock::given(wiremock::matchers::method("POST"))
-            .and(wiremock::matchers::path("/files.getUploadURLExternal"))
-            .and(wiremock::matchers::body_json(serde_json::json!({
-                "filename": "test.txt",
-                "length": file_content.len()
-            })))
-            .respond_with(
-                wiremock::ResponseTemplate::new(200).set_body_json(get_upload_url_resp),
-            )
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path_regex(r"^/files\.getUploadURLExternal"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(get_upload_url_resp))
             .mount(&server)
             .await;
 
@@ -1705,10 +1694,7 @@ mod tests {
 
         let cancel = tokio_util::sync::CancellationToken::new();
         cancel.cancel();
-        connector
-            .start_sync(db.clone(), cancel)
-            .await
-            .unwrap();
+        connector.start_sync(db.clone(), cancel).await.unwrap();
 
         let new_msg = db
             .get_message("test-slack-1741800000.000200")

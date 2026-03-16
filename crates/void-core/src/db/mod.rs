@@ -90,33 +90,21 @@ impl Database {
 
     // -- Hook logs --
 
-    pub fn insert_hook_log(
-        &self,
-        hook_name: &str,
-        trigger_type: &str,
-        started_at: i64,
-        duration_ms: i64,
-        success: bool,
-        result: Option<&str>,
-        error: Option<&str>,
-        message_id: Option<&str>,
-        input_prompt: Option<&str>,
-        raw_output: Option<&str>,
-    ) -> anyhow::Result<()> {
+    pub fn insert_hook_log(&self, log: &crate::hooks::HookLogInsert<'_>) -> anyhow::Result<()> {
         self.conn().execute(
             "INSERT INTO hook_logs (hook_name, trigger_type, started_at, duration_ms, success, result, error, message_id, input_prompt, raw_output)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
-                hook_name,
-                trigger_type,
-                started_at,
-                duration_ms,
-                success as i32,
-                result,
-                error,
-                message_id,
-                input_prompt,
-                raw_output,
+                log.hook_name,
+                log.trigger_type,
+                log.started_at,
+                log.duration_ms,
+                log.success as i32,
+                log.result,
+                log.error,
+                log.message_id,
+                log.input_prompt,
+                log.raw_output,
             ],
         )?;
         Ok(())

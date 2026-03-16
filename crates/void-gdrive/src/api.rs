@@ -77,10 +77,7 @@ pub fn parse_google_url(url_str: &str) -> anyhow::Result<ParsedGoogleUrl> {
                 Some("spreadsheets") => GoogleFileKind::Spreadsheet,
                 Some("presentation") => GoogleFileKind::Presentation,
                 Some("drawings") => GoogleFileKind::Drawing,
-                _ => anyhow::bail!(
-                    "unrecognized docs.google.com path: {}",
-                    url.path()
-                ),
+                _ => anyhow::bail!("unrecognized docs.google.com path: {}", url.path()),
             };
             // Pattern: /{type}/d/{file_id}/...
             if path_segments.get(1).copied() == Some("d") {
@@ -238,11 +235,7 @@ impl DriveApiClient {
     /// Fetch file metadata from Google Drive.
     pub async fn get_file_metadata(&self, file_id: &str) -> anyhow::Result<FileMetadata> {
         debug!(file_id, "gdrive: get_file_metadata");
-        let url = format!(
-            "{}/drive/v3/files/{}",
-            self.base_url,
-            urlencoded(file_id)
-        );
+        let url = format!("{}/drive/v3/files/{}", self.base_url, urlencoded(file_id));
         let resp = self
             .http
             .get(&url)
@@ -263,11 +256,7 @@ impl DriveApiClient {
     /// Download a binary (non-Google-native) file from Drive.
     pub async fn download_file(&self, file_id: &str) -> anyhow::Result<Vec<u8>> {
         debug!(file_id, "gdrive: download_file");
-        let url = format!(
-            "{}/drive/v3/files/{}",
-            self.base_url,
-            urlencoded(file_id)
-        );
+        let url = format!("{}/drive/v3/files/{}", self.base_url, urlencoded(file_id));
         let resp = self
             .http
             .get(&url)
@@ -283,11 +272,7 @@ impl DriveApiClient {
     }
 
     /// Export a Google-native file (Docs/Sheets/Slides/Drawings) to a specific format.
-    pub async fn export_file(
-        &self,
-        file_id: &str,
-        export_mime: &str,
-    ) -> anyhow::Result<Vec<u8>> {
+    pub async fn export_file(&self, file_id: &str, export_mime: &str) -> anyhow::Result<Vec<u8>> {
         debug!(file_id, export_mime, "gdrive: export_file");
         let url = format!(
             "{}/drive/v3/files/{}/export",
@@ -400,14 +385,17 @@ async fn check_response(resp: reqwest::Response) -> anyhow::Result<reqwest::Resp
         .unwrap_or(body);
 
     let lower = detail.to_lowercase();
-    if status == reqwest::StatusCode::FORBIDDEN && lower.contains("insufficient authentication scopes") {
+    if status == reqwest::StatusCode::FORBIDDEN
+        && lower.contains("insufficient authentication scopes")
+    {
         anyhow::bail!(
             "your current token does not include Google Drive scopes.\n\
              Run `void drive auth` to authorize Drive access."
         )
     }
     if (status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND)
-        && lower.contains("drive api") && lower.contains("not been used")
+        && lower.contains("drive api")
+        && lower.contains("not been used")
     {
         anyhow::bail!(
             "the Google Drive API is not enabled for your Cloud project.\n\
@@ -487,10 +475,9 @@ mod tests {
 
     #[test]
     fn parse_google_doc_url() {
-        let result = parse_google_url(
-            "https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/edit",
-        )
-        .unwrap();
+        let result =
+            parse_google_url("https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/edit")
+                .unwrap();
         assert_eq!(result.file_id, "1aBcDeFgHiJkLmNoPqRsTuVwXyZ");
         assert_eq!(result.kind, GoogleFileKind::Document);
     }
@@ -517,10 +504,9 @@ mod tests {
 
     #[test]
     fn parse_google_drawing_url() {
-        let result = parse_google_url(
-            "https://docs.google.com/drawings/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/edit",
-        )
-        .unwrap();
+        let result =
+            parse_google_url("https://docs.google.com/drawings/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/edit")
+                .unwrap();
         assert_eq!(result.file_id, "1aBcDeFgHiJkLmNoPqRsTuVwXyZ");
         assert_eq!(result.kind, GoogleFileKind::Drawing);
     }
@@ -557,8 +543,13 @@ mod tests {
 
     #[test]
     fn export_format_from_name_roundtrip() {
-        for name in ["txt", "md", "pdf", "docx", "csv", "xlsx", "pptx", "png", "svg"] {
-            assert!(ExportFormat::from_name(name).is_some(), "failed for: {name}");
+        for name in [
+            "txt", "md", "pdf", "docx", "csv", "xlsx", "pptx", "png", "svg",
+        ] {
+            assert!(
+                ExportFormat::from_name(name).is_some(),
+                "failed for: {name}"
+            );
         }
         assert!(ExportFormat::from_name("unknown").is_none());
     }
@@ -579,8 +570,12 @@ mod tests {
 
     #[test]
     fn is_google_native() {
-        assert!(is_google_native_mime("application/vnd.google-apps.document"));
-        assert!(is_google_native_mime("application/vnd.google-apps.spreadsheet"));
+        assert!(is_google_native_mime(
+            "application/vnd.google-apps.document"
+        ));
+        assert!(is_google_native_mime(
+            "application/vnd.google-apps.spreadsheet"
+        ));
         assert!(!is_google_native_mime("application/pdf"));
         assert!(!is_google_native_mime("text/plain"));
     }
@@ -596,7 +591,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("void-gdrive-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let dest = DriveApiClient::save_to_disk(&result, None).unwrap();
-        assert_eq!(dest.file_name().unwrap().to_str().unwrap(), "My Document.txt");
+        assert_eq!(
+            dest.file_name().unwrap().to_str().unwrap(),
+            "My Document.txt"
+        );
         std::fs::remove_file(&dest).ok();
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -631,9 +629,7 @@ mod tests {
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("/drive/v3/files/bin123"))
             .and(wiremock::matchers::query_param("alt", "media"))
-            .respond_with(
-                wiremock::ResponseTemplate::new(200).set_body_bytes(b"file content here"),
-            )
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_bytes(b"file content here"))
             .mount(&mock_server)
             .await;
 
@@ -650,15 +646,17 @@ mod tests {
             .and(wiremock::matchers::path("/drive/v3/files/doc123/export"))
             .and(wiremock::matchers::query_param("mimeType", "text/plain"))
             .respond_with(
-                wiremock::ResponseTemplate::new(200)
-                    .set_body_string("exported plain text content"),
+                wiremock::ResponseTemplate::new(200).set_body_string("exported plain text content"),
             )
             .mount(&mock_server)
             .await;
 
         let api = DriveApiClient::with_base_url("test-token", &mock_server.uri());
         let data = api.export_file("doc123", "text/plain").await.unwrap();
-        assert_eq!(String::from_utf8(data).unwrap(), "exported plain text content");
+        assert_eq!(
+            String::from_utf8(data).unwrap(),
+            "exported plain text content"
+        );
     }
 
     #[tokio::test]
@@ -673,7 +671,10 @@ mod tests {
 
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("/drive/v3/files/doc456"))
-            .and(wiremock::matchers::query_param("fields", "id,name,mimeType,size"))
+            .and(wiremock::matchers::query_param(
+                "fields",
+                "id,name,mimeType,size",
+            ))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(meta_body))
             .mount(&mock_server)
             .await;
@@ -681,9 +682,7 @@ mod tests {
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("/drive/v3/files/doc456/export"))
             .and(wiremock::matchers::query_param("mimeType", "text/csv"))
-            .respond_with(
-                wiremock::ResponseTemplate::new(200).set_body_string("col1,col2\na,b"),
-            )
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("col1,col2\na,b"))
             .mount(&mock_server)
             .await;
 
@@ -707,7 +706,10 @@ mod tests {
 
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("/drive/v3/files/pdf789"))
-            .and(wiremock::matchers::query_param("fields", "id,name,mimeType,size"))
+            .and(wiremock::matchers::query_param(
+                "fields",
+                "id,name,mimeType,size",
+            ))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(meta_body))
             .mount(&mock_server)
             .await;

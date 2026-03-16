@@ -30,6 +30,21 @@ pub struct HookLog {
     pub raw_output: Option<String>,
 }
 
+/// Parameters for inserting a hook log entry. Used to avoid too many function arguments.
+#[derive(Debug)]
+pub struct HookLogInsert<'a> {
+    pub hook_name: &'a str,
+    pub trigger_type: &'a str,
+    pub started_at: i64,
+    pub duration_ms: i64,
+    pub success: bool,
+    pub result: Option<&'a str>,
+    pub error: Option<&'a str>,
+    pub message_id: Option<&'a str>,
+    pub input_prompt: Option<&'a str>,
+    pub raw_output: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hook {
     pub name: String,
@@ -157,7 +172,10 @@ pub fn expand_placeholders_public(template: &str, msg: Option<&Message>) -> Stri
 fn expand_placeholders(template: &str, msg: Option<&Message>) -> String {
     let now = chrono::Utc::now();
     let mut result = template
-        .replace("{now}", &now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .replace(
+            "{now}",
+            &now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        )
         .replace("{today}", &now.format("%Y-%m-%d").to_string());
 
     if let Some(msg) = msg {
@@ -207,10 +225,18 @@ fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::Result<HookE
     if !output.status.success() {
         return Ok(HookExecResult {
             input_prompt: prompt.to_string(),
-            raw_output: if stdout.is_empty() { stderr.clone() } else { stdout },
+            raw_output: if stdout.is_empty() {
+                stderr.clone()
+            } else {
+                stdout
+            },
             result_summary: String::new(),
             success: false,
-            error: Some(format!("claude exited with {}: {}", output.status, stderr.trim())),
+            error: Some(format!(
+                "claude exited with {}: {}",
+                output.status,
+                stderr.trim()
+            )),
         });
     }
 
@@ -292,8 +318,10 @@ impl HookRunner {
             .hooks
             .iter()
             .filter(|h| h.enabled)
-            .filter(|h| matches!(&h.trigger, Trigger::NewMessage { connector } if
-                connector.is_none() || connector.as_deref() == Some(&msg.connector)))
+            .filter(|h| {
+                matches!(&h.trigger, Trigger::NewMessage { connector } if
+                connector.is_none() || connector.as_deref() == Some(&msg.connector))
+            })
             .cloned()
             .collect();
 
@@ -318,15 +346,17 @@ impl HookRunner {
                     Err(_) => return,
                 };
 
-                eprintln!("[hook] ▶ {} triggered by {}/{}", hook_name, connector, msg_id);
+                eprintln!(
+                    "[hook] ▶ {} triggered by {}/{}",
+                    hook_name, connector, msg_id
+                );
                 info!(hook = %hook_name, message_id = %msg_id, "executing event hook");
                 let started_at = chrono::Utc::now().timestamp();
                 let start = std::time::Instant::now();
 
-                let outcome = tokio::task::spawn_blocking(move || {
-                    execute_hook_blocking(&prompt, max_turns)
-                })
-                .await;
+                let outcome =
+                    tokio::task::spawn_blocking(move || execute_hook_blocking(&prompt, max_turns))
+                        .await;
 
                 let duration_ms = start.elapsed().as_millis() as i64;
 
@@ -334,43 +364,77 @@ impl HookRunner {
                     Ok(Ok(ref exec)) => {
                         let summary: String = exec.result_summary.chars().take(200).collect();
                         if exec.success {
-                            eprintln!("[hook] ✓ {} completed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, summary);
+                            eprintln!(
+                                "[hook] ✓ {} completed in {:.1}s — {}",
+                                hook_name,
+                                duration_ms as f64 / 1000.0,
+                                summary
+                            );
                             info!(hook = %hook_name, duration_ms, "hook completed: {summary}");
                         } else {
                             let err = exec.error.as_deref().unwrap_or("unknown error");
-                            eprintln!("[hook] ✗ {} failed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, err);
+                            eprintln!(
+                                "[hook] ✗ {} failed in {:.1}s — {}",
+                                hook_name,
+                                duration_ms as f64 / 1000.0,
+                                err
+                            );
                             error!(hook = %hook_name, duration_ms, "hook failed: {err}");
                         }
                         if let Some(ref db) = db {
-                            db.insert_hook_log(
-                                &hook_name, "new_message", started_at, duration_ms,
-                                exec.success,
-                                Some(&exec.result_summary),
-                                exec.error.as_deref(),
-                                Some(&msg_id),
-                                Some(&exec.input_prompt),
-                                Some(&exec.raw_output),
-                            ).ok();
+                            db.insert_hook_log(&HookLogInsert {
+                                hook_name: &hook_name,
+                                trigger_type: "new_message",
+                                started_at,
+                                duration_ms,
+                                success: exec.success,
+                                result: Some(&exec.result_summary),
+                                error: exec.error.as_deref(),
+                                message_id: Some(&msg_id),
+                                input_prompt: Some(&exec.input_prompt),
+                                raw_output: Some(&exec.raw_output),
+                            })
+                            .ok();
                         }
                     }
                     Ok(Err(ref e)) => {
                         eprintln!("[hook] ✗ {} crashed — {}", hook_name, e);
                         error!(hook = %hook_name, "hook execution error: {e}");
                         if let Some(ref db) = db {
-                            db.insert_hook_log(
-                                &hook_name, "new_message", started_at, duration_ms,
-                                false, None, Some(&e.to_string()), Some(&msg_id), None, None,
-                            ).ok();
+                            let err_str = e.to_string();
+                            db.insert_hook_log(&HookLogInsert {
+                                hook_name: &hook_name,
+                                trigger_type: "new_message",
+                                started_at,
+                                duration_ms,
+                                success: false,
+                                result: None,
+                                error: Some(&err_str),
+                                message_id: Some(&msg_id),
+                                input_prompt: None,
+                                raw_output: None,
+                            })
+                            .ok();
                         }
                     }
                     Err(ref e) => {
                         eprintln!("[hook] ✗ {} panicked — {}", hook_name, e);
                         error!(hook = %hook_name, "hook task panicked: {e}");
                         if let Some(ref db) = db {
-                            db.insert_hook_log(
-                                &hook_name, "new_message", started_at, duration_ms,
-                                false, None, Some(&e.to_string()), Some(&msg_id), None, None,
-                            ).ok();
+                            let err_str = e.to_string();
+                            db.insert_hook_log(&HookLogInsert {
+                                hook_name: &hook_name,
+                                trigger_type: "new_message",
+                                started_at,
+                                duration_ms,
+                                success: false,
+                                result: None,
+                                error: Some(&err_str),
+                                message_id: Some(&msg_id),
+                                input_prompt: None,
+                                raw_output: None,
+                            })
+                            .ok();
                         }
                     }
                 }
@@ -419,7 +483,9 @@ impl HookRunner {
                         }
                     };
 
-                    let delay = (next - now).to_std().unwrap_or(std::time::Duration::from_secs(60));
+                    let delay = (next - now)
+                        .to_std()
+                        .unwrap_or(std::time::Duration::from_secs(60));
                     info!(hook = %hook_name, next = %next, "next execution in {}s", delay.as_secs());
 
                     tokio::select! {
@@ -459,43 +525,77 @@ impl HookRunner {
                         Ok(Ok(ref exec)) => {
                             let summary: String = exec.result_summary.chars().take(200).collect();
                             if exec.success {
-                                eprintln!("[hook] ✓ {} completed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, summary);
+                                eprintln!(
+                                    "[hook] ✓ {} completed in {:.1}s — {}",
+                                    hook_name,
+                                    duration_ms as f64 / 1000.0,
+                                    summary
+                                );
                                 info!(hook = %hook_name, duration_ms, "scheduled hook completed: {summary}");
                             } else {
                                 let err = exec.error.as_deref().unwrap_or("unknown error");
-                                eprintln!("[hook] ✗ {} failed in {:.1}s — {}", hook_name, duration_ms as f64 / 1000.0, err);
+                                eprintln!(
+                                    "[hook] ✗ {} failed in {:.1}s — {}",
+                                    hook_name,
+                                    duration_ms as f64 / 1000.0,
+                                    err
+                                );
                                 error!(hook = %hook_name, duration_ms, "scheduled hook failed: {err}");
                             }
                             if let Some(ref db) = db {
-                                db.insert_hook_log(
-                                    &hook_name, "schedule", started_at, duration_ms,
-                                    exec.success,
-                                    Some(&exec.result_summary),
-                                    exec.error.as_deref(),
-                                    None,
-                                    Some(&exec.input_prompt),
-                                    Some(&exec.raw_output),
-                                ).ok();
+                                db.insert_hook_log(&HookLogInsert {
+                                    hook_name: &hook_name,
+                                    trigger_type: "schedule",
+                                    started_at,
+                                    duration_ms,
+                                    success: exec.success,
+                                    result: Some(&exec.result_summary),
+                                    error: exec.error.as_deref(),
+                                    message_id: None,
+                                    input_prompt: Some(&exec.input_prompt),
+                                    raw_output: Some(&exec.raw_output),
+                                })
+                                .ok();
                             }
                         }
                         Ok(Err(ref e)) => {
                             eprintln!("[hook] ✗ {} crashed — {}", hook_name, e);
                             error!(hook = %hook_name, "scheduled hook error: {e}");
                             if let Some(ref db) = db {
-                                db.insert_hook_log(
-                                    &hook_name, "schedule", started_at, duration_ms,
-                                    false, None, Some(&e.to_string()), None, None, None,
-                                ).ok();
+                                let err_str = e.to_string();
+                                db.insert_hook_log(&HookLogInsert {
+                                    hook_name: &hook_name,
+                                    trigger_type: "schedule",
+                                    started_at,
+                                    duration_ms,
+                                    success: false,
+                                    result: None,
+                                    error: Some(&err_str),
+                                    message_id: None,
+                                    input_prompt: None,
+                                    raw_output: None,
+                                })
+                                .ok();
                             }
                         }
                         Err(ref e) => {
                             eprintln!("[hook] ✗ {} panicked — {}", hook_name, e);
                             error!(hook = %hook_name, "scheduled hook panicked: {e}");
                             if let Some(ref db) = db {
-                                db.insert_hook_log(
-                                    &hook_name, "schedule", started_at, duration_ms,
-                                    false, None, Some(&e.to_string()), None, None, None,
-                                ).ok();
+                                let err_str = e.to_string();
+                                db.insert_hook_log(&HookLogInsert {
+                                    hook_name: &hook_name,
+                                    trigger_type: "schedule",
+                                    started_at,
+                                    duration_ms,
+                                    success: false,
+                                    result: None,
+                                    error: Some(&err_str),
+                                    message_id: None,
+                                    input_prompt: None,
+                                    raw_output: None,
+                                })
+                                .ok();
                             }
                         }
                     }
@@ -537,7 +637,9 @@ mod tests {
         let parsed: Hook = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.name, "Test Hook");
         assert_eq!(parsed.max_turns, 5);
-        assert!(matches!(parsed.trigger, Trigger::NewMessage { connector: Some(ref c) } if c == "gmail"));
+        assert!(
+            matches!(parsed.trigger, Trigger::NewMessage { connector: Some(ref c) } if c == "gmail")
+        );
     }
 
     #[test]

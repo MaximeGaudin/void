@@ -12,7 +12,9 @@ mod epoch_iso8601 {
         S: Serializer,
     {
         match DateTime::<Utc>::from_timestamp(*ts, 0) {
-            Some(dt) => serializer.serialize_str(&dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+            Some(dt) => {
+                serializer.serialize_str(&dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+            }
             None => serializer.serialize_i64(*ts),
         }
     }
@@ -30,11 +32,9 @@ mod epoch_iso8601 {
 
         match TsOrString::deserialize(deserializer)? {
             TsOrString::Ts(ts) => Ok(ts),
-            TsOrString::Str(s) => {
-                DateTime::parse_from_rfc3339(&s)
-                    .map(|dt| dt.timestamp())
-                    .map_err(serde::de::Error::custom)
-            }
+            TsOrString::Str(s) => DateTime::parse_from_rfc3339(&s)
+                .map(|dt| dt.timestamp())
+                .map_err(serde::de::Error::custom),
         }
     }
 }
@@ -50,9 +50,8 @@ mod epoch_iso8601_opt {
     {
         match ts {
             Some(ts) => match DateTime::<Utc>::from_timestamp(*ts, 0) {
-                Some(dt) => serializer.serialize_some(
-                    &dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                ),
+                Some(dt) => serializer
+                    .serialize_some(&dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
                 None => serializer.serialize_some(ts),
             },
             None => serializer.serialize_none(),
@@ -330,9 +329,18 @@ mod tests {
         };
         let json = serde_json::to_string(&msg).unwrap();
 
-        assert!(json.contains("2023-11-14T22:13:20Z"), "timestamp should be ISO 8601, got: {json}");
-        assert!(json.contains("2023-11-14T22:13:30Z"), "synced_at should be ISO 8601, got: {json}");
-        assert!(!json.contains("1700000000"), "should not contain raw unix timestamps");
+        assert!(
+            json.contains("2023-11-14T22:13:20Z"),
+            "timestamp should be ISO 8601, got: {json}"
+        );
+        assert!(
+            json.contains("2023-11-14T22:13:30Z"),
+            "synced_at should be ISO 8601, got: {json}"
+        );
+        assert!(
+            !json.contains("1700000000"),
+            "should not contain raw unix timestamps"
+        );
 
         let deserialized: Message = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id, "m1");
@@ -363,9 +371,18 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("meet.google.com"));
 
-        assert!(json.contains("2023-11-14T22:13:20Z"), "start_at should be ISO 8601, got: {json}");
-        assert!(json.contains("2023-11-14T22:43:20Z"), "end_at should be ISO 8601, got: {json}");
-        assert!(!json.contains("1700000000"), "should not contain raw unix timestamp");
+        assert!(
+            json.contains("2023-11-14T22:13:20Z"),
+            "start_at should be ISO 8601, got: {json}"
+        );
+        assert!(
+            json.contains("2023-11-14T22:43:20Z"),
+            "end_at should be ISO 8601, got: {json}"
+        );
+        assert!(
+            !json.contains("1700000000"),
+            "should not contain raw unix timestamp"
+        );
 
         let roundtrip: CalendarEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(roundtrip.start_at, 1_700_000_000);

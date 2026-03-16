@@ -4,4 +4,4 @@ mod tools;
 
 pub mod runner;
 
-pub use runner::{AgentConfig, run};
+pub use runner::{run, AgentConfig};

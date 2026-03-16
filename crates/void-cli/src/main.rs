@@ -122,7 +122,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
         Some(Command::Drive(args)) => commands::gdrive::run(args, !cli.pretty).await,
         Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,
-        Some(Command::Hook(args)) => commands::hook::run(args, !cli.pretty).map_err(Into::into),
+        Some(Command::Hook(args)) => commands::hook::run(args, !cli.pretty),
         None => {
             commands::status::run();
             Ok(())

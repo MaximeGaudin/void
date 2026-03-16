@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use rig::agent::Agent;
 use rig::client::CompletionClient;
 use rig::completion::message::Message;
@@ -83,8 +83,13 @@ pub async fn run(config: AgentConfig) -> Result<()> {
 
     match creds.provider {
         ProviderKind::ClaudeCode => {
-            run_claude_code_loop(&model_name, &system_prompt, max_turns, config.initial_prompt)
-                .await
+            run_claude_code_loop(
+                &model_name,
+                &system_prompt,
+                max_turns,
+                config.initial_prompt,
+            )
+            .await
         }
         ProviderKind::Anthropic => {
             let hook = AgentHook {
@@ -205,15 +210,16 @@ fn invoke_claude_code(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::inherit());
 
-    let output = cmd.output().context("Failed to run `claude` CLI. Is Claude Code installed?")?;
+    let output = cmd
+        .output()
+        .context("Failed to run `claude` CLI. Is Claude Code installed?")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("claude exited with {}: {}", output.status, stderr.trim());
     }
 
-    let raw = String::from_utf8(output.stdout)
-        .context("Invalid UTF-8 in claude output")?;
+    let raw = String::from_utf8(output.stdout).context("Invalid UTF-8 in claude output")?;
 
     let json: serde_json::Value =
         serde_json::from_str(raw.trim()).context("Failed to parse claude JSON output")?;
@@ -230,7 +236,11 @@ fn invoke_claude_code(
         .unwrap_or("")
         .to_string();
 
-    if json.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if json
+        .get("is_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         bail!("Claude returned an error: {}", result);
     }
 
@@ -397,8 +407,7 @@ fn find_key_for_provider(provider: &ProviderKind) -> Result<ResolvedCredentials>
             })
         }
         ProviderKind::OpenRouter => {
-            let key =
-                std::env::var("OPENROUTER_API_KEY").context("OPENROUTER_API_KEY not set")?;
+            let key = std::env::var("OPENROUTER_API_KEY").context("OPENROUTER_API_KEY not set")?;
             Ok(ResolvedCredentials {
                 provider: ProviderKind::OpenRouter,
                 api_key: key,

@@ -141,6 +141,7 @@ fn cmd_list(dir: &std::path::Path, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_create(
     dir: &std::path::Path,
     name: &str,
@@ -163,8 +164,8 @@ fn cmd_create(
             connector: connector.map(|s| s.to_string()),
         },
         "schedule" | "cron" => {
-            let cron_expr = cron
-                .ok_or_else(|| anyhow::anyhow!("--cron is required for schedule triggers"))?;
+            let cron_expr =
+                cron.ok_or_else(|| anyhow::anyhow!("--cron is required for schedule triggers"))?;
             croner::Cron::new(cron_expr)
                 .parse()
                 .map_err(|e| anyhow::anyhow!("Invalid cron expression '{}': {}", cron_expr, e))?;
@@ -188,18 +189,13 @@ fn cmd_create(
 
     hooks::save_hook(dir, &hook)?;
     let slug = hooks::slugify(name);
-    eprintln!(
-        "Hook '{}' created: {}/{}.toml",
-        name,
-        dir.display(),
-        slug
-    );
+    eprintln!("Hook '{}' created: {}/{}.toml", name, dir.display(), slug);
     Ok(())
 }
 
 fn cmd_show(dir: &std::path::Path, name: &str, json: bool) -> anyhow::Result<()> {
-    let hook = hooks::find_hook(dir, name)
-        .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found", name))?;
+    let hook =
+        hooks::find_hook(dir, name).ok_or_else(|| anyhow::anyhow!("Hook '{}' not found", name))?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&hook)?);
@@ -228,13 +224,9 @@ fn cmd_toggle(dir: &std::path::Path, name: &str, enabled: bool) -> anyhow::Resul
     Ok(())
 }
 
-fn cmd_test(
-    dir: &std::path::Path,
-    name: &str,
-    message_id: Option<&str>,
-) -> anyhow::Result<()> {
-    let hook = hooks::find_hook(dir, name)
-        .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found", name))?;
+fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyhow::Result<()> {
+    let hook =
+        hooks::find_hook(dir, name).ok_or_else(|| anyhow::anyhow!("Hook '{}' not found", name))?;
 
     let msg = match (&hook.trigger, message_id) {
         (Trigger::NewMessage { .. }, Some(mid)) => {
@@ -257,19 +249,30 @@ fn cmd_test(
     };
 
     let prompt = hooks::expand_placeholders_public(&hook.prompt.text, msg.as_ref());
-    eprintln!("Executing hook '{}' (max_turns: {})...\n", hook.name, hook.max_turns);
+    eprintln!(
+        "Executing hook '{}' (max_turns: {})...\n",
+        hook.name, hook.max_turns
+    );
 
     let exec = hooks::execute_hook_public(&prompt, hook.max_turns)?;
     if exec.success {
         println!("{}", exec.result_summary);
     } else {
-        eprintln!("Hook failed: {}", exec.error.as_deref().unwrap_or("unknown error"));
+        eprintln!(
+            "Hook failed: {}",
+            exec.error.as_deref().unwrap_or("unknown error")
+        );
         println!("{}", exec.raw_output);
     }
     Ok(())
 }
 
-fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>, json: bool) -> anyhow::Result<()> {
+fn cmd_log(
+    limit: usize,
+    hook_filter: Option<&str>,
+    detail_id: Option<i64>,
+    json: bool,
+) -> anyhow::Result<()> {
     let config_path = void_core::config::default_config_path();
     let cfg = void_core::config::VoidConfig::load_or_default(&config_path);
     let db = void_core::db::Database::open(&cfg.db_path())?;
@@ -285,7 +288,9 @@ fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>, json
         return match entry {
             Some(log) => print_log_detail(log, json),
             None => {
-                anyhow::bail!("Log entry #{id} not found. Run `void hook log` to list available entries.");
+                anyhow::bail!(
+                    "Log entry #{id} not found. Run `void hook log` to list available entries."
+                );
             }
         };
     }
@@ -312,7 +317,12 @@ fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>, json
 
             println!(
                 "  #{:<4} {} [{:>4}] {} — {} ({}, {})",
-                log.id, ts, status, log.hook_name, log.trigger_type, duration,
+                log.id,
+                ts,
+                status,
+                log.hook_name,
+                log.trigger_type,
+                duration,
                 log.message_id.as_deref().unwrap_or("-")
             );
 
@@ -326,7 +336,10 @@ fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>, json
                 }
             }
         }
-        eprintln!("\nShowing {} entries. Use `void hook log --id <ID>` for full detail.", logs.len());
+        eprintln!(
+            "\nShowing {} entries. Use `void hook log --id <ID>` for full detail.",
+            logs.len()
+        );
     }
     Ok(())
 }
@@ -402,7 +415,8 @@ fn print_stream_event(event: &serde_json::Value) {
                         }
                         Some("tool_use") => {
                             let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-                            let input = block.get("input")
+                            let input = block
+                                .get("input")
                                 .map(|i| serde_json::to_string(i).unwrap_or_default())
                                 .unwrap_or_default();
                             println!("  [tool_call] {} → {}", name, input);
@@ -413,16 +427,22 @@ fn print_stream_event(event: &serde_json::Value) {
             }
         }
         "tool" | "tool_result" => {
-            let content = event.get("content")
+            let content = event
+                .get("content")
                 .or_else(|| event.pointer("/content"))
                 .and_then(|c| {
                     if let Some(s) = c.as_str() {
                         Some(s.to_string())
                     } else if let Some(arr) = c.as_array() {
-                        let texts: Vec<_> = arr.iter()
+                        let texts: Vec<_> = arr
+                            .iter()
                             .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
                             .collect();
-                        if texts.is_empty() { None } else { Some(texts.join("\n")) }
+                        if texts.is_empty() {
+                            None
+                        } else {
+                            Some(texts.join("\n"))
+                        }
                     } else {
                         None
                     }
@@ -439,8 +459,12 @@ fn print_stream_event(event: &serde_json::Value) {
             let turns = event.get("num_turns").and_then(|n| n.as_u64());
             let cost = event.get("cost_usd").and_then(|c| c.as_f64());
             print!("  [result] status={}", subtype);
-            if let Some(t) = turns { print!(", turns={}", t); }
-            if let Some(c) = cost { print!(", cost=${:.4}", c); }
+            if let Some(t) = turns {
+                print!(", turns={}", t);
+            }
+            if let Some(c) = cost {
+                print!(", cost=${:.4}", c);
+            }
             println!();
             if !result.is_empty() {
                 println!("           {}", result);

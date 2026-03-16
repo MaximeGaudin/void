@@ -197,7 +197,13 @@ fn show_menu_header(cfg: &VoidConfig) {
 async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
     let choice = select(
         "Which connector type?",
-        &["Gmail", "Slack", "WhatsApp", "Google Calendar", "Google Drive"],
+        &[
+            "Gmail",
+            "Slack",
+            "WhatsApp",
+            "Google Calendar",
+            "Google Drive",
+        ],
     );
 
     separator();
@@ -587,10 +593,7 @@ async fn setup_slack(
     eprintln!("└─────────────────────────────────────────────────────────┘");
     eprintln!();
 
-    if !confirm_typed(
-        "Please confirm you understand the above.",
-        "user not bot",
-    ) {
+    if !confirm_typed("Please confirm you understand the above.", "user not bot") {
         eprintln!("  Slack setup skipped.");
         return Ok(());
     }
@@ -966,7 +969,10 @@ async fn setup_gdrive(cfg: &VoidConfig, store_path: &Path) -> anyhow::Result<()>
         Ok(()) => eprintln!("  ✓ Google Drive authorized for \"{}\".", account.id),
         Err(e) => {
             eprintln!("  ✗ Authorization failed: {e}");
-            eprintln!("    You can retry later with: void drive auth --account {}", account.id);
+            eprintln!(
+                "    You can retry later with: void drive auth --account {}",
+                account.id
+            );
         }
     }
     Ok(())

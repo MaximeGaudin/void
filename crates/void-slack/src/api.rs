@@ -454,9 +454,7 @@ impl SlackApiClient {
     ) -> anyhow::Result<()> {
         debug!(
             file_id,
-            title,
-            channel_id,
-            "slack: files.completeUploadExternal"
+            title, channel_id, "slack: files.completeUploadExternal"
         );
         let mut body = serde_json::json!({
             "files": [{"id": file_id, "title": title}],

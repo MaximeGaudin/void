@@ -65,9 +65,6 @@ pub trait Connector: Send + Sync {
         _to: &str,
         _comment: Option<&str>,
     ) -> anyhow::Result<String> {
-        anyhow::bail!(
-            "Forward is not supported for {}",
-            self.connector_type()
-        )
+        anyhow::bail!("Forward is not supported for {}", self.connector_type())
     }
 }

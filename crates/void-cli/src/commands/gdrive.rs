@@ -1,9 +1,7 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
 use void_core::config::{self, expand_tilde, AccountSettings, AccountType, VoidConfig};
-use void_gdrive::api::{
-    self, DriveApiClient, ExportFormat,
-};
+use void_gdrive::api::{self, DriveApiClient, ExportFormat};
 
 #[derive(Debug, Args)]
 pub struct GdriveArgs {
@@ -205,13 +203,14 @@ fn resolve_file_id(url_or_id: &str) -> anyhow::Result<String> {
     }
 }
 
+/// Future type for building a Drive API client.
+type DriveClientFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<DriveApiClient>> + Send>>;
+
 /// Build a Drive API client future and config from the user's stored tokens.
 fn build_drive_client(
     account_filter: Option<&str>,
-) -> anyhow::Result<(
-    std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<DriveApiClient>> + Send>>,
-    VoidConfig,
-)> {
+) -> anyhow::Result<(DriveClientFuture, VoidConfig)> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("cannot load config: {e}\nRun `void setup` first."))?;
