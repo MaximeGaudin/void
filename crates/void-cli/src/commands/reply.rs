@@ -137,6 +137,7 @@ fn build_reply_id(
     match connector_type {
         ConnectorType::WhatsApp => format!("{conv_external_id}:{msg_external_id}"),
         ConnectorType::Slack => format!("{conv_external_id}:{msg_external_id}"),
+        ConnectorType::Telegram => format!("{conv_external_id}:{msg_external_id}"),
         ConnectorType::Gmail => msg_external_id.to_string(),
         ConnectorType::Calendar => msg_external_id.to_string(),
     }

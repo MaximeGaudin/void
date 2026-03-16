@@ -54,6 +54,20 @@ pub fn build_connector(
                 session_db.to_str().unwrap_or(""),
             )))
         }
+        (
+            AccountType::Telegram,
+            AccountSettings::Telegram {
+                api_id, api_hash, ..
+            },
+        ) => {
+            let session_path = store_path.join(format!("telegram-{}.session", account.id));
+            Ok(Arc::new(void_telegram::connector::TelegramConnector::new(
+                &account.id,
+                session_path.to_str().unwrap_or(""),
+                *api_id,
+                api_hash,
+            )))
+        }
         _ => anyhow::bail!(
             "Mismatched account type and settings for '{}': type={}, settings don't match",
             account.id,

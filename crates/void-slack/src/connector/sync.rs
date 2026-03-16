@@ -154,12 +154,7 @@ impl SlackConnector {
             loop {
                 match self
                     .api
-                    .conversations_history(
-                        &conv.id,
-                        200,
-                        Some(oldest_ts),
-                        cursor.as_deref(),
-                    )
+                    .conversations_history(&conv.id, 200, Some(oldest_ts), cursor.as_deref())
                     .await
                 {
                     Ok(history) => {

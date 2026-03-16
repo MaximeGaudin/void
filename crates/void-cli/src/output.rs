@@ -402,6 +402,7 @@ pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {
         "slack" | "sl" => Some(ConnectorType::Slack),
         "gmail" | "gm" | "email" => Some(ConnectorType::Gmail),
         "calendar" | "cal" | "ca" => Some(ConnectorType::Calendar),
+        "telegram" | "tg" => Some(ConnectorType::Telegram),
         _ => None,
     }
 }
@@ -412,6 +413,7 @@ fn badge_from_connector(connector: &str) -> String {
         "slack" => "[SL]".into(),
         "gmail" => "[GM]".into(),
         "calendar" => "[CA]".into(),
+        "telegram" => "[TG]".into(),
         other => format!("[{}]", truncate(other, 4)),
     }
 }

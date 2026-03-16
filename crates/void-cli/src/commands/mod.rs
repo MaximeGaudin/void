@@ -19,4 +19,5 @@ pub mod setup;
 pub mod slack;
 pub mod status;
 pub mod sync;
+pub mod telegram;
 pub mod whatsapp;

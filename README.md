@@ -1,6 +1,6 @@
 # Void CLI
 
-A unified command-line interface for interacting with WhatsApp, Slack, Gmail, Google Calendar, and Google Drive from a single tool — plus an AI agent and LLM-powered hooks.
+A unified command-line interface for interacting with WhatsApp, Telegram, Slack, Gmail, Google Calendar, and Google Drive from a single tool — plus an AI agent and LLM-powered hooks.
 
 ## Inbox Zero
 
@@ -32,10 +32,12 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │                          ├── void slack react/edit  │
 │  AI & Automation         ├── void slack schedule     │
 │  ├── void agent          ├── void drive download    │
-│  └── void hook           └── void whatsapp download │
+│  └── void hook           ├── void whatsapp download │
+│                          └── void telegram download │
 │                                                     │
 │  Sync daemon                                        │
 │  ├── WhatsApp (wa-rs WebSocket)                     │
+│  ├── Telegram (grammers MTProto)                    │
 │  ├── Slack (Socket Mode WebSocket)                  │
 │  ├── Gmail (history.list polling)                   │
 │  └── Calendar (syncToken polling)                   │
@@ -116,6 +118,7 @@ void calendar
 | `void slack schedule` | Schedule a message for later |
 | `void slack open` | Open a group DM with multiple users |
 | `void whatsapp download <id>` | Download WhatsApp media |
+| `void telegram download <id>` | Download Telegram media |
 | `void calendar create` | Create a calendar event |
 | `void calendar search` | Search calendar events |
 | `void calendar respond <id>` | Accept/decline/tentative an invite |
@@ -156,7 +159,7 @@ void calendar
 | Flag | Description |
 |------|-------------|
 | `--pretty` | Human-readable table output (default is JSON) |
-| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `calendar` |
+| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar` |
 | `--account <id>` | Filter by account ID |
 | `-n` / `--size <N>` | Limit number of results (default: 50) |
 | `--all` | Include archived items |
@@ -188,6 +191,12 @@ app_token = "xapp-1-..."
 user_token = "xoxp-..."
 
 [[accounts]]
+id = "telegram"
+type = "telegram"
+api_id = 12345
+api_hash = "0123456789abcdef0123456789abcdef"
+
+[[accounts]]
 id = "mgaudin@gladia.io"
 type = "gmail"
 credentials_file = "~/.config/void/google-credentials.json"
@@ -204,6 +213,13 @@ calendar_ids = ["primary"]
 ### WhatsApp
 
 No external credentials needed. Run `void setup`, select WhatsApp, and scan the QR code with your phone (WhatsApp > Linked Devices > Link a Device).
+
+### Telegram
+
+1. Go to [my.telegram.org](https://my.telegram.org) and log in with your phone number
+2. Navigate to "API development tools" and create an application
+3. Run `void setup`, select Telegram, and enter your `api_id` and `api_hash`
+4. Follow the prompts to enter your phone number and login code
 
 ### Slack
 
@@ -225,6 +241,7 @@ All data is stored locally:
 
 - **Database**: `~/.local/share/void/void.db` (SQLite with WAL mode)
 - **WhatsApp sessions**: `~/.local/share/void/whatsapp-*.db`
+- **Telegram sessions**: `~/.local/share/void/telegram-*.session`
 - **OAuth tokens**: `~/.local/share/void/*-token.json`
 - **Config**: `~/.config/void/config.toml`
 
@@ -249,6 +266,7 @@ crates/
   void-gmail/      # Gmail connector: OAuth2, API client
   void-calendar/   # Calendar connector: shared OAuth, API client
   void-whatsapp/   # WhatsApp connector: wa-rs integration
+  void-telegram/   # Telegram connector: grammers MTProto integration
   void-gdrive/     # Google Drive connector: download, export, metadata
   void-agent/      # AI agent: LLM-powered interactive assistant with tool access
 ```

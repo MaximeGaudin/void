@@ -201,6 +201,7 @@ async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyho
             "Gmail",
             "Slack",
             "WhatsApp",
+            "Telegram",
             "Google Calendar",
             "Google Drive",
         ],
@@ -211,8 +212,9 @@ async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyho
         0 => setup_gmail(cfg, store_path, true).await?,
         1 => setup_slack(cfg, store_path, true).await?,
         2 => setup_whatsapp(cfg, store_path, true).await?,
-        3 => setup_calendar(cfg, store_path, true).await?,
-        4 => setup_gdrive(cfg, store_path).await?,
+        3 => setup_telegram(cfg, store_path, true).await?,
+        4 => setup_calendar(cfg, store_path, true).await?,
+        5 => setup_gdrive(cfg, store_path).await?,
         _ => {}
     }
     Ok(())
@@ -292,6 +294,20 @@ fn rename_account(cfg: &mut VoidConfig, store_path: &std::path::Path) -> anyhow:
                 "  Renamed session: {} → {}",
                 old_wa.display(),
                 new_wa.display()
+            );
+        }
+    }
+
+    // Rename Telegram session file
+    if account_type.to_string() == "telegram" {
+        let old_tg = store_path.join(format!("telegram-{old_name}.session"));
+        let new_tg = store_path.join(format!("telegram-{new_name}.session"));
+        if old_tg.exists() {
+            std::fs::rename(&old_tg, &new_tg)?;
+            eprintln!(
+                "  Renamed session: {} → {}",
+                old_tg.display(),
+                new_tg.display()
             );
         }
     }
@@ -381,6 +397,10 @@ fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                     eprintln!("    calendar_ids: {calendar_ids:?}");
                 }
                 config::AccountSettings::WhatsApp {} => {}
+                config::AccountSettings::Telegram { api_id, api_hash } => {
+                    eprintln!("    api_id:   {api_id}");
+                    eprintln!("    api_hash: {}", config::redact_token(api_hash));
+                }
             }
         }
     }
@@ -406,7 +426,7 @@ async fn run_full_wizard(
 ) -> anyhow::Result<()> {
     eprintln!();
     eprintln!("This wizard will guide you through connecting your");
-    eprintln!("communication services (Gmail, Slack, WhatsApp,");
+    eprintln!("communication services (Gmail, Slack, WhatsApp, Telegram,");
     eprintln!("Google Calendar, Google Drive) to Void.");
     eprintln!();
 
@@ -416,6 +436,8 @@ async fn run_full_wizard(
     setup_slack(cfg, store_path, false).await?;
     separator();
     setup_whatsapp(cfg, store_path, false).await?;
+    separator();
+    setup_telegram(cfg, store_path, false).await?;
     separator();
     setup_calendar(cfg, store_path, false).await?;
     separator();
@@ -787,6 +809,86 @@ async fn setup_whatsapp(
         }
     } else {
         eprintln!("  You can pair later with: void setup");
+    }
+
+    cfg.accounts.push(account);
+    Ok(())
+}
+
+// ── Telegram ────────────────────────────────────────────────────────────────
+
+async fn setup_telegram(
+    cfg: &mut VoidConfig,
+    store_path: &Path,
+    add_only: bool,
+) -> anyhow::Result<()> {
+    eprintln!("✈️  TELEGRAM");
+    eprintln!();
+    eprintln!("Connects your Telegram account using the MTProto API.");
+    eprintln!("You need an API ID and API hash from https://my.telegram.org");
+
+    if !add_only {
+        let existing: Vec<usize> = cfg
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.account_type == AccountType::Telegram)
+            .map(|(i, _)| i)
+            .collect();
+
+        let action = pick_connector_action("Telegram", &existing, cfg);
+        match action {
+            ConnectorAction::Skip => return Ok(()),
+            ConnectorAction::Keep => return Ok(()),
+            ConnectorAction::Replace(idx) => {
+                cfg.accounts.remove(idx);
+            }
+            ConnectorAction::Add => {}
+        }
+    }
+
+    eprintln!();
+    eprintln!("To get your API credentials:");
+    eprintln!("  1. Go to https://my.telegram.org");
+    eprintln!("  2. Log in with your phone number");
+    eprintln!("  3. Go to \"API development tools\"");
+    eprintln!("  4. Create an application (if you haven't already)");
+    eprintln!("  5. Copy the api_id (integer) and api_hash (hex string)");
+    eprintln!();
+
+    let api_id_str = prompt("API ID (integer): ");
+    if api_id_str.is_empty() {
+        eprintln!("  Skipped (no API ID provided).");
+        return Ok(());
+    }
+    let api_id: i32 = api_id_str
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid API ID: must be an integer"))?;
+
+    let api_hash = prompt("API hash (hex string): ");
+    if api_hash.is_empty() {
+        eprintln!("  Skipped (no API hash provided).");
+        return Ok(());
+    }
+
+    let account_id = prompt_default("Account name", "telegram");
+
+    let account = AccountConfig {
+        id: account_id.clone(),
+        account_type: AccountType::Telegram,
+        settings: AccountSettings::Telegram { api_id, api_hash },
+    };
+
+    if confirm_default_yes("Authenticate now? (will ask for phone number and code)") {
+        match authenticate_account(&account, store_path).await {
+            Ok(()) => eprintln!("  ✓ Telegram authenticated successfully."),
+            Err(e) => {
+                eprintln!("  ✗ Authentication failed: {e}");
+                eprintln!("    You can retry later with: void setup");
+            }
+        }
+    } else {
+        eprintln!("  You can authenticate later with: void setup");
     }
 
     cfg.accounts.push(account);

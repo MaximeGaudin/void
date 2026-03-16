@@ -95,6 +95,14 @@ impl<'de> Deserialize<'de> for AccountConfig {
                 calendar_ids: raw.calendar_ids.unwrap_or_default(),
             },
             AccountType::WhatsApp => AccountSettings::WhatsApp {},
+            AccountType::Telegram => AccountSettings::Telegram {
+                api_id: raw
+                    .api_id
+                    .ok_or_else(|| serde::de::Error::missing_field("api_id"))?,
+                api_hash: raw
+                    .api_hash
+                    .ok_or_else(|| serde::de::Error::missing_field("api_hash"))?,
+            },
         };
         Ok(AccountConfig {
             id: raw.id,
@@ -119,6 +127,10 @@ struct RawAccountConfig {
     credentials_file: Option<String>,
     #[serde(default)]
     calendar_ids: Option<Vec<String>>,
+    #[serde(default)]
+    api_id: Option<i32>,
+    #[serde(default)]
+    api_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -128,6 +140,7 @@ pub enum AccountType {
     Slack,
     Gmail,
     Calendar,
+    Telegram,
 }
 
 impl std::fmt::Display for AccountType {
@@ -137,6 +150,7 @@ impl std::fmt::Display for AccountType {
             Self::Slack => write!(f, "slack"),
             Self::Gmail => write!(f, "gmail"),
             Self::Calendar => write!(f, "calendar"),
+            Self::Telegram => write!(f, "telegram"),
         }
     }
 }
@@ -161,6 +175,10 @@ pub enum AccountSettings {
         calendar_ids: Vec<String>,
     },
     WhatsApp {},
+    Telegram {
+        api_id: i32,
+        api_hash: String,
+    },
 }
 
 impl VoidConfig {
@@ -195,13 +213,14 @@ impl VoidConfig {
         self.accounts.iter().find(|a| a.id == account_id)
     }
 
-    /// Find a config account by connector type string ("slack", "gmail", "whatsapp", "calendar").
+    /// Find a config account by connector type string (e.g. "slack", "gmail", "whatsapp", "telegram").
     pub fn find_account_by_connector(&self, connector: &str) -> Option<&AccountConfig> {
         let target = match connector {
             "whatsapp" => AccountType::WhatsApp,
             "slack" => AccountType::Slack,
             "gmail" => AccountType::Gmail,
             "calendar" => AccountType::Calendar,
+            "telegram" => AccountType::Telegram,
             _ => return None,
         };
         self.accounts.iter().find(|a| a.account_type == target)
@@ -244,6 +263,12 @@ calendar_poll_interval_secs = 60
 # id = "my-calendar"
 # type = "calendar"
 # calendar_ids = ["primary"]
+#
+# [[accounts]]
+# id = "telegram"
+# type = "telegram"
+# api_id = 12345
+# api_hash = "0123456789abcdef0123456789abcdef"
 "#
     .to_string()
 }

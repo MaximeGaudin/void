@@ -142,7 +142,10 @@ fn resolve_target(to: &str, connector_type: &str, cfg: &VoidConfig) -> anyhow::R
         debug!(name, external_id = %conv.external_id, "resolved channel name to ID from DB");
         Ok(conv.external_id)
     } else {
-        debug!(name, "channel not in local DB, passing through for API resolution");
+        debug!(
+            name,
+            "channel not in local DB, passing through for API resolution"
+        );
         Ok(to.to_string())
     }
 }

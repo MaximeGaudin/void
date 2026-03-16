@@ -13,7 +13,7 @@ use crate::commands::connector_factory;
 
 #[derive(Debug, Args)]
 pub struct SyncArgs {
-    /// Sync only specific connectors (comma-separated: whatsapp,slack,gmail,calendar)
+    /// Sync only specific connectors (comma-separated: whatsapp,telegram,slack,gmail,calendar)
     #[arg(long)]
     pub connectors: Option<String>,
     /// Detach and run as a background daemon
@@ -25,7 +25,7 @@ pub struct SyncArgs {
     /// Clear the database before syncing (fresh start)
     #[arg(long)]
     pub clear: bool,
-    /// Clear data for a specific connector before syncing (e.g. whatsapp, slack, gmail, calendar)
+    /// Clear data for a specific connector before syncing (e.g. whatsapp, telegram, slack, gmail, calendar)
     #[arg(long)]
     pub clear_connector: Option<String>,
     /// Stop the running sync daemon
@@ -284,6 +284,21 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
                         eprintln!(
                             "Removed WhatsApp session: {} (will require re-pairing)",
                             session_db.display()
+                        );
+                    }
+                }
+            }
+        }
+
+        if ct == "telegram" {
+            for account in &cfg.accounts {
+                if account.account_type.to_string() == "telegram" {
+                    let session_file = store_path.join(format!("telegram-{}.session", account.id));
+                    if session_file.exists() {
+                        std::fs::remove_file(&session_file)?;
+                        eprintln!(
+                            "Removed Telegram session: {} (will require re-auth)",
+                            session_file.display()
                         );
                     }
                 }

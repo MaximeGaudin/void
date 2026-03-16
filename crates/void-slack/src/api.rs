@@ -251,7 +251,11 @@ impl SlackApiClient {
                 .conversations_list(cursor.as_deref(), 1000)
                 .await
                 .map_err(|e| anyhow::anyhow!("conversations.list failed: {e}"))?;
-            if let Some(ch) = resp.channels.iter().find(|c| c.name.as_deref() == Some(name)) {
+            if let Some(ch) = resp
+                .channels
+                .iter()
+                .find(|c| c.name.as_deref() == Some(name))
+            {
                 return Ok(ch.id.clone());
             }
             match resp

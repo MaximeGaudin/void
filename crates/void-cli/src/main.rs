@@ -3,7 +3,7 @@ pub mod output;
 
 use clap::{Parser, Subcommand};
 
-/// Void: unified communication CLI for WhatsApp, Slack, Gmail, and Google Calendar
+/// Void: unified communication CLI for WhatsApp, Telegram, Slack, Gmail, and Google Calendar
 #[derive(Debug, Parser)]
 #[command(name = "void", version, about)]
 struct Cli {
@@ -63,6 +63,8 @@ enum Command {
     Slack(commands::slack::SlackArgs),
     /// WhatsApp-specific operations (media download)
     Whatsapp(commands::whatsapp::WhatsAppArgs),
+    /// Telegram-specific operations (media download)
+    Telegram(commands::telegram::TelegramArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
     /// Download files from Google Drive/Docs/Sheets/Slides
@@ -119,6 +121,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Gmail(args)) => commands::gmail::run(args, !cli.pretty).await,
         Some(Command::Slack(args)) => commands::slack::run(args, !cli.pretty).await,
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args, !cli.pretty).await,
+        Some(Command::Telegram(args)) => commands::telegram::run(args, !cli.pretty).await,
         Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
         Some(Command::Drive(args)) => commands::gdrive::run(args, !cli.pretty).await,
         Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,

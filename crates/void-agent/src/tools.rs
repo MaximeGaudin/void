@@ -33,17 +33,17 @@ impl Tool for VoidCommandTool {
         ToolDefinition {
             name: "void_cli".to_string(),
             description: "Execute a void CLI command. Void is a unified communication CLI that \
-                manages Gmail, Slack, WhatsApp, and Google Calendar. Pass the command WITHOUT \
+                manages Gmail, Slack, WhatsApp, Telegram, and Google Calendar. Pass the command WITHOUT \
                 the 'void' prefix.\n\n\
                 AVAILABLE COMMANDS:\n\n\
                 INBOX & MESSAGES:\n\
-                - inbox [--connector gmail|slack|whatsapp] [--account <id>] [--pretty] [-n <max>] [--all] [--include-muted]\n\
+                - inbox [--connector gmail|slack|whatsapp|telegram] [--account <id>] [--pretty] [-n <max>] [--all] [--include-muted]\n\
                 - messages <conversation-id> [-n <count>] [--pretty]\n\
                 - search \"<query>\" [--connector <c>] [-n <max>] [--pretty]\n\
                 - archive <id1> [<id2> ...]\n\
                 - mute <name> [--unmute] [--list]\n\n\
                 SENDING:\n\
-                - send --via <slack|gmail> --to \"<recipient>\" --message \"<text>\" [--file <path>] [--at \"<time>\"]\n\
+                - send --via <slack|gmail|telegram> --to \"<recipient>\" --message \"<text>\" [--file <path>] [--at \"<time>\"]\n\
                 - reply <message-id> --message \"<text>\" [--in-thread] [--file <path>] [--at \"<time>\"]\n\n\
                 GMAIL:\n\
                 - gmail search '<query>' [--max <n>] [--account <email>] [--pretty]\n\

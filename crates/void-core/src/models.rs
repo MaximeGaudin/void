@@ -87,6 +87,7 @@ pub enum ConnectorType {
     Slack,
     Gmail,
     Calendar,
+    Telegram,
 }
 
 impl std::fmt::Display for ConnectorType {
@@ -96,6 +97,7 @@ impl std::fmt::Display for ConnectorType {
             Self::Slack => write!(f, "slack"),
             Self::Gmail => write!(f, "gmail"),
             Self::Calendar => write!(f, "calendar"),
+            Self::Telegram => write!(f, "telegram"),
         }
     }
 }
@@ -108,6 +110,7 @@ impl ConnectorType {
             Self::Slack => "SL",
             Self::Gmail => "GM",
             Self::Calendar => "CA",
+            Self::Telegram => "TG",
         }
     }
 }
@@ -136,7 +139,6 @@ impl std::fmt::Display for ConversationKind {
 pub struct Conversation {
     pub id: String,
     pub account_id: String,
-    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
     pub connector: String,
     pub external_id: String,
     pub name: Option<String>,
@@ -153,7 +155,6 @@ pub struct Message {
     pub id: String,
     pub conversation_id: String,
     pub account_id: String,
-    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
     pub connector: String,
     pub external_id: String,
     pub sender: String,
@@ -221,7 +222,6 @@ pub fn dedup_context_messages(messages: Vec<Message>) -> Vec<Message> {
 pub struct CalendarEvent {
     pub id: String,
     pub account_id: String,
-    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
     pub connector: String,
     pub external_id: String,
     pub title: String,
@@ -244,7 +244,6 @@ pub struct Contact {
     pub sender: String,
     pub sender_name: Option<String>,
     pub account_id: String,
-    /// Connector type: "slack", "gmail", "whatsapp", "calendar"
     pub connector: String,
     pub message_count: i64,
     #[serde(with = "epoch_iso8601")]
@@ -289,6 +288,7 @@ mod tests {
         assert_eq!(ConnectorType::Slack.to_string(), "slack");
         assert_eq!(ConnectorType::Gmail.to_string(), "gmail");
         assert_eq!(ConnectorType::Calendar.to_string(), "calendar");
+        assert_eq!(ConnectorType::Telegram.to_string(), "telegram");
     }
 
     #[test]
@@ -297,6 +297,7 @@ mod tests {
         assert_eq!(ConnectorType::Slack.badge(), "SL");
         assert_eq!(ConnectorType::Gmail.badge(), "GM");
         assert_eq!(ConnectorType::Calendar.badge(), "CA");
+        assert_eq!(ConnectorType::Telegram.badge(), "TG");
     }
 
     #[test]

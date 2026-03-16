@@ -1,0 +1,21 @@
+[package]
+name = "void-telegram"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Telegram adapter for Void CLI"
+
+[dependencies]
+void-core = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio-util = { workspace = true }
+chrono = { workspace = true }
+grammers-client = "0.9"
+grammers-mtsender = "0.9"
+grammers-session = "0.9"

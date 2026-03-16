@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Unified communication CLI for WhatsApp, Slack, Gmail, and Google Calendar"
+description = "Unified communication CLI for WhatsApp, Telegram, Slack, Gmail, and Google Calendar"
 
 [[bin]]
 name = "void"
@@ -16,6 +16,7 @@ void-slack = { workspace = true }
 void-gmail = { workspace = true }
 void-calendar = { workspace = true }
 void-whatsapp = { workspace = true }
+void-telegram = { workspace = true }
 void-gdrive = { workspace = true }
 void-agent = { workspace = true }
 clap = { workspace = true }
