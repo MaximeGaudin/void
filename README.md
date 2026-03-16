@@ -1,6 +1,6 @@
 # Void CLI
 
-A unified command-line interface for interacting with WhatsApp, Slack, Gmail, and Google Calendar from a single tool.
+A unified command-line interface for interacting with WhatsApp, Slack, Gmail, Google Calendar, and Google Drive from a single tool — plus an AI agent and LLM-powered hooks.
 
 ## Inbox Zero
 
@@ -24,15 +24,19 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │  Read (local DB)         Write (direct API)         │
 │  ├── void inbox          ├── void send              │
 │  ├── void search         ├── void reply             │
-│  ├── void calendar       ├── void archive           │
-│  ├── void contacts       ├── void calendar create   │
-│  ├── void channels       ├── void gmail draft ...   │
-│  └── void messages       ├── void slack react/edit  │
-│                          ├── void slack schedule     │
-│                          ├── void slack open         │
-│  Sync daemon             └── void whatsapp download │
+│  ├── void calendar       ├── void forward           │
+│  ├── void contacts       ├── void archive           │
+│  ├── void channels       ├── void mute              │
+│  ├── void messages       ├── void calendar create   │
+│  ├── void conversations  ├── void gmail draft ...   │
+│                          ├── void slack react/edit  │
+│  AI & Automation         ├── void slack schedule     │
+│  ├── void agent          ├── void drive download    │
+│  └── void hook           └── void whatsapp download │
+│                                                     │
+│  Sync daemon                                        │
 │  ├── WhatsApp (wa-rs WebSocket)                     │
-│  ├── Slack (Socket Mode WebSocket)                   │
+│  ├── Slack (Socket Mode WebSocket)                  │
 │  ├── Gmail (history.list polling)                   │
 │  └── Calendar (syncToken polling)                   │
 └────────────────────────────────────────────────────┘
@@ -92,7 +96,11 @@ void calendar
 |---------|-------------|
 | `void send` | Send a new message |
 | `void reply <id>` | Reply to a message (`--in-thread` for threaded replies) |
+| `void forward <id>` | Forward a message to another recipient |
 | `void archive <id>` | Archive a message (mark as processed) |
+| `void mute <target>` | Mute conversations/channels (hides from inbox) |
+| `void mute --unmute` | Unmute previously muted conversations |
+| `void mute --list` | List all muted conversations |
 
 ### Connector-Specific
 
@@ -115,6 +123,22 @@ void calendar
 | `void calendar delete <id>` | Delete an event |
 | `void calendar availability` | Check attendee availability (FreeBusy) |
 | `void calendar calendars` | List available calendars |
+| `void drive download <url>` | Download a file from Google Drive/Docs/Sheets/Slides |
+| `void drive info <url>` | Show metadata for a Google Drive file |
+| `void drive auth` | Authenticate with Google Drive |
+
+### AI & Automation
+
+| Command | Description |
+|---------|-------------|
+| `void agent` | Start an interactive AI agent with access to all connectors |
+| `void hook list` | List all hooks |
+| `void hook create` | Create a hook (LLM prompt triggered by events or schedules) |
+| `void hook show <name>` | Show a hook's full configuration |
+| `void hook delete <name>` | Delete a hook |
+| `void hook enable <name>` | Enable a hook |
+| `void hook disable <name>` | Disable a hook |
+| `void hook test <name>` | Test a hook (dry-run) |
 
 ### System
 
@@ -137,6 +161,8 @@ void calendar
 | `-n` / `--size <N>` | Limit number of results (default: 50) |
 | `--all` | Include archived items |
 | `--include-muted` | Include muted conversations |
+| `--store <path>` | Override store directory |
+| `--no-context` | Disable context enrichment (related messages) |
 | `-v` / `--verbose` | Enable debug logging |
 
 ## Configuration
@@ -217,12 +243,14 @@ cargo build --release  # Build release
 
 ```
 crates/
-  void-core/       # Shared: config, DB, models, Connector trait, SyncEngine
+  void-core/       # Shared: config, DB, models, hooks, Connector trait, SyncEngine
   void-cli/        # Binary: clap commands, output formatting
   void-slack/      # Slack connector: Web API client
   void-gmail/      # Gmail connector: OAuth2, API client
   void-calendar/   # Calendar connector: shared OAuth, API client
   void-whatsapp/   # WhatsApp connector: wa-rs integration
+  void-gdrive/     # Google Drive connector: download, export, metadata
+  void-agent/      # AI agent: LLM-powered interactive assistant with tool access
 ```
 
 ## License
