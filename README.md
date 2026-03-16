@@ -46,10 +46,10 @@ Void runs a background sync daemon that continuously pulls messages and events f
 
 ```bash
 # Build and install to ~/bin
-./build-install.sh
+./scripts/build-install.sh
 
 # Or specify a custom directory
-./build-install.sh /usr/local/bin
+./scripts/build-install.sh /usr/local/bin
 ```
 
 ```bash
