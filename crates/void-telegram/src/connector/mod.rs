@@ -5,13 +5,13 @@ mod sync;
 
 use std::sync::Arc;
 
+use crate::session::JsonFileSession;
 use async_trait::async_trait;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use grammers_client::client::Client;
 use grammers_client::message::Message as TgMessage;
 use grammers_mtsender::SenderPool;
-use grammers_session::storages::SqliteSession;
 use grammers_tl_types as tl;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -47,8 +47,8 @@ impl TelegramConnector {
         }
     }
 
-    async fn connect(&self) -> anyhow::Result<(Client, SenderPool)> {
-        let session = Arc::new(SqliteSession::open(&self.session_path).await?);
+    fn connect(&self) -> anyhow::Result<(Client, SenderPool)> {
+        let session = Arc::new(JsonFileSession::load_or_create(&self.session_path));
         let pool = SenderPool::new(Arc::clone(&session), self.api_id);
         let client = Client::new(pool.handle.clone());
 
@@ -62,7 +62,6 @@ impl TelegramConnector {
     ) -> Result<Vec<u8>, TelegramError> {
         let (client, pool) = self
             .connect()
-            .await
             .map_err(|e| TelegramError::Connection(e.to_string()))?;
 
         let runner = tokio::spawn(pool.runner.run());
@@ -118,7 +117,7 @@ impl Connector for TelegramConnector {
     }
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
-        let (client, pool) = self.connect().await?;
+        let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
         if client.is_authorized().await? {
@@ -140,7 +139,7 @@ impl Connector for TelegramConnector {
     }
 
     async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
-        let (client, pool) = self.connect().await?;
+        let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
         if !client.is_authorized().await? {
@@ -174,7 +173,7 @@ impl Connector for TelegramConnector {
             });
         }
 
-        match self.connect().await {
+        match self.connect() {
             Ok((client, pool)) => {
                 let runner = tokio::spawn(pool.runner.run());
                 let authorized = client.is_authorized().await.unwrap_or(false);
@@ -213,7 +212,7 @@ impl Connector for TelegramConnector {
     }
 
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
-        let (client, pool) = self.connect().await?;
+        let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
         let peer = send::resolve_peer(&client, to).await?;
@@ -270,7 +269,7 @@ impl Connector for TelegramConnector {
             .parse()
             .map_err(|_| anyhow::anyhow!("invalid conversation ID: {conv_ext_id}"))?;
 
-        let (client, pool) = self.connect().await?;
+        let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
         let results = client.search_peer(&raw_chat_id.to_string(), 1).await?;
@@ -324,7 +323,7 @@ impl Connector for TelegramConnector {
             .parse()
             .map_err(|_| anyhow::anyhow!("invalid conversation ID: {conversation_external_id}"))?;
 
-        let (client, pool) = self.connect().await?;
+        let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
         let results = client.search_peer(&raw_chat_id.to_string(), 1).await?;
@@ -360,7 +359,7 @@ impl Connector for TelegramConnector {
             .parse()
             .map_err(|_| anyhow::anyhow!("invalid conversation ID: {conversation_external_id}"))?;
 
-        let (client, pool) = self.connect().await?;
+        let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
         let source_results = client.search_peer(&raw_chat_id.to_string(), 1).await?;

@@ -16,9 +16,10 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tokio-util = { workspace = true }
 chrono = { workspace = true }
+serde = { workspace = true }
 grammers-client = "0.9"
 grammers-mtsender = "0.9"
-grammers-session = "0.9"
+grammers-session = { version = "0.9", default-features = false }
 grammers-tl-types = "0.9"
 qr2term = "0.3"
 base64 = { workspace = true }

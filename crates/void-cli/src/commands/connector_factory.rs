@@ -60,7 +60,7 @@ pub fn build_connector(
                 api_id, api_hash, ..
             },
         ) => {
-            let session_path = store_path.join(format!("telegram-{}.session", account.id));
+            let session_path = store_path.join(format!("telegram-{}.json", account.id));
             Ok(Arc::new(void_telegram::connector::TelegramConnector::new(
                 &account.id,
                 session_path.to_str().unwrap_or(""),

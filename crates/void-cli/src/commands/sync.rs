@@ -293,7 +293,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         if ct == "telegram" {
             for account in &cfg.accounts {
                 if account.account_type.to_string() == "telegram" {
-                    let session_file = store_path.join(format!("telegram-{}.session", account.id));
+                    let session_file = store_path.join(format!("telegram-{}.json", account.id));
                     if session_file.exists() {
                         std::fs::remove_file(&session_file)?;
                         eprintln!(

@@ -300,8 +300,8 @@ fn rename_account(cfg: &mut VoidConfig, store_path: &std::path::Path) -> anyhow:
 
     // Rename Telegram session file
     if account_type.to_string() == "telegram" {
-        let old_tg = store_path.join(format!("telegram-{old_name}.session"));
-        let new_tg = store_path.join(format!("telegram-{new_name}.session"));
+        let old_tg = store_path.join(format!("telegram-{old_name}.json"));
+        let new_tg = store_path.join(format!("telegram-{new_name}.json"));
         if old_tg.exists() {
             std::fs::rename(&old_tg, &new_tg)?;
             eprintln!(

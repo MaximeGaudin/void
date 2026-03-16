@@ -236,7 +236,7 @@ All data is stored locally:
 
 - **Database**: `~/.local/share/void/void.db` (SQLite with WAL mode)
 - **WhatsApp sessions**: `~/.local/share/void/whatsapp-*.db`
-- **Telegram sessions**: `~/.local/share/void/telegram-*.session`
+- **Telegram sessions**: `~/.local/share/void/telegram-*.json`
 - **OAuth tokens**: `~/.local/share/void/*-token.json`
 - **Config**: `~/.config/void/config.toml`
 

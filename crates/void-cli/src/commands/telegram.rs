@@ -108,7 +108,7 @@ fn build_tg_connector(
     };
 
     let store_path = cfg.store_path();
-    let session_path = store_path.join(format!("telegram-{}.session", account.id));
+    let session_path = store_path.join(format!("telegram-{}.json", account.id));
     debug!(account_id = %account.id, "building Telegram connector for CLI");
     Ok(void_telegram::connector::TelegramConnector::new(
         &account.id,
