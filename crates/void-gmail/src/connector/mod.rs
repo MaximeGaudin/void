@@ -1,8 +1,11 @@
+mod api_methods;
+mod compose;
+mod sync;
+
 use std::sync::Arc;
 
-use anyhow::Context;
 use async_trait::async_trait;
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -11,8 +14,13 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
-use crate::api::{GmailApiClient, GmailMessage};
+use crate::api::GmailApiClient;
 use crate::auth;
+
+pub use compose::{
+    compose_rfc2822, compose_rfc2822_with_attachment, html_to_markdown, looks_like_html,
+    parse_email_address, parse_email_name,
+};
 
 pub struct GmailConnector {
     config_id: String,
@@ -47,348 +55,6 @@ impl GmailConnector {
             .unwrap_or_else(|| self.config_id.clone())
     }
 
-    async fn get_client(&self) -> anyhow::Result<GmailApiClient> {
-        let token_path = self.token_path();
-        let mut cache = auth::TokenCache::load(&token_path)?;
-
-        let is_expired = cache
-            .expires_at
-            .map(|exp| chrono::Utc::now().timestamp() >= exp - 60)
-            .unwrap_or(true);
-
-        if is_expired {
-            debug!(config_id = %self.config_id, "refreshing access token");
-            if let Some(ref refresh_token) = cache.refresh_token {
-                let creds = auth::load_client_credentials(self.credentials_file.as_deref())?;
-                let http = reqwest::Client::new();
-                cache = auth::refresh_access_token(&http, &creds, refresh_token).await?;
-                cache.save(&token_path)?;
-            } else {
-                anyhow::bail!("token expired and no refresh token available. Run `void setup`");
-            }
-        } else {
-            debug!(config_id = %self.config_id, "token fresh, reusing");
-        }
-
-        Ok(GmailApiClient::new(&cache.access_token))
-    }
-
-    async fn initial_sync(&self, db: &Database) -> anyhow::Result<()> {
-        let api = self.get_client().await?;
-        info!(config_id = %self.config_id, "starting Gmail initial sync");
-
-        let profile = api.get_profile().await?;
-        if let Some(email) = &profile.email_address {
-            *self.my_email.lock().expect("mutex") = Some(email.clone());
-        }
-
-        if let Some(history_id) = &profile.history_id {
-            db.set_sync_state(&self.config_id, "history_id", history_id)?;
-        }
-
-        let mut page_token: Option<String> = None;
-        let max_pages: u64 = 5;
-
-        let mut progress = void_core::progress::BackfillProgress::new(
-            &format!("gmail:{}", self.config_id),
-            "messages",
-        );
-        progress.set_pages(max_pages);
-
-        loop {
-            let resp = api
-                .list_messages(
-                    100,
-                    page_token.as_deref(),
-                    Some(&["INBOX"]),
-                    Some("newer_than:7d"),
-                )
-                .await?;
-            progress.inc_page();
-
-            if let Some(msgs) = resp.messages {
-                for msg_ref in &msgs {
-                    match api.get_message(&msg_ref.id).await {
-                        Ok(msg) => {
-                            self.store_message(db, &msg)?;
-                            progress.inc(1);
-                        }
-                        Err(e) => {
-                            warn!(message_id = %msg_ref.id, "failed to fetch message: {e}");
-                        }
-                    }
-                }
-            }
-
-            page_token = resp.next_page_token;
-            if page_token.is_none() || progress.pages_done >= max_pages {
-                break;
-            }
-        }
-
-        progress.finish();
-        info!(config_id = %self.config_id, messages = progress.items, "Gmail initial sync complete");
-        Ok(())
-    }
-
-    async fn incremental_sync(&self, db: &Database) -> anyhow::Result<()> {
-        let Some(history_id) = db.get_sync_state(&self.config_id, "history_id")? else {
-            debug!("no history_id, skipping incremental sync");
-            return Ok(());
-        };
-
-        let api = self.get_client().await?;
-        let resp = api.list_history(&history_id).await?;
-
-        if let Some(records) = resp.history {
-            for record in &records {
-                if let Some(added) = &record.messages_added {
-                    for item in added {
-                        match api.get_message(&item.message.id).await {
-                            Ok(msg) => {
-                                let from = msg.get_header("From").unwrap_or_default();
-                                let subject = msg
-                                    .get_header("Subject")
-                                    .unwrap_or_else(|| "(no subject)".into());
-                                eprintln!(
-                                    "[gmail:{}] new: {} — {}",
-                                    self.display_account_id(),
-                                    from,
-                                    subject
-                                );
-                                self.store_message(db, &msg)?;
-                            }
-                            Err(e) => {
-                                warn!(message_id = %item.message.id, "failed to fetch: {e}");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(new_id) = resp.history_id {
-            db.set_sync_state(&self.config_id, "history_id", &new_id)?;
-        }
-
-        Ok(())
-    }
-
-    fn store_message(&self, db: &Database, msg: &GmailMessage) -> anyhow::Result<()> {
-        let msg_id = msg.id.as_deref().unwrap_or("");
-        let thread_id = msg.thread_id.as_deref().unwrap_or(msg_id);
-        let from = msg.get_header("From").unwrap_or_default();
-        let account_id = self.display_account_id();
-        debug!(message_id = %msg_id, thread_id = %thread_id, from = %from, "storing message");
-
-        let conv_id = format!("{}-{}", account_id, thread_id);
-        let subject = msg
-            .get_header("Subject")
-            .unwrap_or_else(|| "(no subject)".into());
-
-        let conversation = Conversation {
-            id: conv_id.clone(),
-            account_id: account_id.clone(),
-            connector: "gmail".into(),
-            external_id: thread_id.to_string(),
-            name: Some(subject),
-            kind: ConversationKind::Thread,
-            last_message_at: msg
-                .internal_date
-                .as_deref()
-                .and_then(|d| d.parse().ok())
-                .map(|ms: i64| ms / 1000),
-            unread_count: 0,
-            is_muted: false,
-            metadata: None,
-        };
-        db.upsert_conversation(&conversation)?;
-
-        let sender_email = parse_email_address(&from);
-        let sender_name = parse_email_name(&from);
-
-        let text_body = msg.text_body();
-        let html_body = msg.html_body();
-
-        let body = match (text_body, &html_body) {
-            (Some(text), _) if !looks_like_html(&text) => Some(text),
-            (Some(text), _) => Some(html_to_markdown(&text)),
-            (None, Some(html)) => Some(html_to_markdown(html)),
-            (None, None) => msg.snippet.clone(),
-        };
-
-        let metadata = if html_body.is_some() {
-            Some(serde_json::json!({ "has_html": true, "snippet": msg.snippet }))
-        } else {
-            None
-        };
-
-        let message = Message {
-            id: format!("{}-{}", account_id, msg_id),
-            conversation_id: conv_id,
-            account_id: account_id.clone(),
-            connector: "gmail".into(),
-            external_id: msg_id.to_string(),
-            sender: sender_email,
-            sender_name: Some(sender_name),
-            body,
-            timestamp: msg
-                .internal_date
-                .as_deref()
-                .and_then(|d| d.parse().ok())
-                .map(|ms: i64| ms / 1000)
-                .unwrap_or(0),
-            synced_at: None,
-            is_archived: !msg
-                .label_ids
-                .as_ref()
-                .is_some_and(|labels| labels.iter().any(|l| l == "INBOX")),
-            reply_to_id: msg
-                .get_header("In-Reply-To")
-                .map(|v| format!("{}-{v}", account_id)),
-            media_type: None,
-            metadata,
-            context_id: Some(format!("{}-thread-{}", account_id, thread_id)),
-            context: None,
-        };
-        db.upsert_message(&message)?;
-        Ok(())
-    }
-
-    pub async fn search_api(
-        &self,
-        query: &str,
-        max_results: u32,
-    ) -> anyhow::Result<Vec<crate::api::GmailMessage>> {
-        let api = self.get_client().await?;
-        let resp = api
-            .list_messages(max_results, None, None, Some(query))
-            .await?;
-        let mut messages = Vec::new();
-        if let Some(refs) = resp.messages {
-            for r in &refs {
-                match api.get_message(&r.id).await {
-                    Ok(msg) => messages.push(msg),
-                    Err(e) => warn!(message_id = %r.id, "failed to fetch: {e}"),
-                }
-            }
-        }
-        Ok(messages)
-    }
-
-    pub async fn get_thread(&self, thread_id: &str) -> anyhow::Result<crate::api::GmailThread> {
-        let api = self.get_client().await?;
-        api.get_thread(thread_id).await
-    }
-
-    pub async fn get_attachment_data(
-        &self,
-        message_id: &str,
-        attachment_id: &str,
-    ) -> anyhow::Result<Vec<u8>> {
-        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-        use base64::Engine;
-
-        let api = self.get_client().await?;
-        let resp = api.get_attachment(message_id, attachment_id).await?;
-        let data = resp
-            .data
-            .ok_or_else(|| anyhow::anyhow!("attachment has no data"))?;
-        URL_SAFE_NO_PAD
-            .decode(&data)
-            .map_err(|e| anyhow::anyhow!("failed to decode attachment: {e}"))
-    }
-
-    pub async fn list_labels(&self) -> anyhow::Result<Vec<crate::api::GmailLabel>> {
-        let api = self.get_client().await?;
-        let resp = api.list_labels().await?;
-        Ok(resp.labels.unwrap_or_default())
-    }
-
-    pub async fn modify_thread_labels(
-        &self,
-        thread_id: &str,
-        add: &[&str],
-        remove: &[&str],
-    ) -> anyhow::Result<()> {
-        let api = self.get_client().await?;
-        api.modify_thread(thread_id, add, remove).await?;
-        Ok(())
-    }
-
-    pub async fn batch_modify(
-        &self,
-        message_ids: &[&str],
-        add: &[&str],
-        remove: &[&str],
-    ) -> anyhow::Result<()> {
-        let api = self.get_client().await?;
-        api.batch_modify_messages(message_ids, add, remove).await
-    }
-
-    pub async fn list_drafts(
-        &self,
-        max_results: u32,
-    ) -> anyhow::Result<Vec<crate::api::GmailDraft>> {
-        let api = self.get_client().await?;
-        let resp = api.list_drafts(max_results).await?;
-        let mut drafts = Vec::new();
-        if let Some(refs) = resp.drafts {
-            for r in &refs {
-                match api.get_draft(&r.id).await {
-                    Ok(d) => drafts.push(d),
-                    Err(e) => warn!(draft_id = %r.id, "failed to fetch draft: {e}"),
-                }
-            }
-        }
-        Ok(drafts)
-    }
-
-    pub async fn create_draft(
-        &self,
-        to: &str,
-        subject: &str,
-        body: &str,
-        reply_to_message_id: Option<&str>,
-        thread_id: Option<&str>,
-    ) -> anyhow::Result<crate::api::GmailDraft> {
-        let api = self.get_client().await?;
-
-        let mut headers = format!(
-            "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
-        );
-        if let Some(ref_id) = reply_to_message_id {
-            headers.push_str(&format!(
-                "In-Reply-To: {ref_id}\r\nReferences: {ref_id}\r\n"
-            ));
-        }
-        headers.push_str(&format!("\r\n{body}"));
-
-        let encoded = URL_SAFE_NO_PAD.encode(headers.as_bytes());
-        api.create_draft(&encoded, thread_id).await
-    }
-
-    pub async fn update_draft(
-        &self,
-        draft_id: &str,
-        to: &str,
-        subject: &str,
-        body: &str,
-    ) -> anyhow::Result<crate::api::GmailDraft> {
-        let api = self.get_client().await?;
-
-        let raw = format!(
-            "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
-        );
-        let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-        api.update_draft(draft_id, &encoded).await
-    }
-
-    pub async fn delete_draft(&self, draft_id: &str) -> anyhow::Result<()> {
-        let api = self.get_client().await?;
-        api.delete_draft(draft_id).await
-    }
-
     pub fn gmail_url(thread_id: &str) -> String {
         format!("https://mail.google.com/mail/u/0/#inbox/{thread_id}")
     }
@@ -411,7 +77,7 @@ impl Connector for GmailConnector {
         let cache = auth::authorize_interactive(&creds, None).await?;
         cache.save(&token_path)?;
 
-        let api = crate::api::GmailApiClient::new(&cache.access_token);
+        let api = GmailApiClient::new(&cache.access_token);
         let profile = api.get_profile().await?;
         info!(
             email = profile.email_address.as_deref().unwrap_or("?"),
@@ -646,87 +312,6 @@ impl Connector for GmailConnector {
         debug!(fwd_id = %fwd_id, "Gmail message forwarded");
         Ok(fwd_id)
     }
-}
-
-fn compose_rfc2822(to: &str, subject: &str, body: &str) -> String {
-    format!(
-        "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
-    )
-}
-
-fn compose_rfc2822_with_attachment(
-    to: &str,
-    subject: &str,
-    body: &str,
-    file_path: &std::path::Path,
-    mime_type: Option<&str>,
-    in_reply_to: Option<&str>,
-    references: Option<&str>,
-) -> anyhow::Result<String> {
-    let file_bytes = std::fs::read(file_path)
-        .with_context(|| format!("failed to read file {}", file_path.display()))?;
-    let encoded = STANDARD.encode(&file_bytes);
-    let wrapped = encoded
-        .as_bytes()
-        .chunks(76)
-        .map(|c| std::str::from_utf8(c).unwrap())
-        .collect::<Vec<_>>()
-        .join("\r\n");
-
-    let filename = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("attachment");
-    let mime = mime_type.unwrap_or("application/octet-stream");
-
-    const BOUNDARY: &str = "void_boundary_001";
-
-    let mut headers = format!(
-        "To: {to}\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"{BOUNDARY}\"\r\n"
-    );
-    if let Some(irt) = in_reply_to {
-        headers.push_str(&format!("In-Reply-To: {irt}\r\n"));
-    }
-    if let Some(refs) = references {
-        headers.push_str(&format!("References: {refs}\r\n"));
-    }
-    headers.push_str("\r\n");
-
-    let raw = format!(
-        "{headers}--{BOUNDARY}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}\r\n--{BOUNDARY}\r\nContent-Type: {mime}; name=\"{filename}\"\r\nContent-Disposition: attachment; filename=\"{filename}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{wrapped}\r\n--{BOUNDARY}--"
-    );
-    Ok(raw)
-}
-
-fn parse_email_address(from: &str) -> String {
-    if let Some(start) = from.find('<') {
-        from[start + 1..].trim_end_matches('>').trim().to_string()
-    } else {
-        from.trim().to_string()
-    }
-}
-
-fn parse_email_name(from: &str) -> String {
-    if let Some(start) = from.find('<') {
-        from[..start].trim().trim_matches('"').to_string()
-    } else {
-        from.to_string()
-    }
-}
-
-fn looks_like_html(text: &str) -> bool {
-    let trimmed = text.trim_start();
-    trimmed.starts_with("<!DOCTYPE")
-        || trimmed.starts_with("<!doctype")
-        || trimmed.starts_with("<html")
-        || trimmed.starts_with("<HTML")
-        || (trimmed.contains("<div") && trimmed.contains("</div>"))
-        || (trimmed.contains("<table") && trimmed.contains("</table>"))
-        || (trimmed.contains("<body") && trimmed.contains("</body>"))
-}
-
-fn html_to_markdown(html: &str) -> String {
-    html_to_markdown_rs::convert(html, None).unwrap_or_else(|_| html.to_string())
 }
 
 #[cfg(test)]
