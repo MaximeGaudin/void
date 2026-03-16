@@ -614,6 +614,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn load_hooks_returns_empty_for_nonexistent_dir() {
+        let dir =
+            std::env::temp_dir().join(format!("void-hooks-nonexistent-{}", uuid::Uuid::new_v4()));
+        assert!(!dir.exists(), "dir should not exist");
+        let hooks = load_hooks(&dir);
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
     fn slugify_basic() {
         assert_eq!(slugify("Gmail Auto-Archive"), "gmail-auto-archive");
         assert_eq!(slugify("  Daily  Digest  "), "daily-digest");
@@ -725,6 +734,47 @@ mod tests {
         save_hook(&dir, &hook).unwrap();
         assert!(delete_hook(&dir, "To Delete").unwrap());
         assert!(!delete_hook(&dir, "To Delete").unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn find_hook_works() {
+        let dir = std::env::temp_dir().join(format!("void-hooks-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hook = Hook {
+            name: "Find Me".into(),
+            enabled: true,
+            max_turns: 2,
+            trigger: Trigger::NewMessage { connector: None },
+            prompt: PromptConfig {
+                text: "prompt".into(),
+            },
+        };
+        save_hook(&dir, &hook).unwrap();
+        let found = find_hook(&dir, "Find Me").expect("hook should exist");
+        assert_eq!(found.name, "Find Me");
+        assert_eq!(found.max_turns, 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn update_hook_enabled_toggles() {
+        let dir = std::env::temp_dir().join(format!("void-hooks-test-{}", uuid::Uuid::new_v4()));
+        let hook = Hook {
+            name: "Toggle Test".into(),
+            enabled: true,
+            max_turns: 1,
+            trigger: Trigger::NewMessage { connector: None },
+            prompt: PromptConfig { text: "x".into() },
+        };
+        save_hook(&dir, &hook).unwrap();
+        assert!(update_hook_enabled(&dir, "Toggle Test", false).unwrap());
+        let loaded = find_hook(&dir, "Toggle Test").unwrap();
+        assert!(!loaded.enabled);
+        assert!(update_hook_enabled(&dir, "Toggle Test", true).unwrap());
+        let loaded = find_hook(&dir, "Toggle Test").unwrap();
+        assert!(loaded.enabled);
+        assert!(!update_hook_enabled(&dir, "Nonexistent", true).unwrap());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1438,7 +1438,9 @@ mod tests {
             "file_id": "F12345"
         });
         wiremock::Mock::given(wiremock::matchers::method("GET"))
-            .and(wiremock::matchers::path_regex(r"^/files\.getUploadURLExternal"))
+            .and(wiremock::matchers::path_regex(
+                r"^/files\.getUploadURLExternal",
+            ))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(get_upload_url_resp))
             .mount(&server)
             .await;
