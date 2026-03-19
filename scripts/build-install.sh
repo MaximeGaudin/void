@@ -10,6 +10,13 @@ cargo build --release
 SRC="target/release/$BIN_NAME"
 DEST="$INSTALL_DIR/$BIN_NAME"
 
+# Stop any running sync daemon before replacing the binary.
+# A running process with a replaced executable can enter uninterruptible
+# sleep on macOS when the kernel tries to page in code from the old inode.
+if [ -f "$DEST" ]; then
+  "$DEST" sync --stop 2>/dev/null && echo "==> Stopped running sync daemon" || true
+fi
+
 if [ ! -f "$SRC" ]; then
   echo "Error: release binary not found at $SRC" >&2
   exit 1
