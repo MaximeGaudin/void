@@ -334,20 +334,20 @@ Every connector **must** satisfy three requirements:
 | Requirement | Description |
 |-------------|-------------|
 | **Resumable backfill** | Initial backfill runs once. On subsequent restarts, the connector must skip or shorten the backfill using a persisted cursor (sync token, history ID, or last message timestamp). It must **never** re-fetch the full history window on every restart. |
-| **Incremental sync** | After backfill, the connector must ingest new messages — either via a **real-time stream** (WebSocket, long-poll, server push) or **periodic polling**. The sync loop must run until the `CancellationToken` fires. |
+| **Incremental sync** | The connector must ingest new messages — either via a **real-time stream** (WebSocket, long-poll, server push) or **periodic polling**. For polling connectors, this runs after backfill. For **real-time** connectors, the live listener **must start concurrently** with backfill (see below) to avoid missing messages that arrive while backfill is running. The sync loop must run until the `CancellationToken` fires. |
 | **Log on ingest** | Every newly ingested message must produce an `eprintln!` line in the format `[connector:account_id] timestamp (new|sent) context — sender: preview`. This is the only way to confirm sync is working when the daemon runs in the background. |
 
-### `start_sync` structure
+### `start_sync` structure — polling connectors
+
+For connectors that use periodic polling (e.g. Gmail), backfill runs first, then the polling loop:
 
 ```rust
 async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
-    // Phase 1: backfill (skip if sync cursor exists)
     let has_cursor = db.get_sync_state(&self.account_id, "sync_cursor")?.is_some();
     if !has_cursor {
         self.initial_backfill(&db).await?;
     }
 
-    // Phase 2: incremental sync (real-time or polling)
     let mut interval = tokio::time::interval(Duration::from_secs(30));
     loop {
         tokio::select! {
@@ -361,20 +361,38 @@ async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyh
 }
 ```
 
-For real-time connectors (WebSocket, Telegram update stream, etc.), replace the polling interval with the event stream:
+### `start_sync` structure — real-time connectors
+
+For connectors with a live event stream (WebSocket, Telegram update stream, etc.), the real-time listener **must start concurrently with backfill** using `tokio::join!`. If the listener only starts after backfill completes, messages arriving during backfill are lost — the backfill already processed that conversation, and the live listener wasn't running yet to catch the new message.
 
 ```rust
-loop {
-    tokio::select! {
-        _ = cancel.cancelled() => {
-            // Persist update state before exiting
-            break;
+async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
+    let has_cursor = db.get_sync_state(&self.account_id, "sync_cursor")?.is_some();
+
+    let backfill_task = async {
+        if !has_cursor {
+            if let Err(e) = self.initial_backfill(&db).await {
+                warn!(error = %e, "backfill failed");
+            }
         }
-        event = stream.next() => {
-            handle_event(&db, event).await?;
-            // Persist sync state after each event (or batch)
+    };
+
+    let realtime_task = async {
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                event = stream.next() => {
+                    handle_event(&db, event).await?;
+                }
+            }
         }
-    }
+        Ok(())
+    };
+
+    // Backfill and real-time run on the same task — duplicates are
+    // safely handled by DB upsert.
+    let (_, result) = tokio::join!(backfill_task, realtime_task);
+    result
 }
 ```
 
