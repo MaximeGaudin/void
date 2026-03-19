@@ -344,21 +344,68 @@ use void_core::models::{Conversation, ConversationKind, Message};
 pub(super) fn handle_message(
     db: &Arc<Database>,
     account_id: &str,
+    platform_chat_id: &str,
+    platform_msg_id: &str,
     /* platform-specific message type */
 ) -> anyhow::Result<()> {
-    // 1. Build external_id: format!("acme_{account_id}_{platform_msg_id}")
-    // 2. Check if already exists: db.message_exists(account_id, &external_id)
-    // 3. Build Conversation and upsert: db.upsert_conversation(&conv)
-    // 4. Build Message and upsert: db.upsert_message(&msg)
-    todo!()
+    let conv_id = format!("{account_id}-{platform_chat_id}");
+    let conv_external_id = format!("acme_{account_id}_{platform_chat_id}");
+    let msg_external_id = format!("acme_{account_id}_{platform_msg_id}");
+
+    if db.message_exists(account_id, &msg_external_id)? {
+        return Ok(());
+    }
+
+    let conv = Conversation {
+        id: conv_id.clone(),
+        account_id: account_id.to_string(),
+        connector: "acme".to_string(),
+        external_id: conv_external_id.clone(),
+        name: None, // set from platform data
+        kind: ConversationKind::Dm,
+        last_message_at: None,
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    };
+    db.upsert_conversation(&conv)?;
+
+    let msg = Message {
+        id: format!("{account_id}-{platform_msg_id}"),
+        conversation_id: conv_id,
+        account_id: account_id.to_string(),
+        connector: "acme".to_string(),
+        external_id: msg_external_id,
+        sender: "sender_id".to_string(),
+        sender_name: None, // set from platform data
+        body: None,        // set from platform data
+        timestamp: 0,      // set from platform data
+        synced_at: None,
+        is_archived: false,
+        reply_to_id: None,
+        media_type: None,
+        metadata: None,
+        context_id: Some(conv_external_id),
+        context: None,
+    };
+    db.upsert_message(&msg)?;
+
+    Ok(())
 }
 ```
 
 **Conventions for IDs:**
 
-- `external_id` for messages: `acme_{account_id}_{platform_message_id}`
-- `external_id` for conversations: `acme_{account_id}_{platform_chat_id}`
-- `connector` field on models: `"acme"` (lowercase, matches `ConnectorType::Display`)
+Every model has two ID fields — `id` (the primary key) and `external_id` (unique with `account_id`). Both **must** be set to non-empty, deterministic values. Setting `id` to `String::new()` will cause `UNIQUE constraint failed: messages.id` on the second insert.
+
+| Field | Conversations | Messages |
+|-------|--------------|----------|
+| `id` (PK) | `{account_id}-{platform_chat_id}` | `{account_id}-{platform_message_id}` |
+| `external_id` | `acme_{account_id}_{platform_chat_id}` | `acme_{account_id}_{platform_message_id}` |
+| `conversation_id` | — | Set to the conversation's `id` value |
+| `connector` | `"acme"` | `"acme"` |
+
+The `connector` field must match `ConnectorType::Display` (lowercase).
 
 **Database methods your sync will use:**
 
