@@ -398,7 +398,10 @@ impl Connector for TelegramConnector {
 }
 
 async fn qr_login_loop(client: &Client, api_hash: &str, api_id: i32) -> anyhow::Result<()> {
-    loop {
+    const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+    const MAX_ATTEMPTS: usize = 60;
+
+    for attempt in 0..MAX_ATTEMPTS {
         let export = tl::functions::auth::ExportLoginToken {
             api_id,
             api_hash: api_hash.to_string(),
@@ -409,30 +412,30 @@ async fn qr_login_loop(client: &Client, api_hash: &str, api_id: i32) -> anyhow::
 
         match response {
             tl::enums::auth::LoginToken::Token(token) => {
-                let encoded = URL_SAFE_NO_PAD.encode(&token.token);
-                let url = format!("tg://login?token={encoded}");
-                render_qr(&url);
-
-                let wait_secs = (token.expires as i64)
-                    - std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                let wait = std::cmp::max(wait_secs, 1).min(30) as u64;
-                debug!(expires_in = wait, "waiting for QR code scan");
-                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                if attempt % 5 == 0 {
+                    let encoded = URL_SAFE_NO_PAD.encode(&token.token);
+                    let url = format!("tg://login?token={encoded}");
+                    render_qr(&url);
+                }
+                debug!(attempt, "polling for QR code scan");
+                tokio::time::sleep(POLL_INTERVAL).await;
             }
             tl::enums::auth::LoginToken::MigrateTo(migrate) => {
+                debug!(dc_id = migrate.dc_id, "QR scan detected, migrating DC");
                 let import = tl::functions::auth::ImportLoginToken {
                     token: migrate.token,
                 };
-                let imported = client.invoke_in_dc(migrate.dc_id, &import).await?;
-
-                if let tl::enums::auth::LoginToken::Success(success) = imported {
-                    log_auth_success(&success);
-                    return Ok(());
+                match client.invoke_in_dc(migrate.dc_id, &import).await {
+                    Ok(tl::enums::auth::LoginToken::Success(success)) => {
+                        log_auth_success(&success);
+                        return Ok(());
+                    }
+                    Ok(_) => anyhow::bail!("unexpected response after DC migration"),
+                    Err(e) => {
+                        warn!(error = %e, "DC migration import failed, retrying with fresh token");
+                        continue;
+                    }
                 }
-                anyhow::bail!("unexpected response after DC migration");
             }
             tl::enums::auth::LoginToken::Success(success) => {
                 log_auth_success(&success);
@@ -440,6 +443,7 @@ async fn qr_login_loop(client: &Client, api_hash: &str, api_id: i32) -> anyhow::
             }
         }
     }
+    anyhow::bail!("QR login timed out after {MAX_ATTEMPTS} attempts — please retry")
 }
 
 fn log_auth_success(success: &tl::types::auth::LoginTokenSuccess) {
