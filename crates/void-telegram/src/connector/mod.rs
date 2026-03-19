@@ -11,7 +11,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use grammers_client::client::Client;
 use grammers_client::message::Message as TgMessage;
-use grammers_mtsender::SenderPool;
+use grammers_mtsender::{SenderPool, SenderPoolFatHandle};
 use grammers_tl_types as tl;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -118,6 +118,7 @@ impl Connector for TelegramConnector {
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
         let (client, pool) = self.connect()?;
+        let handle = pool.handle.clone();
         let runner = tokio::spawn(pool.runner.run());
 
         if client.is_authorized().await? {
@@ -130,7 +131,7 @@ impl Connector for TelegramConnector {
         eprintln!("Scan this QR code with Telegram on your phone:");
         eprintln!("  Open Telegram > Settings > Devices > Link Desktop Device\n");
 
-        let result = qr_login_loop(&client, &self.api_hash, self.api_id).await;
+        let result = qr_login_loop(&client, &handle, &self.api_hash, self.api_id).await;
 
         client.disconnect();
         runner.abort();
@@ -397,7 +398,12 @@ impl Connector for TelegramConnector {
     }
 }
 
-async fn qr_login_loop(client: &Client, api_hash: &str, api_id: i32) -> anyhow::Result<()> {
+async fn qr_login_loop(
+    client: &Client,
+    handle: &SenderPoolFatHandle,
+    api_hash: &str,
+    api_id: i32,
+) -> anyhow::Result<()> {
     const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
     const MAX_ATTEMPTS: usize = 60;
 
@@ -421,7 +427,11 @@ async fn qr_login_loop(client: &Client, api_hash: &str, api_id: i32) -> anyhow::
                 tokio::time::sleep(POLL_INTERVAL).await;
             }
             tl::enums::auth::LoginToken::MigrateTo(migrate) => {
-                debug!(dc_id = migrate.dc_id, "QR scan detected, migrating DC");
+                let old_dc = handle.session.home_dc_id();
+                debug!(old_dc, new_dc = migrate.dc_id, "QR scan detected, migrating home DC");
+                handle.thin.disconnect_from_dc(old_dc);
+                handle.session.set_home_dc_id(migrate.dc_id).await;
+
                 let import = tl::functions::auth::ImportLoginToken {
                     token: migrate.token,
                 };
