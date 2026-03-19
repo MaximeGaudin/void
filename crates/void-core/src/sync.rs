@@ -127,12 +127,23 @@ impl FileLock {
     fn acquire(path: &Path) -> anyhow::Result<Self> {
         if path.exists() {
             let content = std::fs::read_to_string(path).unwrap_or_default();
-            anyhow::bail!(
-                "another sync instance appears to be running (lock file: {}, content: {}). \
-                 If this is stale, delete the lock file and retry.",
-                path.display(),
-                content.trim()
-            );
+            if let Some(stale) = Self::is_stale_lock(&content) {
+                if stale {
+                    info!(
+                        lock_file = %path.display(),
+                        content = content.trim(),
+                        "removing stale lock file (process no longer running)"
+                    );
+                    std::fs::remove_file(path).ok();
+                } else {
+                    anyhow::bail!(
+                        "another sync instance is running (lock file: {}, content: {}). \
+                         Stop it with `void sync --stop` first.",
+                        path.display(),
+                        content.trim()
+                    );
+                }
+            }
         }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -142,6 +153,24 @@ impl FileLock {
         Ok(Self {
             path: path.to_path_buf(),
         })
+    }
+
+    /// Check if the PID in the lock file is still alive.
+    /// Returns `Some(true)` if stale, `Some(false)` if alive, `None` if unparseable.
+    fn is_stale_lock(content: &str) -> Option<bool> {
+        let pid_str = content.trim().strip_prefix("pid=")?;
+        let pid: i32 = pid_str.parse().ok()?;
+        #[cfg(unix)]
+        {
+            // kill(pid, 0) checks if process exists without sending a signal
+            let alive = unsafe { libc::kill(pid, 0) } == 0;
+            Some(!alive)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = pid;
+            None
+        }
     }
 }
 
@@ -170,6 +199,24 @@ mod tests {
         }
 
         assert!(!lock_path.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn file_lock_stale_lock_auto_removed() {
+        let dir =
+            std::env::temp_dir().join(format!("void-lock-stale-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lock_path = dir.join("LOCK");
+
+        // Write a lock with a PID that definitely doesn't exist
+        std::fs::write(&lock_path, "pid=999999999").unwrap();
+        assert!(lock_path.exists());
+
+        // Should auto-remove the stale lock and acquire successfully
+        let _lock = FileLock::acquire(&lock_path).unwrap();
+        assert!(lock_path.exists());
+
         std::fs::remove_dir_all(&dir).ok();
     }
 }

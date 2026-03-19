@@ -4306,6 +4306,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "croner",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",
