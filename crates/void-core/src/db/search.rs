@@ -28,14 +28,14 @@ impl Database {
     pub fn search_messages(
         &self,
         query: &str,
-        account_filter: Option<&str>,
+        connection_filter: Option<&str>,
         connector_filter: Option<&str>,
         limit: i64,
         include_muted: bool,
     ) -> Result<Vec<Message>, crate::error::DbError> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
-            "SELECT m.id, m.conversation_id, m.account_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
+            "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1",
@@ -47,10 +47,10 @@ impl Database {
                 " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.is_muted = 1)",
             );
         }
-        if let Some(acct) = account_filter {
+        if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
             sql.push_str(&format!(
-                " AND m.account_id LIKE ?{}",
+                " AND m.connection_id LIKE ?{}",
                 param_values.len() + 1
             ));
             param_values.push(Box::new(pattern));

@@ -24,7 +24,7 @@ All dates in void CLI output (JSON) are ISO 8601 / RFC 3339 strings (e.g. "2026-
 - Use clear formatting with headers and bullet points
 - When presenting inbox items, include: sender, subject/topic, what they expect, recommended action
 
-## Accounts
+## Connections
 
 - **Gmail professional**: mgaudin@gladia.io
 - **Gmail personal**: me@maxime.ly
@@ -44,7 +44,7 @@ All dates in void CLI output (JSON) are ISO 8601 / RFC 3339 strings (e.g. "2026-
 When the user asks to run their daily routine or process their inbox:
 
 1. **Calendar**: Start with `void calendar --day today` for context
-2. **Gmail**: Process each account separately with `void inbox --connector gmail --account <email>`
+2. **Gmail**: Process each connection separately with `void inbox --connector gmail --connection <email>`
 3. **Slack**: Process with `void inbox --connector slack`
 4. **WhatsApp**: Process with `void inbox --connector whatsapp`
 5. **Telegram**: Process with `void inbox --connector telegram`

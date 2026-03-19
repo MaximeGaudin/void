@@ -3,7 +3,7 @@
 /// URL format: `https://{workspace}.slack.com/archives/{channel_id}/p{ts_no_dot}`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlackLink {
-    /// Workspace subdomain, which typically matches the void account_id.
+    /// Workspace subdomain, which typically matches the void connection_id.
     pub workspace: String,
     /// Slack channel / conversation ID (e.g. `D09R63ASNEL`).
     pub channel_id: String,
@@ -74,10 +74,9 @@ mod tests {
 
     #[test]
     fn parse_standard_link() {
-        let link = SlackLink::parse(
-            "https://gladiaio.slack.com/archives/D09R63ASNEL/p1773903727112369",
-        )
-        .unwrap();
+        let link =
+            SlackLink::parse("https://gladiaio.slack.com/archives/D09R63ASNEL/p1773903727112369")
+                .unwrap();
         assert_eq!(link.workspace, "gladiaio");
         assert_eq!(link.channel_id, "D09R63ASNEL");
         assert_eq!(link.message_ts, "1773903727.112369");
@@ -101,16 +100,12 @@ mod tests {
 
     #[test]
     fn parse_rejects_malformed_timestamp() {
-        assert!(SlackLink::parse(
-            "https://x.slack.com/archives/C1/pshort"
-        ).is_none());
+        assert!(SlackLink::parse("https://x.slack.com/archives/C1/pshort").is_none());
     }
 
     #[test]
     fn parse_rejects_missing_channel() {
-        assert!(SlackLink::parse(
-            "https://x.slack.com/archives//p1234567890123456"
-        ).is_none());
+        assert!(SlackLink::parse("https://x.slack.com/archives//p1234567890123456").is_none());
     }
 
     #[test]

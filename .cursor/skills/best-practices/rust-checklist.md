@@ -45,7 +45,7 @@ Detailed checklist for Phase 1 (Audit) and Phase 2 (Fix). Each section lists wha
 | Anti-pattern | Fix |
 |---|---|
 | Boolean parameters (`fn send(msg, true, false)`) | Replace with descriptive enums |
-| Stringly-typed IDs (`account_id: String`) | Use newtype wrappers (`struct AccountId(String)`) for type safety |
+| Stringly-typed IDs (`connection_id: String`) | Use newtype wrappers (`struct ConnectionId(String)`) for type safety |
 | Large enum variants creating size disparity | Box the large variant's payload |
 | `Option<Option<T>>` | Flatten into an enum with `Absent`, `Null`, `Present(T)` |
 | Public struct fields with validation invariants | Make fields private, add `new()` constructor and getters |

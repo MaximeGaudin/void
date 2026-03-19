@@ -17,9 +17,7 @@ impl GmailConnector {
             *self.my_email.lock().expect("mutex") = Some(email.clone());
         }
 
-        let had_history = db
-            .get_sync_state(&self.config_id, "history_id")?
-            .is_some();
+        let had_history = db.get_sync_state(&self.config_id, "history_id")?.is_some();
 
         if let Some(history_id) = &profile.history_id {
             db.set_sync_state(&self.config_id, "history_id", history_id)?;
@@ -117,7 +115,7 @@ impl GmailConnector {
                                 let direction = if is_sent { "sent" } else { "new" };
                                 eprintln!(
                                     "[gmail:{}] {} ({direction}) {subject} — {sender}",
-                                    self.display_account_id(),
+                                    self.display_connection_id(),
                                     time,
                                 );
                                 self.store_message(db, &msg)?;
@@ -142,17 +140,17 @@ impl GmailConnector {
         let msg_id = msg.id.as_deref().unwrap_or("");
         let thread_id = msg.thread_id.as_deref().unwrap_or(msg_id);
         let from = msg.get_header("From").unwrap_or_default();
-        let account_id = self.display_account_id();
+        let connection_id = self.display_connection_id();
         debug!(message_id = %msg_id, thread_id = %thread_id, from = %from, "storing message");
 
-        let conv_id = format!("{}-{}", account_id, thread_id);
+        let conv_id = format!("{}-{}", connection_id, thread_id);
         let subject = msg
             .get_header("Subject")
             .unwrap_or_else(|| "(no subject)".into());
 
         let conversation = Conversation {
             id: conv_id.clone(),
-            account_id: account_id.clone(),
+            connection_id: connection_id.clone(),
             connector: "gmail".into(),
             external_id: thread_id.to_string(),
             name: Some(subject),
@@ -197,9 +195,9 @@ impl GmailConnector {
         };
 
         let message = Message {
-            id: format!("{}-{}", account_id, msg_id),
+            id: format!("{}-{}", connection_id, msg_id),
             conversation_id: conv_id,
-            account_id: account_id.clone(),
+            connection_id: connection_id.clone(),
             connector: "gmail".into(),
             external_id: msg_id.to_string(),
             sender: sender_email,
@@ -218,10 +216,10 @@ impl GmailConnector {
                 .is_some_and(|labels| labels.iter().any(|l| l == "INBOX")),
             reply_to_id: msg
                 .get_header("In-Reply-To")
-                .map(|v| format!("{}-{v}", account_id)),
+                .map(|v| format!("{}-{v}", connection_id)),
             media_type: None,
             metadata,
-            context_id: Some(format!("{}-thread-{}", account_id, thread_id)),
+            context_id: Some(format!("{}-thread-{}", connection_id, thread_id)),
             context: None,
         };
         db.upsert_message(&message)?;

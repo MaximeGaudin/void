@@ -141,7 +141,7 @@ impl std::fmt::Display for ConversationKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
     pub id: String,
-    pub account_id: String,
+    pub connection_id: String,
     pub connector: String,
     pub external_id: String,
     pub name: Option<String>,
@@ -157,7 +157,7 @@ pub struct Conversation {
 pub struct Message {
     pub id: String,
     pub conversation_id: String,
-    pub account_id: String,
+    pub connection_id: String,
     pub connector: String,
     pub external_id: String,
     pub sender: String,
@@ -224,7 +224,7 @@ pub fn dedup_context_messages(messages: Vec<Message>) -> Vec<Message> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalendarEvent {
     pub id: String,
-    pub account_id: String,
+    pub connection_id: String,
     pub connector: String,
     pub external_id: String,
     pub title: String,
@@ -246,7 +246,7 @@ pub struct CalendarEvent {
 pub struct Contact {
     pub sender: String,
     pub sender_name: Option<String>,
-    pub account_id: String,
+    pub connection_id: String,
     pub connector: String,
     pub message_count: i64,
     #[serde(with = "epoch_iso8601")]
@@ -255,7 +255,7 @@ pub struct Contact {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncState {
-    pub account_id: String,
+    pub connection_id: String,
     pub key: String,
     pub value: String,
 }
@@ -272,7 +272,7 @@ pub enum MessageContent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthStatus {
-    pub account_id: String,
+    pub connection_id: String,
     pub connector_type: ConnectorType,
     pub ok: bool,
     pub message: String,
@@ -318,7 +318,7 @@ mod tests {
         let msg = Message {
             id: "m1".into(),
             conversation_id: "c1".into(),
-            account_id: "a1".into(),
+            connection_id: "a1".into(),
             connector: "slack".into(),
             external_id: "ext1".into(),
             sender: "user@example.com".into(),
@@ -359,7 +359,7 @@ mod tests {
     fn calendar_event_serialization() {
         let event = CalendarEvent {
             id: "e1".into(),
-            account_id: "cal1".into(),
+            connection_id: "cal1".into(),
             connector: "calendar".into(),
             external_id: "goog123".into(),
             title: "Standup".into(),
@@ -399,7 +399,7 @@ mod tests {
         Message {
             id: id.into(),
             conversation_id: "c1".into(),
-            account_id: "a1".into(),
+            connection_id: "a1".into(),
             connector: "slack".into(),
             external_id: format!("ext-{id}"),
             sender: "user@test".into(),

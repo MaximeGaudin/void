@@ -37,7 +37,7 @@ pub struct UpdateEventParams<'a> {
 }
 
 pub struct CalendarConnector {
-    account_id: String,
+    connection_id: String,
     credentials_file: Option<String>,
     calendar_ids: Vec<String>,
     store_path: std::path::PathBuf,
@@ -45,13 +45,13 @@ pub struct CalendarConnector {
 
 impl CalendarConnector {
     pub fn new(
-        account_id: &str,
+        connection_id: &str,
         credentials_file: Option<&str>,
         calendar_ids: Vec<String>,
         store_path: &std::path::Path,
     ) -> Self {
         Self {
-            account_id: account_id.to_string(),
+            connection_id: connection_id.to_string(),
             credentials_file: credentials_file.map(|s| s.to_string()),
             calendar_ids: if calendar_ids.is_empty() {
                 vec!["primary".to_string()]
@@ -63,7 +63,7 @@ impl CalendarConnector {
     }
 
     async fn get_client(&self) -> anyhow::Result<CalendarApiClient> {
-        let token_path = void_gmail::auth::token_cache_path(&self.store_path, &self.account_id);
+        let token_path = void_gmail::auth::token_cache_path(&self.store_path, &self.connection_id);
         let mut cache = void_gmail::auth::TokenCache::load(&token_path)?;
 
         let is_expired = cache
@@ -72,7 +72,7 @@ impl CalendarConnector {
             .unwrap_or(true);
 
         if is_expired {
-            debug!(account_id = %self.account_id, "refreshing Calendar access token");
+            debug!(connection_id = %self.connection_id, "refreshing Calendar access token");
             if let Some(ref refresh_token) = cache.refresh_token {
                 let creds =
                     void_gmail::auth::load_client_credentials(self.credentials_file.as_deref())?;
@@ -90,26 +90,26 @@ impl CalendarConnector {
 
     async fn initial_sync(&self, db: &Database) -> anyhow::Result<()> {
         let has_sync_tokens = self.calendar_ids.iter().any(|cal_id| {
-            db.get_sync_state(&self.account_id, &format!("sync_token:{cal_id}"))
+            db.get_sync_state(&self.connection_id, &format!("sync_token:{cal_id}"))
                 .ok()
                 .flatten()
                 .is_some()
         });
 
         if has_sync_tokens {
-            debug!(account_id = %self.account_id, "skipping initial sync — sync tokens exist, incremental will catch up");
+            debug!(connection_id = %self.connection_id, "skipping initial sync — sync tokens exist, incremental will catch up");
             return Ok(());
         }
 
         let api = self.get_client().await?;
-        info!(account_id = %self.account_id, "starting Calendar initial sync");
+        info!(connection_id = %self.connection_id, "starting Calendar initial sync");
 
         let now = chrono::Utc::now();
         let time_min = (now - chrono::Duration::days(30)).to_rfc3339();
         let time_max = (now + chrono::Duration::days(90)).to_rfc3339();
 
         let mut progress = void_core::progress::BackfillProgress::new(
-            &format!("calendar:{}", self.account_id),
+            &format!("calendar:{}", self.connection_id),
             "events",
         );
         progress.set_pages(self.calendar_ids.len() as u64);
@@ -129,7 +129,7 @@ impl CalendarConnector {
 
                 if let Some(events) = &resp.items {
                     for event in events {
-                        if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
+                        if let Some(cal_event) = map_event(event, &self.connection_id, cal_id) {
                             db.upsert_event(&cal_event)?;
                             progress.inc(1);
                         }
@@ -137,7 +137,7 @@ impl CalendarConnector {
                 }
 
                 if let Some(token) = &resp.next_sync_token {
-                    db.set_sync_state(&self.account_id, &format!("sync_token:{cal_id}"), token)?;
+                    db.set_sync_state(&self.connection_id, &format!("sync_token:{cal_id}"), token)?;
                 }
 
                 page_token = resp.next_page_token;
@@ -149,7 +149,7 @@ impl CalendarConnector {
         }
 
         progress.finish();
-        info!(account_id = %self.account_id, events = progress.items, "Calendar initial sync complete");
+        info!(connection_id = %self.connection_id, events = progress.items, "Calendar initial sync complete");
         Ok(())
     }
 
@@ -158,7 +158,7 @@ impl CalendarConnector {
 
         for cal_id in &self.calendar_ids {
             let key = format!("sync_token:{cal_id}");
-            let Some(sync_token) = db.get_sync_state(&self.account_id, &key)? else {
+            let Some(sync_token) = db.get_sync_state(&self.connection_id, &key)? else {
                 debug!(calendar = %cal_id, "no sync_token, skipping incremental");
                 continue;
             };
@@ -172,25 +172,25 @@ impl CalendarConnector {
                         for event in events {
                             let event_id = event.id.as_deref().unwrap_or("");
                             if event.status.as_deref() == Some("cancelled") {
-                                if db.delete_event(&self.account_id, event_id)? {
+                                if db.delete_event(&self.connection_id, event_id)? {
                                     eprintln!(
                                         "[calendar:{}] deleted: {}",
-                                        self.account_id, event_id
+                                        self.connection_id, event_id
                                     );
                                 }
                                 continue;
                             }
-                            if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
+                            if let Some(cal_event) = map_event(event, &self.connection_id, cal_id) {
                                 eprintln!(
                                     "[calendar:{}] new: {}",
-                                    self.account_id, cal_event.title
+                                    self.connection_id, cal_event.title
                                 );
                                 db.upsert_event(&cal_event)?;
                             }
                         }
                     }
                     if let Some(token) = &resp.next_sync_token {
-                        db.set_sync_state(&self.account_id, &key, token)?;
+                        db.set_sync_state(&self.connection_id, &key, token)?;
                     }
                 }
                 Err(e) => {
@@ -218,7 +218,7 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
-        info!(account_id = %self.account_id, title = %params.title, calendar_id = %cal_id, "creating Calendar event");
+        info!(connection_id = %self.connection_id, title = %params.title, calendar_id = %cal_id, "creating Calendar event");
 
         let timezone = "UTC".to_string();
         let attendee_list = params.attendees.map(|a| {
@@ -268,16 +268,16 @@ impl CalendarConnector {
             .await?;
 
         let event_id = resp.id.as_deref().unwrap_or("new");
-        debug!(account_id = %self.account_id, event_id = %event_id, "Calendar event created");
+        debug!(connection_id = %self.connection_id, event_id = %event_id, "Calendar event created");
 
         let cal_event =
-            map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| CalendarEvent {
+            map_event(&resp, &self.connection_id, cal_id).unwrap_or_else(|| CalendarEvent {
                 id: format!(
                     "{}-{}",
-                    self.account_id,
+                    self.connection_id,
                     resp.id.as_deref().unwrap_or("new")
                 ),
-                account_id: self.account_id.clone(),
+                connection_id: self.connection_id.clone(),
                 connector: "calendar".into(),
                 external_id: resp.id.clone().unwrap_or_default(),
                 title: params.title.to_string(),
@@ -308,7 +308,7 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
-        info!(account_id = %self.account_id, event_id = %params.event_id, "updating Calendar event");
+        info!(connection_id = %self.connection_id, event_id = %params.event_id, "updating Calendar event");
 
         let timezone = "UTC".to_string();
         let update = UpdateEventRequest {
@@ -330,9 +330,9 @@ impl CalendarConnector {
             .update_event(cal_id, params.event_id, &update, params.send_updates)
             .await?;
         let cal_event =
-            map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| CalendarEvent {
-                id: format!("{}-{}", self.account_id, params.event_id),
-                account_id: self.account_id.clone(),
+            map_event(&resp, &self.connection_id, cal_id).unwrap_or_else(|| CalendarEvent {
+                id: format!("{}-{}", self.connection_id, params.event_id),
+                connection_id: self.connection_id.clone(),
                 connector: "calendar".into(),
                 external_id: params.event_id.to_string(),
                 title: params.title.unwrap_or("(updated)").to_string(),
@@ -362,7 +362,7 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
-        info!(account_id = %self.account_id, event_id, "deleting Calendar event");
+        info!(connection_id = %self.connection_id, event_id, "deleting Calendar event");
         api.delete_event(cal_id, event_id, send_updates)
             .await
             .map_err(Into::into)
@@ -382,7 +382,7 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
-        info!(account_id = %self.account_id, event_id, status, "responding to Calendar event");
+        info!(connection_id = %self.connection_id, event_id, status, "responding to Calendar event");
 
         let event = api.get_event(cal_id, event_id).await?;
         let mut attendees_req: Vec<AttendeeResponseRequest> = event
@@ -427,9 +427,9 @@ impl CalendarConnector {
             .update_event(cal_id, event_id, &update, Some("all"))
             .await?;
         let cal_event =
-            map_event(&resp, &self.account_id, cal_id).unwrap_or_else(|| CalendarEvent {
-                id: format!("{}-{}", self.account_id, event_id),
-                account_id: self.account_id.clone(),
+            map_event(&resp, &self.connection_id, cal_id).unwrap_or_else(|| CalendarEvent {
+                id: format!("{}-{}", self.connection_id, event_id),
+                connection_id: self.connection_id.clone(),
                 connector: "calendar".into(),
                 external_id: event_id.to_string(),
                 title: event.summary.unwrap_or_default(),
@@ -462,7 +462,7 @@ impl CalendarConnector {
             let resp = api.search_events(cal_id, query, time_min, time_max).await?;
             if let Some(events) = &resp.items {
                 for event in events {
-                    if let Some(cal_event) = map_event(event, &self.account_id, cal_id) {
+                    if let Some(cal_event) = map_event(event, &self.connection_id, cal_id) {
                         db.upsert_event(&cal_event)?;
                         results.push(cal_event);
                     }
@@ -498,13 +498,13 @@ impl Connector for CalendarConnector {
         ConnectorType::Calendar
     }
 
-    fn account_id(&self) -> &str {
-        &self.account_id
+    fn connection_id(&self) -> &str {
+        &self.connection_id
     }
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
         let creds = void_gmail::auth::load_client_credentials(self.credentials_file.as_deref())?;
-        let token_path = void_gmail::auth::token_cache_path(&self.store_path, &self.account_id);
+        let token_path = void_gmail::auth::token_cache_path(&self.store_path, &self.connection_id);
 
         let scopes = "https://www.googleapis.com/auth/calendar.readonly \
                       https://www.googleapis.com/auth/calendar.events";
@@ -519,7 +519,7 @@ impl Connector for CalendarConnector {
             .as_ref()
             .map(|items| items.iter().filter_map(|c| c.summary.as_deref()).collect())
             .unwrap_or_default();
-        debug!(account_id = %self.account_id, calendars = count, calendar_list = ?calendar_list, "Calendar authenticated");
+        debug!(connection_id = %self.connection_id, calendars = count, calendar_list = ?calendar_list, "Calendar authenticated");
         info!(calendars = count, "Calendar authenticated");
         Ok(())
     }
@@ -531,12 +531,12 @@ impl Connector for CalendarConnector {
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
-                    info!(account_id = %self.account_id, "Calendar sync cancelled");
+                    info!(connection_id = %self.connection_id, "Calendar sync cancelled");
                     break;
                 }
                 _ = interval.tick() => {
                     if let Err(e) = self.incremental_sync(&db).await {
-                        error!(account_id = %self.account_id, "incremental sync error: {e}");
+                        error!(connection_id = %self.connection_id, "incremental sync error: {e}");
                     }
                 }
             }
@@ -550,7 +550,7 @@ impl Connector for CalendarConnector {
                 Ok(cals) => {
                     let count = cals.items.as_ref().map(|i| i.len()).unwrap_or(0);
                     Ok(HealthStatus {
-                        account_id: self.account_id.clone(),
+                        connection_id: self.connection_id.clone(),
                         connector_type: ConnectorType::Calendar,
                         ok: true,
                         message: format!("{count} calendar(s) accessible"),
@@ -559,9 +559,9 @@ impl Connector for CalendarConnector {
                     })
                 }
                 Err(e) => {
-                    warn!(account_id = %self.account_id, error = %e, "Calendar health check API error");
+                    warn!(connection_id = %self.connection_id, error = %e, "Calendar health check API error");
                     Ok(HealthStatus {
-                        account_id: self.account_id.clone(),
+                        connection_id: self.connection_id.clone(),
                         connector_type: ConnectorType::Calendar,
                         ok: false,
                         message: format!("API error: {e}"),
@@ -571,9 +571,9 @@ impl Connector for CalendarConnector {
                 }
             },
             Err(e) => {
-                warn!(account_id = %self.account_id, error = %e, "Calendar health check auth error");
+                warn!(connection_id = %self.connection_id, error = %e, "Calendar health check auth error");
                 Ok(HealthStatus {
-                    account_id: self.account_id.clone(),
+                    connection_id: self.connection_id.clone(),
                     connector_type: ConnectorType::Calendar,
                     ok: false,
                     message: format!("Auth error: {e}"),
@@ -600,7 +600,7 @@ impl Connector for CalendarConnector {
 
 fn map_event(
     event: &GoogleCalendarEvent,
-    account_id: &str,
+    connection_id: &str,
     calendar_name: &str,
 ) -> Option<CalendarEvent> {
     let id = event.id.as_ref()?;
@@ -650,8 +650,8 @@ fn map_event(
     });
 
     Some(CalendarEvent {
-        id: format!("{account_id}-{id}"),
-        account_id: account_id.to_string(),
+        id: format!("{connection_id}-{id}"),
+        connection_id: connection_id.to_string(),
         connector: "calendar".into(),
         external_id: id.clone(),
         title: event.summary.clone().unwrap_or_else(|| "(no title)".into()),
@@ -694,7 +694,7 @@ mod tests {
     async fn run_initial_sync_with_client(
         api: &CalendarApiClient,
         db: &Database,
-        account_id: &str,
+        connection_id: &str,
         calendar_ids: &[String],
         time_min: &str,
         time_max: &str,
@@ -714,14 +714,14 @@ mod tests {
 
                 if let Some(events) = &resp.items {
                     for event in events {
-                        if let Some(cal_event) = map_event(event, account_id, cal_id) {
+                        if let Some(cal_event) = map_event(event, connection_id, cal_id) {
                             db.upsert_event(&cal_event)?;
                         }
                     }
                 }
 
                 if let Some(token) = &resp.next_sync_token {
-                    db.set_sync_state(account_id, &format!("sync_token:{cal_id}"), token)?;
+                    db.set_sync_state(connection_id, &format!("sync_token:{cal_id}"), token)?;
                 }
 
                 page_token = resp.next_page_token;
@@ -737,14 +737,14 @@ mod tests {
     async fn run_incremental_sync_with_client(
         api: &CalendarApiClient,
         db: &Database,
-        account_id: &str,
+        connection_id: &str,
         calendar_ids: &[String],
         time_min: &str,
         time_max: &str,
     ) -> anyhow::Result<()> {
         for cal_id in calendar_ids {
             let key = format!("sync_token:{cal_id}");
-            let Some(sync_token) = db.get_sync_state(account_id, &key)? else {
+            let Some(sync_token) = db.get_sync_state(connection_id, &key)? else {
                 continue;
             };
 
@@ -757,16 +757,16 @@ mod tests {
                         for event in events {
                             let event_id = event.id.as_deref().unwrap_or("");
                             if event.status.as_deref() == Some("cancelled") {
-                                db.delete_event(account_id, event_id)?;
+                                db.delete_event(connection_id, event_id)?;
                                 continue;
                             }
-                            if let Some(cal_event) = map_event(event, account_id, cal_id) {
+                            if let Some(cal_event) = map_event(event, connection_id, cal_id) {
                                 db.upsert_event(&cal_event)?;
                             }
                         }
                     }
                     if let Some(token) = &resp.next_sync_token {
-                        db.set_sync_state(account_id, &key, token)?;
+                        db.set_sync_state(connection_id, &key, token)?;
                     }
                 }
                 Err(e) => {
@@ -774,7 +774,7 @@ mod tests {
                         run_initial_sync_with_client(
                             api,
                             db,
-                            account_id,
+                            connection_id,
                             calendar_ids,
                             time_min,
                             time_max,
@@ -1151,7 +1151,7 @@ mod tests {
 
         let existing = CalendarEvent {
             id: "test-cal-ev1".into(),
-            account_id: "test-cal".into(),
+            connection_id: "test-cal".into(),
             connector: "calendar".into(),
             external_id: "ev1".into(),
             title: "To Be Deleted".into(),

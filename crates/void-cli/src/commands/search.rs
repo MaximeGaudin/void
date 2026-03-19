@@ -10,9 +10,9 @@ use crate::output::{resolve_connector_filter, OutputFormatter};
 pub struct SearchArgs {
     /// Search query
     pub query: String,
-    /// Filter by account (partial match on account_id)
+    /// Filter by connection (partial match on connection_id)
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
     /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
     #[arg(long)]
     pub connector: Option<String>,
@@ -25,7 +25,7 @@ pub struct SearchArgs {
 }
 
 pub fn run(args: &SearchArgs, enrich_context: bool) -> anyhow::Result<()> {
-    debug!(query = %args.query, account = ?args.account, connector = ?args.connector, size = args.size, "search");
+    debug!(query = %args.query, connection = ?args.connection, connector = ?args.connector, size = args.size, "search");
     let connector = resolve_connector_filter(args.connector.as_deref())?;
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
@@ -33,7 +33,7 @@ pub fn run(args: &SearchArgs, enrich_context: bool) -> anyhow::Result<()> {
 
     let mut messages = db.search_messages(
         &args.query,
-        args.account.as_deref(),
+        args.connection.as_deref(),
         connector.as_deref(),
         args.size,
         args.include_muted,

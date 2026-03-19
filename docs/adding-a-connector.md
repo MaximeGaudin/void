@@ -20,7 +20,7 @@ Cargo.toml                          # workspace members + deps
 crates/
   void-core/src/
     models.rs                       # ConnectorType enum
-    config.rs                       # AccountType, AccountSettings, deserialization
+    config.rs                       # ConnectorType, ConnectionSettings, deserialization
     connector.rs                    # Connector trait (the interface you implement)
     db/mod.rs                       # Database layer (connectors use this, don't modify it)
   void-acme/                        # NEW — your connector crate
@@ -100,10 +100,10 @@ impl ConnectorType {
 
 ### `crates/void-core/src/config.rs`
 
-**`AccountType` enum + `Display`:**
+**`ConnectorType` enum + `Display`:**
 
 ```rust
-pub enum AccountType {
+pub enum ConnectorType {
     WhatsApp,
     Slack,
     Gmail,
@@ -117,10 +117,10 @@ pub enum AccountType {
 Self::Acme => write!(f, "acme"),
 ```
 
-**`AccountSettings` enum — add a variant with your connector's config fields:**
+**`ConnectionSettings` enum — add a variant with your connector's config fields:**
 
 ```rust
-pub enum AccountSettings {
+pub enum ConnectionSettings {
     // ...existing...
     Acme {
         // Add whatever your connector needs, e.g.:
@@ -130,26 +130,26 @@ pub enum AccountSettings {
 }
 ```
 
-**`Deserialize` impl for `AccountConfig`** — find the match on `raw.account_type` and add:
+**`Deserialize` impl for `ConnectionConfig`** — find the match on `raw.connector_type` and add:
 
 ```rust
-AccountType::Acme => AccountSettings::Acme {
-    // Map from RawAccountConfig fields
+ConnectorType::Acme => ConnectionSettings::Acme {
+    // Map from RawConnectionConfig fields
 },
 ```
 
-If your settings use fields not yet in `RawAccountConfig`, add them there too (with `#[serde(default)]`).
+If your settings use fields not yet in `RawConnectionConfig`, add them there too (with `#[serde(default)]`).
 
-**`find_account_by_connector()`** — add to the match:
+**`find_connection_by_connector()`** — add to the match:
 
 ```rust
-"acme" => AccountType::Acme,
+"acme" => ConnectorType::Acme,
 ```
 
 **`default_config()` template** — add a commented-out example:
 
 ```toml
-# [[accounts]]
+# [[connections]]
 # id = "acme"
 # type = "acme"
 # api_key = "..."
@@ -252,9 +252,9 @@ pub struct AcmeConnector {
 }
 
 impl AcmeConnector {
-    pub fn new(account_id: &str, /* ...platform-specific params... */) -> Self {
+    pub fn new(connection_id: &str, /* ...platform-specific params... */) -> Self {
         Self {
-            config_id: account_id.to_string(),
+            config_id: connection_id.to_string(),
             // ...
         }
     }
@@ -266,7 +266,7 @@ impl Connector for AcmeConnector {
         ConnectorType::Acme
     }
 
-    fn account_id(&self) -> &str {
+    fn connection_id(&self) -> &str {
         &self.config_id
     }
 
@@ -320,7 +320,7 @@ impl Connector for AcmeConnector {
 | Method | Required | What to return |
 |--------|----------|----------------|
 | `connector_type()` | Yes | `ConnectorType::Acme` |
-| `account_id()` | Yes | `&self.config_id` |
+| `connection_id()` | Yes | `&self.config_id` |
 | `authenticate()` | Yes | Run interactive auth, persist session |
 | `start_sync(db, cancel)` | Yes | Backfill history then stream live updates until `cancel` fires |
 | `health_check()` | Yes | Return `HealthStatus { ok: true/false, ... }` |
@@ -342,7 +342,7 @@ Every connector **must** satisfy three requirements:
 |-------------|-------------|
 | **Resumable backfill** | Initial backfill runs once. On subsequent restarts, the connector must skip or shorten the backfill using a persisted cursor (sync token, history ID, or last message timestamp). It must **never** re-fetch the full history window on every restart. |
 | **Incremental sync** | The connector must ingest new messages — either via a **real-time stream** (WebSocket, long-poll, server push) or **periodic polling**. For polling connectors, this runs after backfill. For **real-time** connectors, the live listener **must start concurrently** with backfill (see below) to avoid missing messages that arrive while backfill is running. The sync loop must run until the `CancellationToken` fires. |
-| **Log on ingest** | Every newly ingested message must produce an `eprintln!` line in the format `[connector:account_id] timestamp (new|sent) context — sender: preview`. This is the only way to confirm sync is working when the daemon runs in the background. |
+| **Log on ingest** | Every newly ingested message must produce an `eprintln!` line in the format `[connector:connection_id] timestamp (new|sent) context — sender: preview`. This is the only way to confirm sync is working when the daemon runs in the background. |
 
 ### `start_sync` structure — polling connectors
 
@@ -350,7 +350,7 @@ For connectors that use periodic polling (e.g. Gmail), backfill runs first, then
 
 ```rust
 async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
-    let has_cursor = db.get_sync_state(&self.account_id, "sync_cursor")?.is_some();
+    let has_cursor = db.get_sync_state(&self.connection_id, "sync_cursor")?.is_some();
     if !has_cursor {
         self.initial_backfill(&db).await?;
     }
@@ -374,7 +374,7 @@ For connectors with a live event stream (WebSocket, Telegram update stream, etc.
 
 ```rust
 async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
-    let has_cursor = db.get_sync_state(&self.account_id, "sync_cursor")?.is_some();
+    let has_cursor = db.get_sync_state(&self.connection_id, "sync_cursor")?.is_some();
 
     let backfill_task = async {
         if !has_cursor {
@@ -428,22 +428,22 @@ use void_core::models::{Conversation, ConversationKind, Message};
 
 pub(super) fn handle_message(
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
     platform_chat_id: &str,
     platform_msg_id: &str,
     /* platform-specific message type */
 ) -> anyhow::Result<()> {
-    let conv_id = format!("{account_id}-{platform_chat_id}");
-    let conv_external_id = format!("acme_{account_id}_{platform_chat_id}");
-    let msg_external_id = format!("acme_{account_id}_{platform_msg_id}");
+    let conv_id = format!("{connection_id}-{platform_chat_id}");
+    let conv_external_id = format!("acme_{connection_id}_{platform_chat_id}");
+    let msg_external_id = format!("acme_{connection_id}_{platform_msg_id}");
 
-    if db.message_exists(account_id, &msg_external_id)? {
+    if db.message_exists(connection_id, &msg_external_id)? {
         return Ok(());
     }
 
     let conv = Conversation {
         id: conv_id.clone(),
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "acme".to_string(),
         external_id: conv_external_id.clone(),
         name: None, // set from platform data
@@ -456,9 +456,9 @@ pub(super) fn handle_message(
     db.upsert_conversation(&conv)?;
 
     let msg = Message {
-        id: format!("{account_id}-{platform_msg_id}"),
+        id: format!("{connection_id}-{platform_msg_id}"),
         conversation_id: conv_id,
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "acme".to_string(),
         external_id: msg_external_id,
         sender: "sender_id".to_string(),
@@ -476,7 +476,7 @@ pub(super) fn handle_message(
     db.upsert_message(&msg)?;
 
     // Log the new message (required by sync contract)
-    eprintln!("[acme:{account_id}] 2026-01-01 12:00:00 (new) Chat — Sender: preview text");
+    eprintln!("[acme:{connection_id}] 2026-01-01 12:00:00 (new) Chat — Sender: preview text");
 
     Ok(())
 }
@@ -484,12 +484,12 @@ pub(super) fn handle_message(
 
 ### Conventions for IDs
 
-Every model has two ID fields — `id` (the primary key) and `external_id` (unique with `account_id`). Both **must** be set to non-empty, deterministic values. Setting `id` to `String::new()` will cause `UNIQUE constraint failed: messages.id` on the second insert.
+Every model has two ID fields — `id` (the primary key) and `external_id` (unique with `connection_id`). Both **must** be set to non-empty, deterministic values. Setting `id` to `String::new()` will cause `UNIQUE constraint failed: messages.id` on the second insert.
 
 | Field | Conversations | Messages |
 |-------|--------------|----------|
-| `id` (PK) | `{account_id}-{platform_chat_id}` | `{account_id}-{platform_message_id}` |
-| `external_id` | `acme_{account_id}_{platform_chat_id}` | `acme_{account_id}_{platform_message_id}` |
+| `id` (PK) | `{connection_id}-{platform_chat_id}` | `{connection_id}-{platform_message_id}` |
+| `external_id` | `acme_{connection_id}_{platform_chat_id}` | `acme_{connection_id}_{platform_message_id}` |
 | `conversation_id` | — | **Must** be the conversation's `id` (PK), not its `external_id` |
 | `context_id` | — | Typically set to `conv_external_id` (for grouping related messages) |
 | `connector` | `"acme"` | `"acme"` |
@@ -504,10 +504,10 @@ The `connector` field must match `ConnectorType::Display` (lowercase).
 |--------|---------|
 | `db.upsert_conversation(&conv)` | Create or update a conversation |
 | `db.upsert_message(&msg)` | Create or update a message (triggers hooks for new messages) |
-| `db.message_exists(account_id, external_id)` | Dedup check |
-| `db.latest_message_timestamp(account_id, connector)` | Incremental sync cursor |
-| `db.get_sync_state(account_id, key)` | Read sync cursor/state |
-| `db.set_sync_state(account_id, key, value)` | Write sync cursor/state |
+| `db.message_exists(connection_id, external_id)` | Dedup check |
+| `db.latest_message_timestamp(connection_id, connector)` | Incremental sync cursor |
+| `db.get_sync_state(connection_id, key)` | Read sync cursor/state |
+| `db.set_sync_state(connection_id, key, value)` | Write sync cursor/state |
 
 **CancellationToken:** Your sync loop must respect the cancellation token. Use `tokio::select!` to race your update stream against `cancel.cancelled()`.
 
@@ -673,9 +673,9 @@ pub struct DownloadArgs {
     /// Output file path
     #[arg(long)]
     pub out: String,
-    /// Account to use
+    /// Connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 pub async fn run(args: &AcmeArgs, _json: bool) -> anyhow::Result<()> {
@@ -700,10 +700,10 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
 Add the build arm:
 
 ```rust
-(AccountType::Acme, AccountSettings::Acme { /* destructure fields */ }) => {
-    let session_path = store_path.join(format!("acme-{}.session", account.id));
+(ConnectorType::Acme, ConnectionSettings::Acme { /* destructure fields */ }) => {
+    let session_path = store_path.join(format!("acme-{}.session", connection.id));
     Ok(Arc::new(void_acme::connector::AcmeConnector::new(
-        &account.id,
+        &connection.id,
         // ...pass config fields...
     )))
 }
@@ -713,7 +713,7 @@ Add the build arm:
 
 **Four functions** need changes:
 
-**`add_connector_account()`** — add to the select menu and match:
+**`add_connection()`** — add to the select menu and match:
 
 ```rust
 let choice = select(
@@ -745,15 +745,15 @@ setup_acme(cfg, store_path, false).await?;
 **`show_configuration()`** — add display for your settings:
 
 ```rust
-config::AccountSettings::Acme { /* fields */ } => {
+config::ConnectionSettings::Acme { /* fields */ } => {
     // eprintln!("    api_key: {}", config::redact_token(api_key));
 }
 ```
 
-**`rename_account()`** — if your connector has a session file, add rename logic:
+**`rename_connection()`** — if your connector has a session file, add rename logic:
 
 ```rust
-if account_type.to_string() == "acme" {
+if connector_type.to_string() == "acme" {
     let old_session = store_path.join(format!("acme-{old_name}.session"));
     let new_session = store_path.join(format!("acme-{new_name}.session"));
     if old_session.exists() {
@@ -772,13 +772,13 @@ async fn setup_acme(
 ) -> anyhow::Result<()> {
     eprintln!("🔌  ACME");
     eprintln!();
-    eprintln!("Connects your Acme account.");
+    eprintln!("Connects your Acme connection.");
 
-    // 1. Handle existing accounts (pick_connector_action)
+    // 1. Handle existing connections (pick_connector_action)
     // 2. Prompt for credentials / config
-    // 3. Build AccountConfig with AccountSettings::Acme { ... }
+    // 3. Build ConnectionConfig with ConnectionSettings::Acme { ... }
     // 4. Optionally authenticate now
-    // 5. Push to cfg.accounts
+    // 5. Push to cfg.connections
 
     todo!()
 }
@@ -815,9 +815,9 @@ ConnectorType::Acme => format!("{conv_external_id}:{msg_external_id}"),
 
 ```rust
 if ct == "acme" {
-    for account in &cfg.accounts {
-        if account.account_type.to_string() == "acme" {
-            let session = store_path.join(format!("acme-{}.session", account.id));
+    for connection in &cfg.connections {
+        if connection.connector_type.to_string() == "acme" {
+            let session = store_path.join(format!("acme-{}.session", connection.id));
             if session.exists() {
                 std::fs::remove_file(&session)?;
                 eprintln!(
@@ -898,9 +898,9 @@ cargo build --release
 ```
 
 Common issues:
-- Missing match arms — the compiler will catch exhaustive-match errors for `ConnectorType`, `AccountType`, and `AccountSettings`
+- Missing match arms — the compiler will catch exhaustive-match errors for `ConnectorType` and `ConnectionSettings`
 - Forgotten `Display`/`badge()` arm — causes a runtime panic or incomplete output
-- `find_account_by_connector` not updated — connector won't be found when replying or archiving
+- `find_connection_by_connector` not updated — connector won't be found when replying or archiving
 - `parse_connector_type` not updated — `--connector acme` and `--via acme` won't resolve
 
 ---
@@ -925,7 +925,7 @@ The `void-hackernews` crate is a reference implementation for this pattern.
 Use this as a final review checklist:
 
 - [ ] `void-core/src/models.rs` — `ConnectorType` enum + `Display` + `badge()`
-- [ ] `void-core/src/config.rs` — `AccountType` + `Display` + `AccountSettings` + `Deserialize` + `find_account_by_connector` + `default_config`
+- [ ] `void-core/src/config.rs` — `ConnectorType` + `Display` + `ConnectionSettings` + `Deserialize` + `find_connection_by_connector` + `default_config`
 - [ ] `void-acme/Cargo.toml` — crate created
 - [ ] `void-acme/src/lib.rs` — module declarations
 - [ ] `void-acme/src/error.rs` — error enum

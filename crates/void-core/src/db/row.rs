@@ -21,7 +21,7 @@ pub(crate) fn parse_json_opt(s: Option<String>) -> Option<serde_json::Value> {
 pub(crate) fn row_to_conversation(row: &Row) -> rusqlite::Result<Conversation> {
     Ok(Conversation {
         id: row.get(0)?,
-        account_id: row.get(1)?,
+        connection_id: row.get(1)?,
         connector: row.get(2)?,
         external_id: row.get(3)?,
         name: row.get(4)?,
@@ -37,7 +37,7 @@ pub(crate) fn row_to_message(row: &Row) -> rusqlite::Result<Message> {
     Ok(Message {
         id: row.get(0)?,
         conversation_id: row.get(1)?,
-        account_id: row.get(2)?,
+        connection_id: row.get(2)?,
         connector: row.get(3)?,
         external_id: row.get(4)?,
         sender: row.get(5)?,
@@ -57,7 +57,7 @@ pub(crate) fn row_to_message(row: &Row) -> rusqlite::Result<Message> {
 pub(crate) fn row_to_event(row: &Row) -> rusqlite::Result<CalendarEvent> {
     Ok(CalendarEvent {
         id: row.get(0)?,
-        account_id: row.get(1)?,
+        connection_id: row.get(1)?,
         connector: row.get(2)?,
         external_id: row.get(3)?,
         title: row.get(4)?,

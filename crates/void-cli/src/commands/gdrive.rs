@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, expand_tilde, AccountSettings, AccountType, VoidConfig};
+use void_core::config::{self, expand_tilde, ConnectionSettings, VoidConfig};
+use void_core::models::ConnectorType;
 use void_gdrive::api::{self, DriveApiClient, ExportFormat};
 
 #[derive(Debug, Args)]
@@ -29,9 +30,9 @@ pub struct DownloadArgs {
     /// Export format for Google-native files: txt, md, pdf, docx, csv, xlsx, pptx, png, svg
     #[arg(long, short)]
     pub format: Option<String>,
-    /// Google account to use (defaults to first gmail/calendar/gdrive account)
+    /// Google connection to use (defaults to first gmail/calendar connection)
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
     /// Print content to stdout instead of saving to file
     #[arg(long)]
     pub stdout: bool,
@@ -41,16 +42,16 @@ pub struct DownloadArgs {
 pub struct InfoArgs {
     /// Google Drive/Docs/Sheets/Slides URL or file ID
     pub url: String,
-    /// Google account to use
+    /// Google connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct AuthArgs {
-    /// Google account to use
+    /// Google connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 pub async fn run(args: &GdriveArgs) -> anyhow::Result<()> {
@@ -62,7 +63,7 @@ pub async fn run(args: &GdriveArgs) -> anyhow::Result<()> {
 }
 
 async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
-    let (client, _cfg) = build_drive_client(args.account.as_deref())?;
+    let (client, _cfg) = build_drive_client(args.connection.as_deref())?;
     let client = client.await?;
 
     let file_id = resolve_file_id(&args.url)?;
@@ -107,7 +108,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
 }
 
 async fn run_info(args: &InfoArgs) -> anyhow::Result<()> {
-    let (client, _cfg) = build_drive_client(args.account.as_deref())?;
+    let (client, _cfg) = build_drive_client(args.connection.as_deref())?;
     let client = client.await?;
 
     let file_id = resolve_file_id(&args.url)?;
@@ -143,19 +144,19 @@ async fn run_auth(args: &AuthArgs) -> anyhow::Result<()> {
     let cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("cannot load config: {e}\nRun `void setup` first."))?;
 
-    let account = find_google_account(&cfg, args.account.as_deref())?;
-    let credentials_file = extract_credentials_file(&account.settings);
+    let connection = find_google_connection(&cfg, args.connection.as_deref())?;
+    let credentials_file = extract_credentials_file(&connection.settings);
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
     let store_path = cfg.store_path();
 
     api::authenticate_drive(
         &store_path,
-        &account.id,
+        &connection.id,
         cred_path.as_deref().and_then(|p| p.to_str()),
     )
     .await?;
 
-    eprintln!("Google Drive authenticated for account \"{}\".", account.id);
+    eprintln!("Google Drive authenticated for connection \"{}\".", connection.id);
     Ok(())
 }
 
@@ -175,22 +176,22 @@ type DriveClientFuture =
 
 /// Build a Drive API client future and config from the user's stored tokens.
 fn build_drive_client(
-    account_filter: Option<&str>,
+    connection_filter: Option<&str>,
 ) -> anyhow::Result<(DriveClientFuture, VoidConfig)> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("cannot load config: {e}\nRun `void setup` first."))?;
 
-    let account = find_google_account(&cfg, account_filter)?;
-    let credentials_file = extract_credentials_file(&account.settings);
+    let connection = find_google_connection(&cfg, connection_filter)?;
+    let credentials_file = extract_credentials_file(&connection.settings);
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
     let store_path = cfg.store_path();
-    let account_id = account.id.clone();
+    let connection_id = connection.id.clone();
 
     let fut = Box::pin(async move {
         api::build_drive_client(
             &store_path,
-            &account_id,
+            &connection_id,
             cred_path.as_deref().and_then(|p| p.to_str()),
         )
         .await
@@ -200,30 +201,30 @@ fn build_drive_client(
     Ok((fut, cfg))
 }
 
-/// Find the first Google account (gmail, calendar, or gdrive) matching the filter.
-fn find_google_account<'a>(
+/// Find the first Google connection (gmail or calendar) matching the filter.
+fn find_google_connection<'a>(
     cfg: &'a VoidConfig,
     filter: Option<&str>,
-) -> anyhow::Result<&'a void_core::config::AccountConfig> {
-    let google_types = [AccountType::Gmail, AccountType::Calendar];
-    cfg.accounts
+) -> anyhow::Result<&'a void_core::config::ConnectionConfig> {
+    let google_types = [ConnectorType::Gmail, ConnectorType::Calendar];
+    cfg.connections
         .iter()
         .find(|a| {
-            let is_google = google_types.contains(&a.account_type);
+            let is_google = google_types.contains(&a.connector_type);
             let name_matches = filter.map_or(true, |n| a.id == n);
             is_google && name_matches
         })
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "no Google account (gmail/calendar) found in config. Run `void setup` to add one."
+                "no Google connection (gmail/calendar) found in config. Run `void setup` to add one."
             )
         })
 }
 
-fn extract_credentials_file(settings: &AccountSettings) -> Option<String> {
+fn extract_credentials_file(settings: &ConnectionSettings) -> Option<String> {
     match settings {
-        AccountSettings::Gmail { credentials_file } => credentials_file.clone(),
-        AccountSettings::Calendar {
+        ConnectionSettings::Gmail { credentials_file } => credentials_file.clone(),
+        ConnectionSettings::Calendar {
             credentials_file, ..
         } => credentials_file.clone(),
         _ => None,

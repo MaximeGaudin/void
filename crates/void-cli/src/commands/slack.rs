@@ -1,7 +1,8 @@
 use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, AccountType, VoidConfig};
+use void_core::config::{self, VoidConfig};
+use void_core::models::ConnectorType;
 use void_core::db::Database;
 
 #[derive(Debug, Args)]
@@ -29,9 +30,9 @@ pub struct ReactArgs {
     /// Emoji name (without colons, e.g. "thumbsup", "eyes", "white_check_mark")
     #[arg(long)]
     pub emoji: String,
-    /// Slack account to use
+    /// Slack connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -41,9 +42,9 @@ pub struct EditArgs {
     /// New message text
     #[arg(long)]
     pub message: String,
-    /// Slack account to use
+    /// Slack connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -60,9 +61,9 @@ pub struct ScheduleArgs {
     /// Thread timestamp to reply in a thread
     #[arg(long)]
     pub thread: Option<String>,
-    /// Slack account to use
+    /// Slack connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -70,9 +71,9 @@ pub struct OpenArgs {
     /// Comma-separated list of Slack user IDs to open a conversation with
     #[arg(long)]
     pub users: String,
-    /// Slack account to use
+    /// Slack connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 pub async fn run(args: &SlackArgs) -> anyhow::Result<()> {
@@ -102,7 +103,7 @@ async fn run_react(args: &ReactArgs) -> anyhow::Result<()> {
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    let connector = build_slack_connector(args.account.as_deref(), &cfg)?;
+    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
     connector
         .react(&conv.external_id, &msg.external_id, &args.emoji)
         .await?;
@@ -129,7 +130,7 @@ async fn run_edit(args: &EditArgs) -> anyhow::Result<()> {
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    let connector = build_slack_connector(args.account.as_deref(), &cfg)?;
+    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
     connector
         .edit_message(&conv.external_id, &msg.external_id, &args.message)
         .await?;
@@ -146,7 +147,7 @@ async fn run_schedule(args: &ScheduleArgs) -> anyhow::Result<()> {
     }
 
     let cfg = load_config()?;
-    let connector = build_slack_connector(args.account.as_deref(), &cfg)?;
+    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
 
     let scheduled_id = connector
         .schedule_message(
@@ -168,7 +169,7 @@ async fn run_schedule(args: &ScheduleArgs) -> anyhow::Result<()> {
 
 async fn run_open(args: &OpenArgs) -> anyhow::Result<()> {
     let cfg = load_config()?;
-    let connector = build_slack_connector(args.account.as_deref(), &cfg)?;
+    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
 
     let user_ids: Vec<&str> = args.users.split(',').map(|s| s.trim()).collect();
     if user_ids.is_empty() {
@@ -236,23 +237,23 @@ fn load_config() -> anyhow::Result<VoidConfig> {
 }
 
 fn build_slack_connector(
-    account_filter: Option<&str>,
+    connection_filter: Option<&str>,
     cfg: &VoidConfig,
 ) -> anyhow::Result<void_slack::connector::SlackConnector> {
-    let account = cfg
-        .accounts
+    let connection = cfg
+        .connections
         .iter()
         .find(|a| {
-            let is_slack = a.account_type == AccountType::Slack;
-            let name_matches = account_filter.map_or(true, |n| a.id == n);
+            let is_slack = a.connector_type == ConnectorType::Slack;
+            let name_matches = connection_filter.map_or(true, |n| a.id == n);
             is_slack && name_matches
         })
         .ok_or_else(|| {
-            anyhow::anyhow!("No Slack account found in config. Run `void setup` to add one.")
+            anyhow::anyhow!("No Slack connection found in config. Run `void setup` to add one.")
         })?;
 
-    let (user_token, app_token, exclude_channels) = match &account.settings {
-        void_core::config::AccountSettings::Slack {
+    let (user_token, app_token, exclude_channels) = match &connection.settings {
+        void_core::config::ConnectionSettings::Slack {
             user_token,
             app_token,
             exclude_channels,
@@ -262,14 +263,14 @@ fn build_slack_connector(
             exclude_channels.clone(),
         ),
         _ => anyhow::bail!(
-            "Mismatched account settings for Slack account '{}'",
-            account.id
+            "Mismatched connection settings for Slack connection '{}'",
+            connection.id
         ),
     };
 
-    debug!(account_id = %account.id, "building Slack connector for CLI");
+    debug!(connection_id = %connection.id, "building Slack connector for CLI");
     Ok(void_slack::connector::SlackConnector::new(
-        &account.id,
+        &connection.id,
         &user_token,
         &app_token,
         exclude_channels,

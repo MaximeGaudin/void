@@ -34,13 +34,13 @@ pub struct TelegramConnector {
 
 impl TelegramConnector {
     pub fn new(
-        account_id: &str,
+        connection_id: &str,
         session_path: &str,
         api_id: Option<i32>,
         api_hash: Option<&str>,
     ) -> Self {
         Self {
-            config_id: account_id.to_string(),
+            config_id: connection_id.to_string(),
             session_path: session_path.to_string(),
             api_id: api_id.unwrap_or(DEFAULT_API_ID),
             api_hash: api_hash.unwrap_or(DEFAULT_API_HASH).to_string(),
@@ -112,7 +112,7 @@ impl Connector for TelegramConnector {
         ConnectorType::Telegram
     }
 
-    fn account_id(&self) -> &str {
+    fn connection_id(&self) -> &str {
         &self.config_id
     }
 
@@ -122,7 +122,7 @@ impl Connector for TelegramConnector {
         let runner = tokio::spawn(pool.runner.run());
 
         if client.is_authorized().await? {
-            info!(account_id = %self.config_id, "already authenticated");
+            info!(connection_id = %self.config_id, "already authenticated");
             client.disconnect();
             runner.abort();
             return Ok(());
@@ -145,12 +145,12 @@ impl Connector for TelegramConnector {
 
         if !client.is_authorized().await? {
             anyhow::bail!(
-                "Telegram account '{}' is not authenticated. Run `void setup` first.",
+                "Telegram connection '{}' is not authenticated. Run `void setup` first.",
                 self.config_id
             );
         }
 
-        info!(account_id = %self.config_id, "starting telegram sync");
+        info!(connection_id = %self.config_id, "starting telegram sync");
 
         let result = sync::run_sync(&client, pool.updates, &db, &self.config_id, &cancel).await;
 
@@ -165,7 +165,7 @@ impl Connector for TelegramConnector {
 
         if !session_exists {
             return Ok(HealthStatus {
-                account_id: self.config_id.clone(),
+                connection_id: self.config_id.clone(),
                 connector_type: ConnectorType::Telegram,
                 ok: false,
                 message: "Session file not found".to_string(),
@@ -183,7 +183,7 @@ impl Connector for TelegramConnector {
 
                 if authorized {
                     Ok(HealthStatus {
-                        account_id: self.config_id.clone(),
+                        connection_id: self.config_id.clone(),
                         connector_type: ConnectorType::Telegram,
                         ok: true,
                         message: "Connected and authenticated".to_string(),
@@ -192,7 +192,7 @@ impl Connector for TelegramConnector {
                     })
                 } else {
                     Ok(HealthStatus {
-                        account_id: self.config_id.clone(),
+                        connection_id: self.config_id.clone(),
                         connector_type: ConnectorType::Telegram,
                         ok: false,
                         message: "Session exists but not authorized. Run `void setup`.".to_string(),
@@ -202,7 +202,7 @@ impl Connector for TelegramConnector {
                 }
             }
             Err(e) => Ok(HealthStatus {
-                account_id: self.config_id.clone(),
+                connection_id: self.config_id.clone(),
                 connector_type: ConnectorType::Telegram,
                 ok: false,
                 message: format!("Connection failed: {e}"),
@@ -428,7 +428,11 @@ async fn qr_login_loop(
             }
             tl::enums::auth::LoginToken::MigrateTo(migrate) => {
                 let old_dc = handle.session.home_dc_id();
-                debug!(old_dc, new_dc = migrate.dc_id, "QR scan detected, migrating home DC");
+                debug!(
+                    old_dc,
+                    new_dc = migrate.dc_id,
+                    "QR scan detected, migrating home DC"
+                );
                 handle.thin.disconnect_from_dc(old_dc);
                 handle.session.set_home_dc_id(migrate.dc_id).await;
 

@@ -1,7 +1,8 @@
 use chrono::{Datelike, Local};
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, expand_tilde, AccountType, VoidConfig};
+use void_core::config::{self, expand_tilde, VoidConfig};
+use void_core::models::ConnectorType;
 use void_core::connector::Connector;
 use void_core::db::Database;
 
@@ -20,9 +21,9 @@ pub struct CalendarArgs {
     /// End date filter (YYYY-MM-DD)
     #[arg(long)]
     pub to: Option<String>,
-    /// Filter by calendar account
+    /// Filter by calendar connection
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
     /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
     #[arg(long)]
     pub connector: Option<String>,
@@ -68,9 +69,9 @@ pub struct CreateEventArgs {
     /// Comma-separated attendee emails
     #[arg(long)]
     pub attendees: Option<String>,
-    /// Calendar account to use
+    /// Calendar connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -83,9 +84,9 @@ pub struct SearchEventArgs {
     /// End date filter (YYYY-MM-DD)
     #[arg(long)]
     pub to: Option<String>,
-    /// Calendar account to use
+    /// Calendar connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -104,9 +105,9 @@ pub struct UpdateEventArgs {
     /// New end time (RFC 3339 or "YYYY-MM-DD HH:MM")
     #[arg(long)]
     pub end: Option<String>,
-    /// Calendar account to use
+    /// Calendar connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -119,12 +120,12 @@ pub struct RespondEventArgs {
     /// Optional note/comment with your response
     #[arg(long)]
     pub comment: Option<String>,
-    /// Your email address (defaults to account ID)
+    /// Your email address (defaults to connection ID)
     #[arg(long)]
     pub email: Option<String>,
-    /// Calendar account to use
+    /// Calendar connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -138,18 +139,18 @@ pub struct AvailabilityArgs {
     /// End of time window (YYYY-MM-DD or RFC 3339)
     #[arg(long)]
     pub to: String,
-    /// Calendar account to use
+    /// Calendar connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct DeleteEventArgs {
     /// Event ID to delete
     pub event_id: String,
-    /// Calendar account to use
+    /// Calendar connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 pub async fn run(args: &CalendarArgs) -> anyhow::Result<()> {
@@ -216,7 +217,7 @@ fn run_list(args: &CalendarArgs) -> anyhow::Result<()> {
     let events = db.list_events(
         from,
         to,
-        args.account.as_deref(),
+        args.connection.as_deref(),
         connector.as_deref(),
         200,
     )?;
@@ -247,7 +248,7 @@ fn run_week() -> anyhow::Result<()> {
 }
 
 async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {
-    let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
+    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
     let end = args.end.clone().unwrap_or_else(|| {
@@ -273,7 +274,7 @@ async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {
 }
 
 async fn run_search(args: &SearchEventArgs) -> anyhow::Result<()> {
-    let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
+    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
     let time_min = args.from.as_deref().and_then(|d| {
@@ -319,7 +320,7 @@ async fn run_calendars() -> anyhow::Result<()> {
 }
 
 async fn run_update(args: &UpdateEventArgs) -> anyhow::Result<()> {
-    let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
+    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
     let params = void_calendar::connector::UpdateEventParams {
@@ -346,13 +347,13 @@ async fn run_respond(args: &RespondEventArgs) -> anyhow::Result<()> {
         );
     }
 
-    let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
+    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
     let email = args
         .email
         .clone()
-        .unwrap_or_else(|| connector.account_id().to_string());
+        .unwrap_or_else(|| connector.connection_id().to_string());
 
     let event = connector
         .respond_to_event(
@@ -373,7 +374,7 @@ async fn run_respond(args: &RespondEventArgs) -> anyhow::Result<()> {
 }
 
 async fn run_delete(args: &DeleteEventArgs) -> anyhow::Result<()> {
-    let (connector, _cfg) = build_calendar_connector(args.account.as_deref())?;
+    let (connector, _cfg) = build_calendar_connector(args.connection.as_deref())?;
 
     connector.delete_event(&args.event_id, Some("all")).await?;
 
@@ -382,7 +383,7 @@ async fn run_delete(args: &DeleteEventArgs) -> anyhow::Result<()> {
 }
 
 async fn run_availability(args: &AvailabilityArgs) -> anyhow::Result<()> {
-    let (connector, _cfg) = build_calendar_connector(args.account.as_deref())?;
+    let (connector, _cfg) = build_calendar_connector(args.connection.as_deref())?;
 
     let emails: Vec<String> = args
         .attendees
@@ -440,39 +441,39 @@ fn parse_datetime_or_date(s: &str) -> anyhow::Result<String> {
 }
 
 fn build_calendar_connector(
-    account_filter: Option<&str>,
+    connection_filter: Option<&str>,
 ) -> anyhow::Result<(void_calendar::connector::CalendarConnector, VoidConfig)> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 
-    let account = cfg
-        .accounts
+    let connection = cfg
+        .connections
         .iter()
         .find(|a| {
-            let is_calendar = a.account_type == AccountType::Calendar;
-            let name_matches = account_filter.map_or(true, |n| a.id == n);
+            let is_calendar = a.connector_type == ConnectorType::Calendar;
+            let name_matches = connection_filter.map_or(true, |n| a.id == n);
             is_calendar && name_matches
         })
         .ok_or_else(|| {
-            anyhow::anyhow!("No calendar account found in config. Run `void setup` to add one.")
+            anyhow::anyhow!("No calendar connection found in config. Run `void setup` to add one.")
         })?;
 
-    let (credentials_file, calendar_ids) = match &account.settings {
-        void_core::config::AccountSettings::Calendar {
+    let (credentials_file, calendar_ids) = match &connection.settings {
+        void_core::config::ConnectionSettings::Calendar {
             credentials_file,
             calendar_ids,
         } => (credentials_file.clone(), calendar_ids.clone()),
         _ => anyhow::bail!(
-            "Mismatched account settings for calendar account '{}'",
-            account.id
+            "Mismatched connection settings for calendar connection '{}'",
+            connection.id
         ),
     };
 
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
     let store_path = cfg.store_path();
     let connector = void_calendar::connector::CalendarConnector::new(
-        &account.id,
+        &connection.id,
         cred_path.as_deref().and_then(|p| p.to_str()),
         calendar_ids,
         &store_path,

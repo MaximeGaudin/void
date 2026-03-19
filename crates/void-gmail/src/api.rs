@@ -589,9 +589,7 @@ pub fn decode_attachment_data(data: &str) -> Option<String> {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
 
-    let bytes = URL_SAFE_NO_PAD
-        .decode(data.trim_end_matches('='))
-        .ok()?;
+    let bytes = URL_SAFE_NO_PAD.decode(data.trim_end_matches('=')).ok()?;
     String::from_utf8(bytes).ok()
 }
 

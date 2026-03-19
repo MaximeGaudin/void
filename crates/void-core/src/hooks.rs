@@ -186,7 +186,7 @@ fn expand_placeholders(template: &str, msg: Option<&Message>) -> String {
     if let Some(msg) = msg {
         result = result.replace("{message_id}", &msg.id);
         result = result.replace("{connector}", &msg.connector);
-        result = result.replace("{account_id}", &msg.account_id);
+        result = result.replace("{connection_id}", &msg.connection_id);
         if let Ok(json) = serde_json::to_string_pretty(msg) {
             result = result.replace("{message}", &json);
         }
@@ -686,7 +686,7 @@ mod tests {
         let msg = Message {
             id: "msg-123".into(),
             conversation_id: "c1".into(),
-            account_id: "acc1".into(),
+            connection_id: "acc1".into(),
             connector: "gmail".into(),
             external_id: "ext1".into(),
             sender: "alice@example.com".into(),

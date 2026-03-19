@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::de::Deserializer;
 
 use crate::error::ConfigError;
+use crate::models::ConnectorType;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_CONFIG_DIR: &str = ".config/void";
@@ -16,7 +17,7 @@ pub struct VoidConfig {
     #[serde(default)]
     pub sync: SyncConfig,
     #[serde(default)]
-    pub accounts: Vec<AccountConfig>,
+    pub connections: Vec<ConnectionConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,22 +71,22 @@ fn default_hackernews_poll() -> u64 {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AccountConfig {
+pub struct ConnectionConfig {
     pub id: String,
     #[serde(rename = "type")]
-    pub account_type: AccountType,
+    pub connector_type: ConnectorType,
     #[serde(flatten)]
-    pub settings: AccountSettings,
+    pub settings: ConnectionSettings,
 }
 
 /// Custom deserializer that uses the `type` field to drive which
-/// `AccountSettings` variant to parse, avoiding the ambiguity of
+/// `ConnectionSettings` variant to parse, avoiding the ambiguity of
 /// `#[serde(untagged)]` (Gmail and Calendar share `credentials_file`).
-impl<'de> Deserialize<'de> for AccountConfig {
+impl<'de> Deserialize<'de> for ConnectionConfig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw: RawAccountConfig = RawAccountConfig::deserialize(deserializer)?;
-        let settings = match raw.account_type {
-            AccountType::Slack => AccountSettings::Slack {
+        let raw: RawConnectionConfig = RawConnectionConfig::deserialize(deserializer)?;
+        let settings = match raw.connector_type {
+            ConnectorType::Slack => ConnectionSettings::Slack {
                 app_token: raw
                     .app_token
                     .ok_or_else(|| serde::de::Error::missing_field("app_token"))?,
@@ -94,36 +95,36 @@ impl<'de> Deserialize<'de> for AccountConfig {
                     .ok_or_else(|| serde::de::Error::missing_field("user_token"))?,
                 exclude_channels: raw.exclude_channels.unwrap_or_default(),
             },
-            AccountType::Gmail => AccountSettings::Gmail {
+            ConnectorType::Gmail => ConnectionSettings::Gmail {
                 credentials_file: raw.credentials_file,
             },
-            AccountType::Calendar => AccountSettings::Calendar {
+            ConnectorType::Calendar => ConnectionSettings::Calendar {
                 credentials_file: raw.credentials_file,
                 calendar_ids: raw.calendar_ids.unwrap_or_default(),
             },
-            AccountType::WhatsApp => AccountSettings::WhatsApp {},
-            AccountType::Telegram => AccountSettings::Telegram {
+            ConnectorType::WhatsApp => ConnectionSettings::WhatsApp {},
+            ConnectorType::Telegram => ConnectionSettings::Telegram {
                 api_id: raw.api_id,
                 api_hash: raw.api_hash,
             },
-            AccountType::HackerNews => AccountSettings::HackerNews {
+            ConnectorType::HackerNews => ConnectionSettings::HackerNews {
                 keywords: raw.keywords.unwrap_or_default(),
                 min_score: raw.min_score.unwrap_or(0),
             },
         };
-        Ok(AccountConfig {
+        Ok(ConnectionConfig {
             id: raw.id,
-            account_type: raw.account_type,
+            connector_type: raw.connector_type,
             settings,
         })
     }
 }
 
 #[derive(Deserialize)]
-struct RawAccountConfig {
+struct RawConnectionConfig {
     id: String,
     #[serde(rename = "type")]
-    account_type: AccountType,
+    connector_type: ConnectorType,
     #[serde(default)]
     app_token: Option<String>,
     #[serde(default)]
@@ -144,33 +145,9 @@ struct RawAccountConfig {
     min_score: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum AccountType {
-    WhatsApp,
-    Slack,
-    Gmail,
-    Calendar,
-    Telegram,
-    HackerNews,
-}
-
-impl std::fmt::Display for AccountType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::WhatsApp => write!(f, "whatsapp"),
-            Self::Slack => write!(f, "slack"),
-            Self::Gmail => write!(f, "gmail"),
-            Self::Calendar => write!(f, "calendar"),
-            Self::Telegram => write!(f, "telegram"),
-            Self::HackerNews => write!(f, "hackernews"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum AccountSettings {
+pub enum ConnectionSettings {
     Slack {
         app_token: String,
         user_token: String,
@@ -205,6 +182,12 @@ pub enum AccountSettings {
 impl VoidConfig {
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
+        if content.contains("[[accounts]]") {
+            let migrated = content.replace("[[accounts]]", "[[connections]]");
+            std::fs::write(path, &migrated)?;
+            let config: Self = toml::from_str(&migrated)?;
+            return Ok(config);
+        }
         let config: Self = toml::from_str(&content)?;
         Ok(config)
     }
@@ -230,22 +213,22 @@ impl VoidConfig {
         self.store_path().join("void.db")
     }
 
-    pub fn find_account(&self, account_id: &str) -> Option<&AccountConfig> {
-        self.accounts.iter().find(|a| a.id == account_id)
+    pub fn find_connection(&self, connection_id: &str) -> Option<&ConnectionConfig> {
+        self.connections.iter().find(|a| a.id == connection_id)
     }
 
-    /// Find a config account by connector type string (e.g. "slack", "gmail", "whatsapp", "telegram").
-    pub fn find_account_by_connector(&self, connector: &str) -> Option<&AccountConfig> {
+    /// Find a config connection by connector type string (e.g. "slack", "gmail", "whatsapp", "telegram").
+    pub fn find_connection_by_connector(&self, connector: &str) -> Option<&ConnectionConfig> {
         let target = match connector {
-            "whatsapp" => AccountType::WhatsApp,
-            "slack" => AccountType::Slack,
-            "gmail" => AccountType::Gmail,
-            "calendar" => AccountType::Calendar,
-            "telegram" => AccountType::Telegram,
-            "hackernews" => AccountType::HackerNews,
+            "whatsapp" => ConnectorType::WhatsApp,
+            "slack" => ConnectorType::Slack,
+            "gmail" => ConnectorType::Gmail,
+            "calendar" => ConnectorType::Calendar,
+            "telegram" => ConnectorType::Telegram,
+            "hackernews" => ConnectorType::HackerNews,
             _ => return None,
         };
-        self.accounts.iter().find(|a| a.account_type == target)
+        self.connections.iter().find(|a| a.connector_type == target)
     }
 }
 
@@ -263,38 +246,38 @@ gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
 hackernews_poll_interval_secs = 3600
 
-# Example accounts (uncomment and fill in):
+# Example connections (uncomment and fill in):
 #
-# [[accounts]]
+# [[connections]]
 # id = "whatsapp"
 # type = "whatsapp"
 #
-# [[accounts]]
+# [[connections]]
 # id = "work-slack"
 # type = "slack"
 # app_token = "xapp-1-..."
 # user_token = "xoxp-..."
 # exclude_channels = ["random", "social"]
 #
-# [[accounts]]
+# [[connections]]
 # id = "personal-gmail"
 # type = "gmail"
 # # credentials_file is optional — built-in Google credentials are used by default
 # # credentials_file = "~/.config/void/custom-credentials.json"
 #
-# [[accounts]]
+# [[connections]]
 # id = "my-calendar"
 # type = "calendar"
 # calendar_ids = ["primary"]
 #
-# [[accounts]]
+# [[connections]]
 # id = "telegram"
 # type = "telegram"
 # # Optional: override built-in API credentials
 # # api_id = 12345
 # # api_hash = "0123456789abcdef0123456789abcdef"
 #
-# [[accounts]]
+# [[connections]]
 # id = "hackernews"
 # type = "hackernews"
 # keywords = ["rust", "ai", "startup"]
@@ -343,41 +326,41 @@ path = "~/.local/share/void"
 gmail_poll_interval_secs = 15
 calendar_poll_interval_secs = 120
 
-[[accounts]]
+[[connections]]
 id = "whatsapp"
 type = "whatsapp"
 
-[[accounts]]
+[[connections]]
 id = "work-slack"
 type = "slack"
 app_token = "xapp-1-test"
 user_token = "xoxp-test"
 
-[[accounts]]
+[[connections]]
 id = "personal-gmail"
 type = "gmail"
 credentials_file = "~/.config/void/gmail.json"
 
-[[accounts]]
+[[connections]]
 id = "my-calendar"
 type = "calendar"
 credentials_file = "~/.config/void/calendar.json"
 calendar_ids = ["primary", "holidays"]
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.accounts.len(), 4);
+        assert_eq!(config.connections.len(), 4);
         assert_eq!(config.sync.gmail_poll_interval_secs, 15);
         assert_eq!(config.sync.calendar_poll_interval_secs, 120);
-        assert_eq!(config.accounts[0].account_type, AccountType::WhatsApp);
-        assert_eq!(config.accounts[1].account_type, AccountType::Slack);
-        assert_eq!(config.accounts[2].account_type, AccountType::Gmail);
-        assert_eq!(config.accounts[3].account_type, AccountType::Calendar);
+        assert_eq!(config.connections[0].connector_type, ConnectorType::WhatsApp);
+        assert_eq!(config.connections[1].connector_type, ConnectorType::Slack);
+        assert_eq!(config.connections[2].connector_type, ConnectorType::Gmail);
+        assert_eq!(config.connections[3].connector_type, ConnectorType::Calendar);
     }
 
     #[test]
     fn parse_empty_config() {
         let config: VoidConfig = toml::from_str("").unwrap();
-        assert!(config.accounts.is_empty());
+        assert!(config.connections.is_empty());
         assert_eq!(config.sync.gmail_poll_interval_secs, 30);
         assert_eq!(config.sync.calendar_poll_interval_secs, 60);
         assert_eq!(config.sync.hackernews_poll_interval_secs, 3600);
@@ -409,53 +392,53 @@ calendar_ids = ["primary", "holidays"]
     }
 
     #[test]
-    fn find_account_returns_match() {
+    fn find_connection_returns_match() {
         let config = VoidConfig {
             store: StoreConfig::default(),
             sync: SyncConfig::default(),
-            accounts: vec![
-                AccountConfig {
+            connections: vec![
+                ConnectionConfig {
                     id: "work-slack".into(),
-                    account_type: AccountType::Slack,
-                    settings: AccountSettings::Slack {
+                    connector_type: ConnectorType::Slack,
+                    settings: ConnectionSettings::Slack {
                         app_token: "xapp".into(),
                         user_token: "xoxp".into(),
                         exclude_channels: vec![],
                     },
                 },
-                AccountConfig {
+                ConnectionConfig {
                     id: "personal-gmail".into(),
-                    account_type: AccountType::Gmail,
-                    settings: AccountSettings::Gmail {
+                    connector_type: ConnectorType::Gmail,
+                    settings: ConnectionSettings::Gmail {
                         credentials_file: Some("creds.json".into()),
                     },
                 },
             ],
         };
-        assert!(config.find_account("work-slack").is_some());
-        assert_eq!(config.find_account("work-slack").unwrap().id, "work-slack");
-        assert!(config.find_account("nonexistent").is_none());
+        assert!(config.find_connection("work-slack").is_some());
+        assert_eq!(config.find_connection("work-slack").unwrap().id, "work-slack");
+        assert!(config.find_connection("nonexistent").is_none());
     }
 
     #[test]
-    fn find_account_by_connector_returns_match() {
+    fn find_connection_by_connector_returns_match() {
         let config = VoidConfig {
             store: StoreConfig::default(),
             sync: SyncConfig::default(),
-            accounts: vec![AccountConfig {
+            connections: vec![ConnectionConfig {
                 id: "gmail-1".into(),
-                account_type: AccountType::Gmail,
-                settings: AccountSettings::Gmail {
+                connector_type: ConnectorType::Gmail,
+                settings: ConnectionSettings::Gmail {
                     credentials_file: Some("creds.json".into()),
                 },
             }],
         };
-        assert!(config.find_account_by_connector("gmail").is_some());
+        assert!(config.find_connection_by_connector("gmail").is_some());
         assert_eq!(
-            config.find_account_by_connector("gmail").unwrap().id,
+            config.find_connection_by_connector("gmail").unwrap().id,
             "gmail-1"
         );
-        assert!(config.find_account_by_connector("unknown").is_none());
+        assert!(config.find_connection_by_connector("unknown").is_none());
     }
 
     #[test]
@@ -475,16 +458,16 @@ calendar_ids = ["primary", "holidays"]
                 path: "~/test-store".to_string(),
             },
             sync: SyncConfig::default(),
-            accounts: vec![AccountConfig {
+            connections: vec![ConnectionConfig {
                 id: "wa".to_string(),
-                account_type: AccountType::WhatsApp,
-                settings: AccountSettings::WhatsApp {},
+                connector_type: ConnectorType::WhatsApp,
+                settings: ConnectionSettings::WhatsApp {},
             }],
         };
 
         config.save(&path).unwrap();
         let loaded = VoidConfig::load(&path).unwrap();
-        assert_eq!(loaded.accounts.len(), 1);
+        assert_eq!(loaded.connections.len(), 1);
         assert_eq!(loaded.store.path, "~/test-store");
 
         std::fs::remove_dir_all(&dir).ok();
@@ -493,16 +476,16 @@ calendar_ids = ["primary", "holidays"]
     #[test]
     fn parse_calendar_not_confused_with_gmail() {
         let toml = r#"
-[[accounts]]
+[[connections]]
 id = "my-calendar"
 type = "calendar"
 credentials_file = "~/.config/void/google-creds.json"
 calendar_ids = ["primary"]
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.accounts[0].account_type, AccountType::Calendar);
-        match &config.accounts[0].settings {
-            AccountSettings::Calendar {
+        assert_eq!(config.connections[0].connector_type, ConnectorType::Calendar);
+        match &config.connections[0].settings {
+            ConnectionSettings::Calendar {
                 credentials_file,
                 calendar_ids,
             } => {
@@ -519,15 +502,15 @@ calendar_ids = ["primary"]
     #[test]
     fn parse_calendar_without_calendar_ids() {
         let toml = r#"
-[[accounts]]
+[[connections]]
 id = "cal"
 type = "calendar"
 credentials_file = "creds.json"
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.accounts[0].account_type, AccountType::Calendar);
-        match &config.accounts[0].settings {
-            AccountSettings::Calendar { calendar_ids, .. } => {
+        assert_eq!(config.connections[0].connector_type, ConnectorType::Calendar);
+        match &config.connections[0].settings {
+            ConnectionSettings::Calendar { calendar_ids, .. } => {
                 assert!(calendar_ids.is_empty());
             }
             other => panic!("expected Calendar settings, got {other:?}"),
@@ -537,7 +520,7 @@ credentials_file = "creds.json"
     #[test]
     fn parse_slack_exclude_channels() {
         let toml = r#"
-[[accounts]]
+[[connections]]
 id = "work-slack"
 type = "slack"
 app_token = "xapp-1-test"
@@ -545,9 +528,9 @@ user_token = "xoxp-test"
 exclude_channels = ["random", "social", "C07ABC123"]
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.accounts.len(), 1);
-        match &config.accounts[0].settings {
-            AccountSettings::Slack {
+        assert_eq!(config.connections.len(), 1);
+        match &config.connections[0].settings {
+            ConnectionSettings::Slack {
                 exclude_channels, ..
             } => {
                 assert_eq!(exclude_channels.len(), 3);
@@ -561,15 +544,15 @@ exclude_channels = ["random", "social", "C07ABC123"]
     #[test]
     fn parse_slack_without_exclude_channels_defaults_empty() {
         let toml = r#"
-[[accounts]]
+[[connections]]
 id = "work-slack"
 type = "slack"
 app_token = "xapp-1-test"
 user_token = "xoxp-test"
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        match &config.accounts[0].settings {
-            AccountSettings::Slack {
+        match &config.connections[0].settings {
+            ConnectionSettings::Slack {
                 exclude_channels, ..
             } => {
                 assert!(exclude_channels.is_empty());
@@ -581,16 +564,16 @@ user_token = "xoxp-test"
     #[test]
     fn parse_hackernews_config() {
         let toml = r#"
-[[accounts]]
+[[connections]]
 id = "hackernews"
 type = "hackernews"
 keywords = ["rust", "ai", "startup"]
 min_score = 50
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.accounts[0].account_type, AccountType::HackerNews);
-        match &config.accounts[0].settings {
-            AccountSettings::HackerNews {
+        assert_eq!(config.connections[0].connector_type, ConnectorType::HackerNews);
+        match &config.connections[0].settings {
+            ConnectionSettings::HackerNews {
                 keywords,
                 min_score,
             } => {
@@ -604,14 +587,14 @@ min_score = 50
     #[test]
     fn parse_hackernews_without_optional_fields() {
         let toml = r#"
-[[accounts]]
+[[connections]]
 id = "hn"
 type = "hackernews"
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.accounts[0].account_type, AccountType::HackerNews);
-        match &config.accounts[0].settings {
-            AccountSettings::HackerNews {
+        assert_eq!(config.connections[0].connector_type, ConnectorType::HackerNews);
+        match &config.connections[0].settings {
+            ConnectionSettings::HackerNews {
                 keywords,
                 min_score,
             } => {

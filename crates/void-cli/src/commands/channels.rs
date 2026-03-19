@@ -10,9 +10,9 @@ pub struct ChannelsArgs {
     /// Search channels/groups by name (supports partial match)
     #[arg()]
     pub search: Option<String>,
-    /// Filter by account (partial match on account_id)
+    /// Filter by connection (partial match on connection_id)
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
     /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
     #[arg(long)]
     pub connector: Option<String>,
@@ -25,14 +25,14 @@ pub struct ChannelsArgs {
 }
 
 pub fn run(args: &ChannelsArgs) -> anyhow::Result<()> {
-    debug!(search = ?args.search, account = ?args.account, connector = ?args.connector, size = args.size, "channels");
+    debug!(search = ?args.search, connection = ?args.connection, connector = ?args.connector, size = args.size, "channels");
     let connector = resolve_connector_filter(args.connector.as_deref())?;
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new();
 
     let channels = db.list_channels(
-        args.account.as_deref(),
+        args.connection.as_deref(),
         connector.as_deref(),
         args.search.as_deref(),
         args.size,

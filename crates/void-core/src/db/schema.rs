@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::error::DbError;
 
-pub const SCHEMA_VERSION: i32 = 9;
+pub const SCHEMA_VERSION: i32 = 10;
 
 /// Run all pending migrations on the database connection.
 pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
@@ -51,6 +51,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     }
     if version < 9 {
         migrate_v9(conn)?;
+    }
+    if version < 10 {
+        migrate_v10(conn)?;
     }
     Ok(())
 }
@@ -252,6 +255,21 @@ fn migrate_v9(conn: &Connection) -> Result<(), DbError> {
         ALTER TABLE hook_logs ADD COLUMN raw_output TEXT;
 
         INSERT OR REPLACE INTO schema_version (version) VALUES (9);
+    ",
+    )?;
+    Ok(())
+}
+
+fn migrate_v10(conn: &Connection) -> Result<(), DbError> {
+    debug!("running migration v10: rename account_id to connection_id");
+    conn.execute_batch(
+        "
+        ALTER TABLE conversations RENAME COLUMN account_id TO connection_id;
+        ALTER TABLE messages RENAME COLUMN account_id TO connection_id;
+        ALTER TABLE events RENAME COLUMN account_id TO connection_id;
+        ALTER TABLE sync_state RENAME COLUMN account_id TO connection_id;
+
+        INSERT OR REPLACE INTO schema_version (version) VALUES (10);
     ",
     )?;
     Ok(())

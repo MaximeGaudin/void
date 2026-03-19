@@ -15,7 +15,7 @@ use crate::connector::SlackConnector;
 
 impl SlackConnector {
     pub(crate) async fn prefetch_users(&self) -> anyhow::Result<HashMap<String, String>> {
-        info!(account_id = %self.account_id, "prefetching Slack users");
+        info!(connection_id = %self.connection_id, "prefetching Slack users");
         let mut cache = HashMap::new();
         let mut cursor: Option<String> = None;
 
@@ -40,7 +40,7 @@ impl SlackConnector {
             }
         }
 
-        info!(account_id = %self.account_id, users = cache.len(), "user prefetch complete");
+        info!(connection_id = %self.connection_id, users = cache.len(), "user prefetch complete");
         Ok(cache)
     }
 
@@ -74,7 +74,7 @@ impl SlackConnector {
             let excluded = before - all.len();
             if excluded > 0 {
                 info!(
-                    account_id = %self.account_id,
+                    connection_id = %self.connection_id,
                     excluded,
                     "excluded channels from sync"
                 );
@@ -91,21 +91,21 @@ impl SlackConnector {
             .timestamp()
             .to_string();
 
-        info!(account_id = %self.account_id, since = %oldest_ts, "starting Slack backfill (last 7 days)");
+        info!(connection_id = %self.connection_id, since = %oldest_ts, "starting Slack backfill (last 7 days)");
         self.fetch_history(db, &oldest_ts, "backfill").await
     }
 
     pub(crate) async fn catch_up(&self, db: &Database) -> anyhow::Result<()> {
-        let latest = db.latest_message_timestamp(&self.account_id, "slack")?;
+        let latest = db.latest_message_timestamp(&self.connection_id, "slack")?;
         let oldest_ts = match latest {
             Some(ts) => ts.to_string(),
             None => {
-                info!(account_id = %self.account_id, "no previous messages found, skipping catch-up");
+                info!(connection_id = %self.connection_id, "no previous messages found, skipping catch-up");
                 return Ok(());
             }
         };
 
-        info!(account_id = %self.account_id, since = %oldest_ts, "catching up missed Slack messages");
+        info!(connection_id = %self.connection_id, since = %oldest_ts, "catching up missed Slack messages");
         self.fetch_history(db, &oldest_ts, "catch-up").await
     }
 
@@ -127,7 +127,7 @@ impl SlackConnector {
 
         eprintln!(
             "[slack:{}] {} — {}/{} conversations active since {}, fetching…",
-            self.account_id,
+            self.connection_id,
             label,
             active.len(),
             conversations.len(),
@@ -135,14 +135,14 @@ impl SlackConnector {
         );
 
         let mut progress = void_core::progress::BackfillProgress::new(
-            &format!("slack:{}", self.account_id),
+            &format!("slack:{}", self.connection_id),
             "conversations",
         )
         .with_secondary("messages");
         progress.set_items_total(active.len() as u64);
 
         for conv in &active {
-            let conversation = map_conversation(conv, &self.account_id, &user_cache);
+            let conversation = map_conversation(conv, &self.connection_id, &user_cache);
             db.upsert_conversation(&conversation)?;
             progress.inc(1);
 
@@ -188,13 +188,13 @@ impl SlackConnector {
                             msg,
                             conv,
                             &conversation.id,
-                            &self.account_id,
+                            &self.connection_id,
                             &user_cache,
                         )
                     })
                     .collect();
                 mapped.sort_by_key(|m| m.timestamp);
-                assign_time_window_context(&mut mapped, &self.account_id, &conv.id);
+                assign_time_window_context(&mut mapped, &self.connection_id, &conv.id);
                 for message in &mapped {
                     db.upsert_message(message)?;
                     progress.inc_secondary(1);
@@ -209,7 +209,7 @@ impl SlackConnector {
 
         progress.finish();
         info!(
-            account_id = %self.account_id,
+            connection_id = %self.connection_id,
             conversations = progress.items,
             messages = progress.secondary,
             "{label} complete"

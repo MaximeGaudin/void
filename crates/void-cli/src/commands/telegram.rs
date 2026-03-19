@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, AccountSettings, AccountType, VoidConfig};
+use void_core::config::{self, ConnectionSettings, VoidConfig};
+use void_core::models::ConnectorType;
 use void_core::db::Database;
 
 #[derive(Debug, Args)]
@@ -22,9 +23,9 @@ pub struct DownloadArgs {
     /// Output file path
     #[arg(long)]
     pub out: String,
-    /// Telegram account to use
+    /// Telegram connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 pub async fn run(args: &TelegramArgs) -> anyhow::Result<()> {
@@ -63,7 +64,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         anyhow::bail!("No downloadable media in metadata.");
     }
 
-    let connector = build_tg_connector(args.account.as_deref(), &cfg)?;
+    let connector = build_tg_connector(args.connection.as_deref(), &cfg)?;
 
     let raw_msg_id_str = msg.external_id.rsplit('_').next().unwrap_or("0");
     let raw_msg_id: i32 = raw_msg_id_str.parse().unwrap_or(0);
@@ -85,31 +86,31 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
 }
 
 fn build_tg_connector(
-    account_filter: Option<&str>,
+    connection_filter: Option<&str>,
     cfg: &VoidConfig,
 ) -> anyhow::Result<void_telegram::connector::TelegramConnector> {
-    let account = cfg
-        .accounts
+    let connection = cfg
+        .connections
         .iter()
         .find(|a| {
-            let is_tg = a.account_type == AccountType::Telegram;
-            let name_matches = account_filter.map_or(true, |n| a.id == n);
+            let is_tg = a.connector_type == ConnectorType::Telegram;
+            let name_matches = connection_filter.map_or(true, |n| a.id == n);
             is_tg && name_matches
         })
         .ok_or_else(|| {
-            anyhow::anyhow!("No Telegram account found in config. Run `void setup` to add one.")
+            anyhow::anyhow!("No Telegram connection found in config. Run `void setup` to add one.")
         })?;
 
-    let (api_id, api_hash) = match &account.settings {
-        AccountSettings::Telegram { api_id, api_hash } => (*api_id, api_hash.clone()),
-        _ => anyhow::bail!("account '{}' has mismatched settings", account.id),
+    let (api_id, api_hash) = match &connection.settings {
+        ConnectionSettings::Telegram { api_id, api_hash } => (*api_id, api_hash.clone()),
+        _ => anyhow::bail!("connection '{}' has mismatched settings", connection.id),
     };
 
     let store_path = cfg.store_path();
-    let session_path = store_path.join(format!("telegram-{}.json", account.id));
-    debug!(account_id = %account.id, "building Telegram connector for CLI");
+    let session_path = store_path.join(format!("telegram-{}.json", connection.id));
+    debug!(connection_id = %connection.id, "building Telegram connector for CLI");
     Ok(void_telegram::connector::TelegramConnector::new(
-        &account.id,
+        &connection.id,
         session_path.to_str().unwrap_or(""),
         api_id,
         api_hash.as_deref(),

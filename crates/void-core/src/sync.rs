@@ -55,12 +55,12 @@ impl SyncEngine {
             let conn = Arc::clone(conn);
 
             let handle = tokio::spawn(async move {
-                let account_id = conn.account_id().to_string();
+                let connection_id = conn.connection_id().to_string();
                 let connector_type = conn.connector_type();
-                info!(%account_id, %connector_type, "starting sync");
+                info!(%connection_id, %connector_type, "starting sync");
                 match conn.start_sync(db, cancel).await {
-                    Ok(()) => info!(%account_id, %connector_type, "sync stopped"),
-                    Err(e) => error!(%account_id, %connector_type, "sync error: {e}"),
+                    Ok(()) => info!(%connection_id, %connector_type, "sync stopped"),
+                    Err(e) => error!(%connection_id, %connector_type, "sync error: {e}"),
                 }
             });
             handles.push(handle);

@@ -55,13 +55,13 @@ pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
             }
         };
 
-        let connector_key = format!("{}:{}", msg.connector, msg.account_id);
+        let connector_key = format!("{}:{}", msg.connector, msg.connection_id);
         if !connectors.contains_key(&connector_key) {
-            if let Some(account) = cfg
-                .find_account(&msg.account_id)
-                .or_else(|| cfg.find_account_by_connector(&msg.connector))
+            if let Some(connection) = cfg
+                .find_connection(&msg.connection_id)
+                .or_else(|| cfg.find_connection_by_connector(&msg.connector))
             {
-                match connector_factory::build_connector(account, &cfg.store_path()) {
+                match connector_factory::build_connector(connection, &cfg.store_path()) {
                     Ok(c) => {
                         connectors.insert(connector_key.clone(), c);
                     }

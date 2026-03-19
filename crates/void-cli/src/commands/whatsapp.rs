@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, AccountType, VoidConfig};
+use void_core::config::{self, VoidConfig};
+use void_core::models::ConnectorType;
 use void_core::db::Database;
 
 #[derive(Debug, Args)]
@@ -22,9 +23,9 @@ pub struct DownloadArgs {
     /// Output file path
     #[arg(long)]
     pub out: String,
-    /// WhatsApp account to use
+    /// WhatsApp connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 pub async fn run(args: &WhatsAppArgs) -> anyhow::Result<()> {
@@ -72,7 +73,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("No media_type in metadata."))?;
 
-    let connector = build_wa_connector(args.account.as_deref(), &cfg)?;
+    let connector = build_wa_connector(args.connection.as_deref(), &cfg)?;
 
     eprintln!(
         "Downloading {} ({} bytes) from WhatsApp...",
@@ -96,26 +97,26 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
 }
 
 fn build_wa_connector(
-    account_filter: Option<&str>,
+    connection_filter: Option<&str>,
     cfg: &VoidConfig,
 ) -> anyhow::Result<void_whatsapp::connector::WhatsAppConnector> {
-    let account = cfg
-        .accounts
+    let connection = cfg
+        .connections
         .iter()
         .find(|a| {
-            let is_wa = a.account_type == AccountType::WhatsApp;
-            let name_matches = account_filter.map_or(true, |n| a.id == n);
+            let is_wa = a.connector_type == ConnectorType::WhatsApp;
+            let name_matches = connection_filter.map_or(true, |n| a.id == n);
             is_wa && name_matches
         })
         .ok_or_else(|| {
-            anyhow::anyhow!("No WhatsApp account found in config. Run `void setup` to add one.")
+            anyhow::anyhow!("No WhatsApp connection found in config. Run `void setup` to add one.")
         })?;
 
     let store_path = cfg.store_path();
-    let session_db = store_path.join(format!("whatsapp-{}.db", account.id));
-    debug!(account_id = %account.id, "building WhatsApp connector for CLI");
+    let session_db = store_path.join(format!("whatsapp-{}.db", connection.id));
+    debug!(connection_id = %connection.id, "building WhatsApp connector for CLI");
     Ok(void_whatsapp::connector::WhatsAppConnector::new(
-        &account.id,
+        &connection.id,
         session_db.to_str().unwrap_or(""),
     ))
 }

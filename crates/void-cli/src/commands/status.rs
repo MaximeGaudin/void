@@ -9,28 +9,28 @@ pub fn run() {
         Ok(c) => c,
         Err(_) => {
             eprintln!("No config found. Run `void setup` to get started.");
-            eprintln!("Then add accounts and run `void sync` to start syncing.\n");
+            eprintln!("Then add connections and run `void sync` to start syncing.\n");
             eprintln!("Usage: void <command> [options]");
             eprintln!("       void --help for all commands");
             return;
         }
     };
 
-    let accounts = cfg.accounts.len();
+    let connections = cfg.connections.len();
     let store_path = cfg.store_path();
     let lock_running = store_path.join("LOCK").exists();
 
-    if accounts == 0 {
+    if connections == 0 {
         eprintln!(
-            "No accounts configured. Edit {} to add accounts.",
+            "No connections configured. Edit {} to add connections.",
             config_path.display()
         );
         return;
     }
 
     eprintln!(
-        "{} account(s) | sync {}",
-        accounts,
+        "{} connection(s) | sync {}",
+        connections,
         if lock_running { "running" } else { "stopped" }
     );
 

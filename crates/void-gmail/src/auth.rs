@@ -55,8 +55,8 @@ impl TokenCache {
     }
 }
 
-pub fn token_cache_path(store_path: &Path, account_id: &str) -> PathBuf {
-    store_path.join(format!("{account_id}-token.json"))
+pub fn token_cache_path(store_path: &Path, connection_id: &str) -> PathBuf {
+    store_path.join(format!("{connection_id}-token.json"))
 }
 
 const EMBEDDED_CREDENTIALS: &str = include_str!("../google-credentials.json");
@@ -270,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn token_cache_path_joins_account_id() {
+    fn token_cache_path_joins_connection_id() {
         let store = std::path::Path::new("/tmp/void-store");
         let path = token_cache_path(store, "gmail-1");
         assert!(path.ends_with("gmail-1-token.json"));

@@ -50,8 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Calendar config no longer deserialized as Gmail variant
 - Calendar handles deleted events during incremental sync
 - Calendar pagination and local timezone for date filtering
-- Slack re-backfill skipped on restart; `account_id` added to progress logs
-- Account rename now moves token files and session DBs
+- Slack re-backfill skipped on restart; `connection_id` added to progress logs
+- Connection rename now moves token files and session DBs
 - WhatsApp health check uses session file instead of live connection
 - `Ctrl+C` properly stops sync with force-quit and timeout
 - UTF-8 multi-byte character panic in output truncation

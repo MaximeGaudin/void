@@ -32,21 +32,21 @@ pub async fn run(args: &ForwardArgs) -> anyhow::Result<()> {
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    debug!(connector = %msg.connector, account_id = %msg.account_id, "resolved message");
+    debug!(connector = %msg.connector, connection_id = %msg.connection_id, "resolved message");
 
-    let account = cfg
-        .find_account(&msg.account_id)
-        .or_else(|| cfg.find_account_by_connector(&msg.connector))
+    let connection = cfg
+        .find_connection(&msg.connection_id)
+        .or_else(|| cfg.find_connection_by_connector(&msg.connector))
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "No {} account found in config for message {}",
+                "No {} connection found in config for message {}",
                 msg.connector,
                 msg.id
             )
         })?;
 
     let store_path = cfg.store_path();
-    let conn = connector_factory::build_connector(account, &store_path)?;
+    let conn = connector_factory::build_connector(connection, &store_path)?;
 
     let fwd_id = conn
         .forward(

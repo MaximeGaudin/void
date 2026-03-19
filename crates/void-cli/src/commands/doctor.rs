@@ -46,12 +46,12 @@ pub fn run() -> anyhow::Result<()> {
     }
 
     eprintln!();
-    if cfg.accounts.is_empty() {
-        eprintln!("[!!] No accounts configured");
+    if cfg.connections.is_empty() {
+        eprintln!("[!!] No connections configured");
     } else {
-        eprintln!("[OK] {} account(s) configured:", cfg.accounts.len());
-        for acc in &cfg.accounts {
-            eprintln!("     - {} ({})", acc.id, acc.account_type);
+        eprintln!("[OK] {} connection(s) configured:", cfg.connections.len());
+        for conn in &cfg.connections {
+            eprintln!("     - {} ({})", conn.id, conn.connector_type);
         }
     }
 

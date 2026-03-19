@@ -12,7 +12,7 @@ const HN_BASE: &str = "https://news.ycombinator.com/item?id=";
 
 pub(super) async fn run_sync(
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
     keywords: &[String],
     min_score: u32,
     poll_interval_secs: u64,
@@ -20,11 +20,11 @@ pub(super) async fn run_sync(
 ) -> anyhow::Result<()> {
     let client = HnClient::new();
 
-    ensure_feed_conversation(db, account_id)?;
+    ensure_feed_conversation(db, connection_id)?;
 
-    info!(account_id, "running initial HN sync");
-    if let Err(e) = poll_stories(&client, db, account_id, keywords, min_score).await {
-        error!(account_id, error = %e, "initial HN sync failed");
+    info!(connection_id, "running initial HN sync");
+    if let Err(e) = poll_stories(&client, db, connection_id, keywords, min_score).await {
+        error!(connection_id, error = %e, "initial HN sync failed");
     }
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(poll_interval_secs));
@@ -34,13 +34,13 @@ pub(super) async fn run_sync(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
-                info!(account_id, "HN sync cancelled");
+                info!(connection_id, "HN sync cancelled");
                 break;
             }
             _ = interval.tick() => {
-                info!(account_id, "polling Hacker News");
-                if let Err(e) = poll_stories(&client, db, account_id, keywords, min_score).await {
-                    error!(account_id, error = %e, "HN poll error");
+                info!(connection_id, "polling Hacker News");
+                if let Err(e) = poll_stories(&client, db, connection_id, keywords, min_score).await {
+                    error!(connection_id, error = %e, "HN poll error");
                 }
             }
         }
@@ -48,11 +48,11 @@ pub(super) async fn run_sync(
     Ok(())
 }
 
-fn ensure_feed_conversation(db: &Arc<Database>, account_id: &str) -> anyhow::Result<()> {
-    let conv_external_id = format!("hackernews_{account_id}_feed");
+fn ensure_feed_conversation(db: &Arc<Database>, connection_id: &str) -> anyhow::Result<()> {
+    let conv_external_id = format!("hackernews_{connection_id}_feed");
     let conv = Conversation {
-        id: format!("{account_id}-feed"),
-        account_id: account_id.to_string(),
+        id: format!("{connection_id}-feed"),
+        connection_id: connection_id.to_string(),
         connector: "hackernews".to_string(),
         external_id: conv_external_id,
         name: Some("Hacker News".to_string()),
@@ -69,22 +69,22 @@ fn ensure_feed_conversation(db: &Arc<Database>, account_id: &str) -> anyhow::Res
 async fn poll_stories(
     client: &HnClient,
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
     keywords: &[String],
     min_score: u32,
 ) -> anyhow::Result<()> {
     let story_ids = client.top_stories().await.unwrap_or_default();
     let total = story_ids.len() as u64;
 
-    let conv_id = format!("{account_id}-feed");
+    let conv_id = format!("{connection_id}-feed");
 
-    let mut progress = BackfillProgress::new(&format!("hackernews:{account_id}"), "stories")
+    let mut progress = BackfillProgress::new(&format!("hackernews:{connection_id}"), "stories")
         .with_secondary("ingested");
     progress.set_items_total(total);
 
     for id in story_ids {
-        let external_id = format!("hackernews_{account_id}_{id}");
-        if db.message_exists(account_id, &external_id)? {
+        let external_id = format!("hackernews_{connection_id}_{id}");
+        if db.message_exists(connection_id, &external_id)? {
             progress.inc(1);
             continue;
         }
@@ -107,7 +107,7 @@ async fn poll_stories(
             continue;
         }
 
-        let msg = build_message(&item, account_id, &conv_id);
+        let msg = build_message(&item, connection_id, &conv_id);
         db.upsert_message(&msg)?;
         progress.inc(1);
         progress.inc_secondary(1);
@@ -116,7 +116,7 @@ async fn poll_stories(
     progress.finish();
 
     db.set_sync_state(
-        account_id,
+        connection_id,
         "hn_last_sync",
         &chrono::Utc::now().timestamp().to_string(),
     )?;
@@ -142,7 +142,7 @@ fn matches_filters(item: &HnItem, keywords: &[String], min_score: u32) -> bool {
     keywords.iter().any(|kw| title.contains(kw.as_str()))
 }
 
-fn build_message(item: &HnItem, account_id: &str, conv_id: &str) -> Message {
+fn build_message(item: &HnItem, connection_id: &str, conv_id: &str) -> Message {
     let id = item.id;
     let title = item.title.as_deref().unwrap_or("(untitled)");
     let author = item.by.as_deref().unwrap_or("unknown");
@@ -166,11 +166,11 @@ fn build_message(item: &HnItem, account_id: &str, conv_id: &str) -> Message {
     });
 
     Message {
-        id: format!("{account_id}-{id}"),
+        id: format!("{connection_id}-{id}"),
         conversation_id: conv_id.to_string(),
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "hackernews".to_string(),
-        external_id: format!("hackernews_{account_id}_{id}"),
+        external_id: format!("hackernews_{connection_id}_{id}"),
         sender: author.to_string(),
         sender_name: Some(author.to_string()),
         body: Some(body),

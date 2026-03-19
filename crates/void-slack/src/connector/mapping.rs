@@ -8,7 +8,7 @@ use crate::api::{SlackConversation, SlackMessage, SlackReaction};
 
 pub(crate) fn map_conversation(
     conv: &SlackConversation,
-    account_id: &str,
+    connection_id: &str,
     user_cache: &HashMap<String, String>,
 ) -> Conversation {
     let kind = if conv.is_im.unwrap_or(false) {
@@ -30,8 +30,8 @@ pub(crate) fn map_conversation(
     };
 
     Conversation {
-        id: format!("{}-{}", account_id, conv.id),
-        account_id: account_id.to_string(),
+        id: format!("{}-{}", connection_id, conv.id),
+        connection_id: connection_id.to_string(),
         connector: "slack".into(),
         external_id: conv.id.clone(),
         name: Some(name),
@@ -47,7 +47,7 @@ pub(crate) fn map_message_cached(
     msg: &SlackMessage,
     conv: &SlackConversation,
     conversation_id: &str,
-    account_id: &str,
+    connection_id: &str,
     user_cache: &HashMap<String, String>,
 ) -> Option<Message> {
     if msg.subtype.is_some() {
@@ -141,12 +141,12 @@ pub(crate) fn map_message_cached(
     let context_id = msg
         .thread_ts
         .as_ref()
-        .map(|thread_ts| format!("{account_id}-thread-{thread_ts}"));
+        .map(|thread_ts| format!("{connection_id}-thread-{thread_ts}"));
 
     Some(Message {
-        id: format!("{account_id}-{}", msg.ts),
+        id: format!("{connection_id}-{}", msg.ts),
         conversation_id: conversation_id.to_string(),
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "slack".into(),
         external_id: msg.ts.clone(),
         sender: sender.clone(),
@@ -158,7 +158,7 @@ pub(crate) fn map_message_cached(
         reply_to_id: msg
             .thread_ts
             .as_ref()
-            .map(|ts| format!("{account_id}-{ts}")),
+            .map(|ts| format!("{connection_id}-{ts}")),
         media_type,
         metadata,
         context_id,
@@ -219,7 +219,7 @@ const TIME_WINDOW_SECS: i64 = 3600;
 /// Messages must be sorted by timestamp ASC before calling.
 pub(crate) fn assign_time_window_context(
     messages: &mut [Message],
-    account_id: &str,
+    connection_id: &str,
     channel_id: &str,
 ) {
     let mut current_group_ts: Option<String> = None;
@@ -235,7 +235,7 @@ pub(crate) fn assign_time_window_context(
         if current_group_ts.is_some() && (msg.timestamp - last_ts) <= TIME_WINDOW_SECS {
             msg.context_id = current_group_ts.clone();
         } else {
-            let group_id = format!("{account_id}-group-{channel_id}-{}", msg.timestamp);
+            let group_id = format!("{connection_id}-group-{channel_id}-{}", msg.timestamp);
             msg.context_id = Some(group_id.clone());
             current_group_ts = Some(group_id);
         }

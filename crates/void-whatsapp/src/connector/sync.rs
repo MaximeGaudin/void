@@ -26,7 +26,7 @@ pub(super) fn is_system_message(msg: &WaMessage) -> bool {
 
 pub(super) fn handle_history_sync(
     db: &Database,
-    account_id: &str,
+    connection_id: &str,
     history: &HistorySync,
 ) -> anyhow::Result<()> {
     let mut total_stored = 0u64;
@@ -37,7 +37,7 @@ pub(super) fn handle_history_sync(
             continue;
         }
         let is_group = chat_jid.ends_with("@g.us");
-        let conv_id = format!("wa_{account_id}_{chat_jid}");
+        let conv_id = format!("wa_{connection_id}_{chat_jid}");
 
         let last_ts = conv
             .messages
@@ -49,7 +49,7 @@ pub(super) fn handle_history_sync(
         let conv_name = conv.name.clone().unwrap_or_else(|| chat_jid.clone());
         let conversation = Conversation {
             id: conv_id.clone(),
-            account_id: account_id.to_string(),
+            connection_id: connection_id.to_string(),
             connector: "whatsapp".into(),
             external_id: chat_jid.clone(),
             name: Some(conv_name),
@@ -100,7 +100,7 @@ pub(super) fn handle_history_sync(
 
             let from_me = wmi.key.from_me.unwrap_or(false);
             let sender_jid = if from_me {
-                account_id.to_string()
+                connection_id.to_string()
             } else if is_group {
                 wmi.key
                     .participant
@@ -117,10 +117,10 @@ pub(super) fn handle_history_sync(
                 if (*msg_ts - pt).abs() <= 3600 {
                     prev_cid.clone()
                 } else {
-                    format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+                    format!("wa_{connection_id}-group-{chat_jid}-{msg_ts}")
                 }
             } else {
-                format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+                format!("wa_{connection_id}-group-{chat_jid}-{msg_ts}")
             };
 
             prev_context_id = Some(context_id.clone());
@@ -129,9 +129,9 @@ pub(super) fn handle_history_sync(
             let reply_to_id = extract_quoted_id(wa_msg);
 
             let message = void_core::models::Message {
-                id: format!("wa_{account_id}_{msg_id}"),
+                id: format!("wa_{connection_id}_{msg_id}"),
                 conversation_id: conv_id.clone(),
-                account_id: account_id.to_string(),
+                connection_id: connection_id.to_string(),
                 connector: "whatsapp".into(),
                 external_id: msg_id.to_string(),
                 sender: sender_jid,
@@ -152,7 +152,7 @@ pub(super) fn handle_history_sync(
     }
 
     info!(
-        account_id = %account_id,
+        connection_id = %connection_id,
         sync_type = history.sync_type,
         stored = total_stored,
         "history sync processed"
@@ -168,7 +168,7 @@ pub(super) struct StoredMessageInfo {
 
 pub(super) fn handle_message(
     db: &Database,
-    account_id: &str,
+    connection_id: &str,
     msg: &WaMessage,
     info: &MessageInfo,
 ) -> anyhow::Result<Option<StoredMessageInfo>> {
@@ -180,7 +180,7 @@ pub(super) fn handle_message(
     let base = msg.get_base_message();
 
     if let Some(ref reaction) = base.reaction_message {
-        handle_reaction(db, account_id, reaction, info)?;
+        handle_reaction(db, connection_id, reaction, info)?;
         return Ok(None);
     }
 
@@ -188,10 +188,10 @@ pub(super) fn handle_message(
     let sender_jid = info.source.sender.to_string();
     let is_group = info.source.is_group;
 
-    let conv_id = format!("wa_{account_id}_{chat_jid}");
+    let conv_id = format!("wa_{connection_id}_{chat_jid}");
     let conversation = Conversation {
         id: conv_id.clone(),
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "whatsapp".into(),
         external_id: chat_jid.clone(),
         name: if is_group {
@@ -230,20 +230,20 @@ pub(super) fn handle_message(
         if let Some(prev) = last {
             if (msg_ts - prev.timestamp).abs() <= 3600 {
                 prev.context_id.unwrap_or_else(|| {
-                    format!("wa_{account_id}-group-{chat_jid}-{}", prev.timestamp)
+                    format!("wa_{connection_id}-group-{chat_jid}-{}", prev.timestamp)
                 })
             } else {
-                format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+                format!("wa_{connection_id}-group-{chat_jid}-{msg_ts}")
             }
         } else {
-            format!("wa_{account_id}-group-{chat_jid}-{msg_ts}")
+            format!("wa_{connection_id}-group-{chat_jid}-{msg_ts}")
         }
     };
 
     let message = void_core::models::Message {
-        id: format!("wa_{account_id}_{}", info.id),
+        id: format!("wa_{connection_id}_{}", info.id),
         conversation_id: conv_id,
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "whatsapp".into(),
         external_id: info.id.clone(),
         sender: sender_jid,
@@ -283,7 +283,7 @@ pub(super) fn handle_message(
 
 fn handle_reaction(
     db: &Database,
-    account_id: &str,
+    connection_id: &str,
     reaction: &wa_rs_proto::whatsapp::message::ReactionMessage,
     info: &MessageInfo,
 ) -> anyhow::Result<()> {
@@ -301,7 +301,7 @@ fn handle_reaction(
         info.push_name.clone()
     };
 
-    let Some(original) = db.find_message_by_external_id(account_id, target_id)? else {
+    let Some(original) = db.find_message_by_external_id(connection_id, target_id)? else {
         debug!(target_id, "reaction target message not found, skipping");
         return Ok(());
     };

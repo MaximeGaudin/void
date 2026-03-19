@@ -31,12 +31,12 @@ pub struct GmailConnector {
 
 impl GmailConnector {
     pub fn new(
-        account_id: &str,
+        connection_id: &str,
         credentials_file: Option<&str>,
         store_path: &std::path::Path,
     ) -> Self {
         Self {
-            config_id: account_id.to_string(),
+            config_id: connection_id.to_string(),
             credentials_file: credentials_file.map(|s| s.to_string()),
             store_path: store_path.to_path_buf(),
             my_email: std::sync::Mutex::new(None),
@@ -47,7 +47,7 @@ impl GmailConnector {
         auth::token_cache_path(&self.store_path, &self.config_id)
     }
 
-    fn display_account_id(&self) -> String {
+    fn display_connection_id(&self) -> String {
         self.my_email
             .lock()
             .expect("mutex")
@@ -66,7 +66,7 @@ impl Connector for GmailConnector {
         ConnectorType::Gmail
     }
 
-    fn account_id(&self) -> &str {
+    fn connection_id(&self) -> &str {
         &self.config_id
     }
 
@@ -97,12 +97,12 @@ impl Connector for GmailConnector {
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
-                    info!(account_id = %self.config_id, "Gmail sync cancelled");
+                    info!(connection_id = %self.config_id, "Gmail sync cancelled");
                     break;
                 }
                 _ = interval.tick() => {
                     if let Err(e) = self.incremental_sync(&db).await {
-                        error!(account_id = %self.config_id, "incremental sync error: {e}");
+                        error!(connection_id = %self.config_id, "incremental sync error: {e}");
                     }
                 }
             }
@@ -114,7 +114,7 @@ impl Connector for GmailConnector {
         match self.get_client().await {
             Ok(api) => match api.get_profile().await {
                 Ok(profile) => Ok(HealthStatus {
-                    account_id: self.config_id.clone(),
+                    connection_id: self.config_id.clone(),
                     connector_type: ConnectorType::Gmail,
                     ok: true,
                     message: format!(
@@ -125,9 +125,9 @@ impl Connector for GmailConnector {
                     message_count: None,
                 }),
                 Err(e) => {
-                    warn!(account_id = %self.config_id, error = %e, "Gmail health check API error");
+                    warn!(connection_id = %self.config_id, error = %e, "Gmail health check API error");
                     Ok(HealthStatus {
-                        account_id: self.config_id.clone(),
+                        connection_id: self.config_id.clone(),
                         connector_type: ConnectorType::Gmail,
                         ok: false,
                         message: format!("API error: {e}"),
@@ -137,9 +137,9 @@ impl Connector for GmailConnector {
                 }
             },
             Err(e) => {
-                warn!(account_id = %self.config_id, error = %e, "Gmail health check auth error");
+                warn!(connection_id = %self.config_id, error = %e, "Gmail health check auth error");
                 Ok(HealthStatus {
-                    account_id: self.config_id.clone(),
+                    connection_id: self.config_id.clone(),
                     connector_type: ConnectorType::Gmail,
                     ok: false,
                     message: format!("Auth error: {e}"),
@@ -443,19 +443,19 @@ mod tests {
                     let msg_id = msg.id.as_deref().unwrap_or("");
                     let thread_id = msg.thread_id.as_deref().unwrap_or(msg_id);
                     let from = msg.get_header("From").unwrap_or_default();
-                    let account_id = profile
+                    let connection_id = profile
                         .email_address
                         .as_deref()
                         .unwrap_or(config_id)
                         .to_string();
-                    let conv_id = format!("{}-{}", account_id, thread_id);
+                    let conv_id = format!("{}-{}", connection_id, thread_id);
                     let subject = msg
                         .get_header("Subject")
                         .unwrap_or_else(|| "(no subject)".into());
 
                     let conversation = Conversation {
                         id: conv_id.clone(),
-                        account_id: account_id.clone(),
+                        connection_id: connection_id.clone(),
                         connector: "gmail".into(),
                         external_id: thread_id.to_string(),
                         name: Some(subject),
@@ -472,9 +472,9 @@ mod tests {
                     db.upsert_conversation(&conversation).unwrap();
 
                     let message = Message {
-                        id: format!("{}-{}", account_id, msg_id),
+                        id: format!("{}-{}", connection_id, msg_id),
                         conversation_id: conv_id,
-                        account_id: account_id.clone(),
+                        connection_id: connection_id.clone(),
                         connector: "gmail".into(),
                         external_id: msg_id.to_string(),
                         sender: from
@@ -494,7 +494,7 @@ mod tests {
                         reply_to_id: None,
                         media_type: None,
                         metadata: None,
-                        context_id: Some(format!("{}-thread-{}", account_id, thread_id)),
+                        context_id: Some(format!("{}-thread-{}", connection_id, thread_id)),
                         context: None,
                     };
                     db.upsert_message(&message).unwrap();
@@ -577,12 +577,12 @@ mod tests {
                         let msg = api.get_message(&item.message.id).await.unwrap();
                         let msg_id = msg.id.as_deref().unwrap_or("");
                         let thread_id = msg.thread_id.as_deref().unwrap_or(msg_id);
-                        let account_id = "test-gmail".to_string();
-                        let conv_id = format!("{}-{}", account_id, thread_id);
+                        let connection_id = "test-gmail".to_string();
+                        let conv_id = format!("{}-{}", connection_id, thread_id);
 
                         let conversation = Conversation {
                             id: conv_id.clone(),
-                            account_id: account_id.clone(),
+                            connection_id: connection_id.clone(),
                             connector: "gmail".into(),
                             external_id: thread_id.to_string(),
                             name: Some(
@@ -603,9 +603,9 @@ mod tests {
 
                         let from = msg.get_header("From").unwrap_or_default();
                         let message = Message {
-                            id: format!("{}-{}", account_id, msg_id),
+                            id: format!("{}-{}", connection_id, msg_id),
                             conversation_id: conv_id.clone(),
-                            account_id: account_id.clone(),
+                            connection_id: connection_id.clone(),
                             connector: "gmail".into(),
                             external_id: msg_id.to_string(),
                             sender: from
@@ -625,7 +625,7 @@ mod tests {
                             reply_to_id: None,
                             media_type: None,
                             metadata: None,
-                            context_id: Some(format!("{}-thread-{}", account_id, thread_id)),
+                            context_id: Some(format!("{}-thread-{}", connection_id, thread_id)),
                             context: None,
                         };
                         db.upsert_message(&message).unwrap();

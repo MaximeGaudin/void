@@ -10,9 +10,9 @@ use void_core::models::Message;
 pub fn resolve_message(db: &Database, input: &str) -> anyhow::Result<Message> {
     if let Some(link) = SlackLink::parse(input) {
         let id = link.to_message_id();
-        return db
-            .get_message(&id)?
-            .ok_or_else(|| anyhow::anyhow!("Message not found for Slack link (resolved id: {id})"));
+        return db.get_message(&id)?.ok_or_else(|| {
+            anyhow::anyhow!("Message not found for Slack link (resolved id: {id})")
+        });
     }
 
     db.get_message(input)?

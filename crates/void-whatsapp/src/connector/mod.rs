@@ -38,9 +38,9 @@ pub struct WhatsAppConnector {
 }
 
 impl WhatsAppConnector {
-    pub fn new(account_id: &str, session_db_path: &str) -> Self {
+    pub fn new(connection_id: &str, session_db_path: &str) -> Self {
         Self {
-            config_id: account_id.to_string(),
+            config_id: connection_id.to_string(),
             session_db_path: session_db_path.to_string(),
             client: Arc::new(Mutex::new(None)),
             own_jid: Arc::new(std::sync::Mutex::new(None)),
@@ -57,7 +57,7 @@ impl WhatsAppConnector {
             }
         }
 
-        info!(account_id = %self.config_id, "starting WhatsApp connection for send");
+        info!(connection_id = %self.config_id, "starting WhatsApp connection for send");
         let backend = Arc::new(SqliteStore::new(&self.session_db_path).await?);
         let client_holder = Arc::clone(&self.client);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -96,15 +96,15 @@ impl WhatsAppConnector {
                             return Ok::<(), anyhow::Error>(());
                         }
                         Some(Event::PairError(e)) => {
-                            error!(account_id = %self.config_id, error = ?e, "WhatsApp PairError");
+                            error!(connection_id = %self.config_id, error = ?e, "WhatsApp PairError");
                             return Err(anyhow::anyhow!("Auth error: {:?}. Run `void setup` first.", e));
                         }
                         Some(Event::LoggedOut(_)) => {
-                            error!(account_id = %self.config_id, "WhatsApp LoggedOut");
+                            error!(connection_id = %self.config_id, "WhatsApp LoggedOut");
                             return Err(anyhow::anyhow!("Session expired. Run `void setup` to re-authenticate."));
                         }
                         None => {
-                            error!(account_id = %self.config_id, "WhatsApp connection closed unexpectedly");
+                            error!(connection_id = %self.config_id, "WhatsApp connection closed unexpectedly");
                             return Err(anyhow::anyhow!("Connection closed unexpectedly"));
                         }
                         _ => {}
@@ -125,7 +125,7 @@ impl Connector for WhatsAppConnector {
         ConnectorType::WhatsApp
     }
 
-    fn account_id(&self) -> &str {
+    fn connection_id(&self) -> &str {
         &self.config_id
     }
 
@@ -150,7 +150,7 @@ impl Connector for WhatsAppConnector {
 
         tokio::select! {
             _ = bot_future => {
-                error!(account_id = %self.config_id, "WhatsApp disconnected before authentication completed");
+                error!(connection_id = %self.config_id, "WhatsApp disconnected before authentication completed");
                 anyhow::bail!("WhatsApp disconnected before authentication completed");
             }
             result = async {
@@ -161,19 +161,19 @@ impl Connector for WhatsAppConnector {
                             render_qr(&code);
                         }
                         Some(Event::PairSuccess(_)) => {
-                            info!(account_id = %self.config_id, "WhatsApp paired successfully");
+                            info!(connection_id = %self.config_id, "WhatsApp paired successfully");
                             return Ok::<(), anyhow::Error>(());
                         }
                         Some(Event::Connected(_)) => {
-                            info!(account_id = %self.config_id, "WhatsApp connected (session exists)");
+                            info!(connection_id = %self.config_id, "WhatsApp connected (session exists)");
                             return Ok(());
                         }
                         Some(Event::PairError(e)) => {
-                            warn!(account_id = %self.config_id, error = ?e, "WhatsApp authenticate PairError");
+                            warn!(connection_id = %self.config_id, error = ?e, "WhatsApp authenticate PairError");
                             return Err(anyhow::anyhow!("Pairing error: {:?}", e));
                         }
                         None => {
-                            error!(account_id = %self.config_id, "WhatsApp authenticate event channel closed");
+                            error!(connection_id = %self.config_id, "WhatsApp authenticate event channel closed");
                             return Err(anyhow::anyhow!("Event channel closed"));
                         }
                         _ => {}
@@ -229,12 +229,12 @@ impl Connector for WhatsAppConnector {
                                     *jid_lock = Some(jid);
                                 }
                             }
-                            let account_id = own_jid_holder
+                            let connection_id = own_jid_holder
                                 .lock()
                                 .expect("mutex")
                                 .clone()
                                 .unwrap_or_else(|| config_id.clone());
-                            match handle_message(&db, &account_id, &msg, &info) {
+                            match handle_message(&db, &connection_id, &msg, &info) {
                                 Ok(Some(stored)) => {
                                     let sender = if info.source.is_from_me {
                                         "me".to_string()
@@ -242,13 +242,20 @@ impl Connector for WhatsAppConnector {
                                         info.push_name.clone()
                                     };
                                     if !stored.body_preview.is_empty() {
-                                        let time = chrono::DateTime::from_timestamp(stored.timestamp, 0)
-                                            .map(|utc| utc.with_timezone(&chrono::Local))
-                                            .map(|local| local.format("%Y-%m-%d %H:%M:%S %Z").to_string())
-                                            .unwrap_or_default();
+                                        let time =
+                                            chrono::DateTime::from_timestamp(stored.timestamp, 0)
+                                                .map(|utc| utc.with_timezone(&chrono::Local))
+                                                .map(|local| {
+                                                    local.format("%Y-%m-%d %H:%M:%S %Z").to_string()
+                                                })
+                                                .unwrap_or_default();
                                         eprintln!(
                                             "[whatsapp:{}] {} {} — {}: {}",
-                                            account_id, time, stored.conv_name, sender, stored.body_preview
+                                            connection_id,
+                                            time,
+                                            stored.conv_name,
+                                            sender,
+                                            stored.body_preview
                                         );
                                     }
                                 }
@@ -259,7 +266,7 @@ impl Connector for WhatsAppConnector {
                             }
                         }
                         Event::MuteUpdate(mute) => {
-                            let account_id = own_jid_holder
+                            let connection_id = own_jid_holder
                                 .lock()
                                 .expect("mutex")
                                 .clone()
@@ -273,13 +280,13 @@ impl Connector for WhatsAppConnector {
                                 "WhatsApp mute update"
                             );
                             if let Err(e) =
-                                db.set_mute_by_external_id(&account_id, &external_id, is_muted)
+                                db.set_mute_by_external_id(&connection_id, &external_id, is_muted)
                             {
                                 warn!("Failed to update mute state for {external_id}: {e}");
                             }
                         }
                         Event::HistorySync(history) => {
-                            let account_id = own_jid_holder
+                            let connection_id = own_jid_holder
                                 .lock()
                                 .expect("mutex")
                                 .clone()
@@ -290,9 +297,9 @@ impl Connector for WhatsAppConnector {
                                 history.conversations.iter().map(|c| c.messages.len()).sum();
                             eprintln!(
                                 "[whatsapp:{}] history sync type={} conversations={} messages={}",
-                                account_id, sync_type, conv_count, msg_count
+                                connection_id, sync_type, conv_count, msg_count
                             );
-                            if let Err(e) = handle_history_sync(&db, &account_id, &history) {
+                            if let Err(e) = handle_history_sync(&db, &connection_id, &history) {
                                 warn!("Failed to process history sync: {e}");
                             }
                         }
@@ -325,7 +332,7 @@ impl Connector for WhatsAppConnector {
         let has_session = std::path::Path::new(&self.session_db_path).exists();
         let connected = self.client.lock().await.is_some();
         let ok = connected || has_session;
-        debug!(account_id = %self.config_id, connected, has_session, "WhatsApp health check");
+        debug!(connection_id = %self.config_id, connected, has_session, "WhatsApp health check");
         let message = if connected {
             "connected".into()
         } else if has_session {
@@ -334,7 +341,7 @@ impl Connector for WhatsAppConnector {
             "no session found. Run `void setup` to pair.".into()
         };
         Ok(HealthStatus {
-            account_id: self.config_id.clone(),
+            connection_id: self.config_id.clone(),
             connector_type: ConnectorType::WhatsApp,
             ok,
             message,
@@ -350,7 +357,7 @@ impl Connector for WhatsAppConnector {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("WhatsApp not connected"))?;
         let jid = parse_jid(to)?;
-        info!(account_id = %self.config_id, recipient_jid = %jid, "sending WhatsApp message");
+        info!(connection_id = %self.config_id, recipient_jid = %jid, "sending WhatsApp message");
 
         let msg = match &content {
             MessageContent::File {
@@ -373,7 +380,7 @@ impl Connector for WhatsAppConnector {
         let msg_id = client
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
-        debug!(account_id = %self.config_id, message_id = %msg_id, "WhatsApp message sent");
+        debug!(connection_id = %self.config_id, message_id = %msg_id, "WhatsApp message sent");
         Ok(msg_id)
     }
 
@@ -386,7 +393,7 @@ impl Connector for WhatsAppConnector {
         in_thread: bool,
     ) -> anyhow::Result<String> {
         let (chat_jid_str, quoted_msg_id) = parse_reply_id(message_id)?;
-        info!(account_id = %self.config_id, reply_target = %chat_jid_str, quoted_msg_id = %quoted_msg_id, in_thread, "sending WhatsApp reply");
+        info!(connection_id = %self.config_id, reply_target = %chat_jid_str, quoted_msg_id = %quoted_msg_id, in_thread, "sending WhatsApp reply");
 
         self.ensure_connected().await?;
         let guard = self.client.lock().await;
@@ -426,7 +433,7 @@ impl Connector for WhatsAppConnector {
         let msg_id = client
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
-        debug!(account_id = %self.config_id, message_id = %msg_id, "WhatsApp reply sent");
+        debug!(connection_id = %self.config_id, message_id = %msg_id, "WhatsApp reply sent");
         Ok(msg_id)
     }
 }

@@ -1,7 +1,8 @@
 use clap::Args;
 use tracing::{debug, info};
 
-use void_core::config::{self, AccountType, VoidConfig};
+use void_core::config::{self, VoidConfig};
+use void_core::models::ConnectorType;
 use void_core::db::Database;
 use void_core::models::MessageContent;
 
@@ -39,22 +40,22 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
 
     debug!("message and conversation found");
 
-    let account = cfg
-        .find_account_by_connector(&msg.connector)
+    let connection = cfg
+        .find_connection_by_connector(&msg.connector)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "No {} account found in config.toml for message {}",
+                "No {} connection found in config.toml for message {}",
                 msg.connector,
                 msg.id
             )
         })?;
 
     if let Some(ref at_str) = args.at {
-        if account.account_type != AccountType::Slack {
+        if connection.connector_type != ConnectorType::Slack {
             anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
         }
         return run_slack_scheduled_reply(
-            account,
+            connection,
             &conv.external_id,
             &msg.external_id,
             &args.message,
@@ -63,11 +64,11 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
         .await;
     }
 
-    let connector_type = parse_connector_type(&account.account_type.to_string())
-        .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", account.account_type))?;
+    let connector_type = parse_connector_type(&connection.connector_type.to_string())
+        .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
 
     let store_path = cfg.store_path();
-    let conn = connector_factory::build_connector(account, &store_path)?;
+    let conn = connector_factory::build_connector(connection, &store_path)?;
 
     let reply_id = build_reply_id(connector_type, &conv.external_id, &msg.external_id);
 
@@ -79,7 +80,7 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
 }
 
 async fn run_slack_scheduled_reply(
-    account: &void_core::config::AccountConfig,
+    connection: &void_core::config::ConnectionConfig,
     channel_id: &str,
     thread_ts: &str,
     message: &str,
@@ -93,8 +94,8 @@ async fn run_slack_scheduled_reply(
         anyhow::bail!("Scheduled time must be in the future.");
     }
 
-    let (user_token, app_token, exclude_channels) = match &account.settings {
-        void_core::config::AccountSettings::Slack {
+    let (user_token, app_token, exclude_channels) = match &connection.settings {
+        void_core::config::ConnectionSettings::Slack {
             user_token,
             app_token,
             exclude_channels,
@@ -103,11 +104,11 @@ async fn run_slack_scheduled_reply(
             app_token.clone(),
             exclude_channels.clone(),
         ),
-        _ => anyhow::bail!("Mismatched settings for Slack account"),
+        _ => anyhow::bail!("Mismatched settings for Slack connection"),
     };
 
     let connector = void_slack::connector::SlackConnector::new(
-        &account.id,
+        &connection.id,
         &user_token,
         &app_token,
         exclude_channels,

@@ -56,7 +56,7 @@ Void runs a background sync daemon that continuously pulls messages and events f
 ```
 
 ```bash
-# Interactive setup — configure connectors, authenticate accounts
+# Interactive setup — configure connectors, authenticate connections
 void setup
 
 # Start background sync
@@ -148,7 +148,7 @@ void calendar
 
 | Command | Description |
 |---------|-------------|
-| `void setup` | Interactive setup wizard — add, configure, rename accounts |
+| `void setup` | Interactive setup wizard — add, configure, rename connections |
 | `void sync` | Start background sync daemon |
 | `void sync --restart` | Restart the sync daemon |
 | `void sync --stop` | Stop the sync daemon |
@@ -160,7 +160,7 @@ void calendar
 | Flag | Description |
 |------|-------------|
 | `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `hackernews` (alias: `hn`) |
-| `--account <id>` | Filter by account ID |
+| `--connection <id>` | Filter by connection ID |
 | `-n` / `--size <N>` | Limit number of results (default: 50) |
 | `--all` | Include archived items |
 | `--include-muted` | Include muted conversations |
@@ -181,32 +181,32 @@ gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
 hackernews_poll_interval_secs = 3600
 
-[[accounts]]
+[[connections]]
 id = "whatsapp"
 type = "whatsapp"
 
-[[accounts]]
+[[connections]]
 id = "work-slack"
 type = "slack"
 app_token = "xapp-1-..."
 user_token = "xoxp-..."
 
-[[accounts]]
+[[connections]]
 id = "telegram"
 type = "telegram"
 
-[[accounts]]
+[[connections]]
 id = "mgaudin@gladia.io"
 type = "gmail"
 credentials_file = "~/.config/void/google-credentials.json"
 
-[[accounts]]
+[[connections]]
 id = "mgaudin@gladia.io-calendar"
 type = "calendar"
 credentials_file = "~/.config/void/google-credentials.json"
 calendar_ids = ["primary"]
 
-[[accounts]]
+[[connections]]
 id = "hackernews"
 type = "hackernews"
 keywords = ["rust", "ai", "startup"]
@@ -242,7 +242,7 @@ Gmail and Calendar share the same OAuth credentials.
 No credentials needed — the HN API is public. Run `void setup`, select Hacker News, enter keywords to watch and a minimum score threshold. Stories matching your keywords and exceeding the minimum score will appear in your inbox during each sync cycle.
 
 ```toml
-[[accounts]]
+[[connections]]
 id = "hackernews"
 type = "hackernews"
 keywords = ["rust", "ai", "startup"]

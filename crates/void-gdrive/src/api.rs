@@ -420,19 +420,19 @@ async fn check_response(resp: reqwest::Response) -> Result<reqwest::Response, Dr
 }
 
 /// Token path dedicated to Drive (avoids overwriting Gmail/Calendar tokens).
-pub fn drive_token_cache_path(store_path: &Path, account_id: &str) -> std::path::PathBuf {
-    store_path.join(format!("{account_id}-drive-token.json"))
+pub fn drive_token_cache_path(store_path: &Path, connection_id: &str) -> std::path::PathBuf {
+    store_path.join(format!("{connection_id}-drive-token.json"))
 }
 
 /// Create a Drive API client. Tries the Drive-specific token first, then falls
 /// back to the shared Gmail token (which may already have sufficient scopes).
 pub async fn build_drive_client(
     store_path: &Path,
-    account_id: &str,
+    connection_id: &str,
     credentials_file: Option<&str>,
 ) -> Result<DriveApiClient, DriveError> {
-    let drive_path = drive_token_cache_path(store_path, account_id);
-    let gmail_path = void_gmail::auth::token_cache_path(store_path, account_id);
+    let drive_path = drive_token_cache_path(store_path, connection_id);
+    let gmail_path = void_gmail::auth::token_cache_path(store_path, connection_id);
 
     let token_path = if drive_path.exists() {
         drive_path
@@ -440,8 +440,8 @@ pub async fn build_drive_client(
         gmail_path
     } else {
         return Err(DriveError::Auth(format!(
-            "no Google token found for \"{account_id}\". \
-             Run `void drive auth --account {account_id}` first."
+            "no Google token found for connection \"{connection_id}\". \
+             Run `void drive auth --connection {connection_id}` first."
         )));
     };
 
@@ -454,7 +454,7 @@ pub async fn build_drive_client(
         .unwrap_or(true);
 
     if is_expired {
-        debug!(account_id, "refreshing Drive access token");
+        debug!(connection_id, "refreshing Drive access token");
         if let Some(ref refresh_token) = cache.refresh_token {
             let creds = void_gmail::auth::load_client_credentials(credentials_file)
                 .map_err(|e| DriveError::Auth(e.to_string()))?;
@@ -479,12 +479,12 @@ pub async fn build_drive_client(
 /// Saves to a Drive-specific token file so Gmail/Calendar tokens are not overwritten.
 pub async fn authenticate_drive(
     store_path: &Path,
-    account_id: &str,
+    connection_id: &str,
     credentials_file: Option<&str>,
 ) -> Result<(), DriveError> {
     let creds = void_gmail::auth::load_client_credentials(credentials_file)
         .map_err(|e| DriveError::Auth(e.to_string()))?;
-    let token_path = drive_token_cache_path(store_path, account_id);
+    let token_path = drive_token_cache_path(store_path, connection_id);
     let cache = void_gmail::auth::authorize_interactive(&creds, Some(DRIVE_SCOPES))
         .await
         .map_err(|e| DriveError::Auth(e.to_string()))?;

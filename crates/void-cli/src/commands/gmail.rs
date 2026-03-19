@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, expand_tilde, AccountType, VoidConfig};
+use void_core::config::{self, expand_tilde, VoidConfig};
+use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
 pub struct GmailArgs {
@@ -37,18 +38,18 @@ pub struct SearchArgs {
     /// Max results to return
     #[arg(long, default_value = "20")]
     pub max: u32,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct ThreadArgs {
     /// Thread ID
     pub thread_id: String,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -59,9 +60,9 @@ pub struct UrlArgs {
 
 #[derive(Debug, Args)]
 pub struct LabelsArgs {
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -74,9 +75,9 @@ pub struct LabelModifyArgs {
     /// Labels to remove (comma-separated, e.g. "INBOX,UNREAD")
     #[arg(long)]
     pub remove: Option<String>,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -89,9 +90,9 @@ pub struct BatchModifyArgs {
     /// Labels to remove (comma-separated)
     #[arg(long)]
     pub remove: Option<String>,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -99,9 +100,9 @@ pub struct DraftsArgs {
     /// Max results
     #[arg(long, default_value = "20")]
     pub max: u32,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -137,9 +138,9 @@ pub struct DraftCreateArgs {
     /// Thread ID to associate with
     #[arg(long)]
     pub thread_id: Option<String>,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -155,18 +156,18 @@ pub struct DraftUpdateArgs {
     /// Email body
     #[arg(long)]
     pub body: String,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct DraftDeleteArgs {
     /// Draft ID to delete
     pub draft_id: String,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -178,9 +179,9 @@ pub struct AttachmentArgs {
     /// Output file path
     #[arg(long)]
     pub out: String,
-    /// Gmail account to use
+    /// Gmail connection to use
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
 }
 
 pub async fn run(args: &GmailArgs) -> anyhow::Result<()> {
@@ -198,7 +199,7 @@ pub async fn run(args: &GmailArgs) -> anyhow::Result<()> {
 }
 
 async fn run_search(args: &SearchArgs) -> anyhow::Result<()> {
-    let connector = build_gmail_connector(args.account.as_deref())?;
+    let connector = build_gmail_connector(args.connection.as_deref())?;
     let messages = connector.search_api(&args.query, args.max).await?;
 
     let items: Vec<serde_json::Value> = messages
@@ -230,7 +231,7 @@ async fn run_search(args: &SearchArgs) -> anyhow::Result<()> {
 }
 
 async fn run_thread(args: &ThreadArgs) -> anyhow::Result<()> {
-    let connector = build_gmail_connector(args.account.as_deref())?;
+    let connector = build_gmail_connector(args.connection.as_deref())?;
     let thread = connector.get_thread(&args.thread_id).await?;
 
     let msgs: Vec<serde_json::Value> = thread
@@ -279,7 +280,7 @@ fn run_url(args: &UrlArgs) -> anyhow::Result<()> {
 }
 
 async fn run_labels(args: &LabelsArgs) -> anyhow::Result<()> {
-    let connector = build_gmail_connector(args.account.as_deref())?;
+    let connector = build_gmail_connector(args.connection.as_deref())?;
     let labels = connector.list_labels().await?;
 
     let items: Vec<serde_json::Value> = labels
@@ -302,7 +303,7 @@ async fn run_labels(args: &LabelsArgs) -> anyhow::Result<()> {
 }
 
 async fn run_label_modify(args: &LabelModifyArgs) -> anyhow::Result<()> {
-    let connector = build_gmail_connector(args.account.as_deref())?;
+    let connector = build_gmail_connector(args.connection.as_deref())?;
 
     let add_labels: Vec<&str> = args
         .add
@@ -331,7 +332,7 @@ async fn run_label_modify(args: &LabelModifyArgs) -> anyhow::Result<()> {
 }
 
 async fn run_batch_modify(args: &BatchModifyArgs) -> anyhow::Result<()> {
-    let connector = build_gmail_connector(args.account.as_deref())?;
+    let connector = build_gmail_connector(args.connection.as_deref())?;
 
     let add_labels: Vec<&str> = args
         .add
@@ -363,7 +364,7 @@ async fn run_batch_modify(args: &BatchModifyArgs) -> anyhow::Result<()> {
 }
 
 async fn run_drafts(args: &DraftsArgs) -> anyhow::Result<()> {
-    let connector = build_gmail_connector(args.account.as_deref())?;
+    let connector = build_gmail_connector(args.connection.as_deref())?;
     let drafts = connector.list_drafts(args.max).await?;
 
     let items: Vec<serde_json::Value> = drafts
@@ -390,7 +391,7 @@ async fn run_drafts(args: &DraftsArgs) -> anyhow::Result<()> {
 async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
     match &args.action {
         DraftAction::Create(a) => {
-            let connector = build_gmail_connector(a.account.as_deref())?;
+            let connector = build_gmail_connector(a.connection.as_deref())?;
             let draft = connector
                 .create_draft(
                     &a.to,
@@ -412,7 +413,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             Ok(())
         }
         DraftAction::Update(a) => {
-            let connector = build_gmail_connector(a.account.as_deref())?;
+            let connector = build_gmail_connector(a.connection.as_deref())?;
             let draft = connector
                 .update_draft(&a.draft_id, &a.to, &a.subject, &a.body)
                 .await?;
@@ -428,7 +429,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             Ok(())
         }
         DraftAction::Delete(a) => {
-            let connector = build_gmail_connector(a.account.as_deref())?;
+            let connector = build_gmail_connector(a.connection.as_deref())?;
             connector.delete_draft(&a.draft_id).await?;
 
             println!(
@@ -444,7 +445,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
 }
 
 async fn run_attachment(args: &AttachmentArgs) -> anyhow::Result<()> {
-    let connector = build_gmail_connector(args.account.as_deref())?;
+    let connector = build_gmail_connector(args.connection.as_deref())?;
     let data = connector
         .get_attachment_data(&args.message_id, &args.attachment_id)
         .await?;
@@ -455,37 +456,37 @@ async fn run_attachment(args: &AttachmentArgs) -> anyhow::Result<()> {
 }
 
 fn build_gmail_connector(
-    account_filter: Option<&str>,
+    connection_filter: Option<&str>,
 ) -> anyhow::Result<void_gmail::connector::GmailConnector> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 
-    let account = cfg
-        .accounts
+    let connection = cfg
+        .connections
         .iter()
         .find(|a| {
-            let is_gmail = a.account_type == AccountType::Gmail;
-            let name_matches = account_filter.map_or(true, |n| a.id == n);
+            let is_gmail = a.connector_type == ConnectorType::Gmail;
+            let name_matches = connection_filter.map_or(true, |n| a.id == n);
             is_gmail && name_matches
         })
         .ok_or_else(|| {
-            anyhow::anyhow!("No Gmail account found in config. Run `void setup` to add one.")
+            anyhow::anyhow!("No Gmail connection found in config. Run `void setup` to add one.")
         })?;
 
-    let credentials_file = match &account.settings {
-        void_core::config::AccountSettings::Gmail { credentials_file } => credentials_file.clone(),
+    let credentials_file = match &connection.settings {
+        void_core::config::ConnectionSettings::Gmail { credentials_file } => credentials_file.clone(),
         _ => anyhow::bail!(
-            "Mismatched account settings for Gmail account '{}'",
-            account.id
+            "Mismatched connection settings for Gmail connection '{}'",
+            connection.id
         ),
     };
 
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
     let store_path = cfg.store_path();
-    debug!(account_id = %account.id, "building Gmail connector for CLI");
+    debug!(connection_id = %connection.id, "building Gmail connector for CLI");
     Ok(void_gmail::connector::GmailConnector::new(
-        &account.id,
+        &connection.id,
         cred_path.as_deref().and_then(|p| p.to_str()),
         &store_path,
     ))

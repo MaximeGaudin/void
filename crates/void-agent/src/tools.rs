@@ -37,7 +37,7 @@ impl Tool for VoidCommandTool {
                 the 'void' prefix.\n\n\
                 AVAILABLE COMMANDS:\n\n\
                 INBOX & MESSAGES:\n\
-                - inbox [--connector gmail|slack|whatsapp|telegram|hackernews] [--account <id>] [-n <max>] [--all] [--include-muted]\n\
+                - inbox [--connector gmail|slack|whatsapp|telegram|hackernews] [--connection <id>] [-n <max>] [--all] [--include-muted]\n\
                 - messages <conversation-id> [-n <count>]\n\
                 - search \"<query>\" [--connector <c>] [-n <max>]\n\
                 - archive <id1> [<id2> ...]\n\
@@ -47,31 +47,31 @@ impl Tool for VoidCommandTool {
                   (Note: hackernews is read-only — no send/reply)\n\
                 - reply <message-id> --message \"<text>\" [--in-thread] [--file <path>] [--at \"<time>\"]\n\n\
                 GMAIL:\n\
-                - gmail search '<query>' [--max <n>] [--account <email>]\n\
-                - gmail thread <threadId> [--account <email>]\n\
+                - gmail search '<query>' [--max <n>] [--connection <email>]\n\
+                - gmail thread <threadId> [--connection <email>]\n\
                 - gmail url <threadId>\n\
-                - gmail labels [--account <email>]\n\
-                - gmail label <threadId> --add <label> [--remove <label>] [--account <email>]\n\
-                - gmail drafts [--account <email>]\n\
-                - gmail draft create --to \"<email>\" --subject \"<s>\" --body \"<b>\" [--reply-to <msgId>] [--thread-id <tId>] [--account <email>]\n\
-                - gmail draft update <draftId> --to \"<email>\" --subject \"<s>\" --body \"<b>\" [--account <email>]\n\
-                - gmail draft delete <draftId> [--account <email>]\n\
-                - gmail attachment <messageId> <attachmentId> --out <path> [--account <email>]\n\
-                - gmail batch-modify <id1> [<id2>...] --add <label> [--remove <label>] [--account <email>]\n\n\
+                - gmail labels [--connection <email>]\n\
+                - gmail label <threadId> --add <label> [--remove <label>] [--connection <email>]\n\
+                - gmail drafts [--connection <email>]\n\
+                - gmail draft create --to \"<email>\" --subject \"<s>\" --body \"<b>\" [--reply-to <msgId>] [--thread-id <tId>] [--connection <email>]\n\
+                - gmail draft update <draftId> --to \"<email>\" --subject \"<s>\" --body \"<b>\" [--connection <email>]\n\
+                - gmail draft delete <draftId> [--connection <email>]\n\
+                - gmail attachment <messageId> <attachmentId> --out <path> [--connection <email>]\n\
+                - gmail batch-modify <id1> [<id2>...] --add <label> [--remove <label>] [--connection <email>]\n\n\
                 SLACK:\n\
                 - slack react <message-id> --emoji <name>\n\
                 - slack edit <message-id> --message \"<text>\"\n\
                 - slack schedule --channel \"<ch>\" --message \"<text>\" --at \"<time>\" [--thread <ts>]\n\
                 - slack open --users <uid1>,<uid2>\n\n\
                 CALENDAR:\n\
-                - calendar [--day today|tomorrow|<date>] [--from <date> --to <date>] [--account <id>]\n\
-                - calendar week [--account <id>]\n\
-                - calendar create --title \"<t>\" --start \"<iso>\" [--end \"<iso>\"] [--attendees \"<emails>\"] [--meet] [--description \"<d>\"] [--account <id>]\n\
-                - calendar search \"<query>\" [--from <date> --to <date>] [--account <id>]\n\
-                - calendar update <event-id> [--title \"<t>\"] [--start \"<iso>\"] [--end \"<iso>\"] [--account <id>]\n\
-                - calendar respond <event-id> --status accepted|declined|tentative [--comment \"<c>\"] [--email <e>] [--account <id>]\n\
-                - calendar delete <event-id> [--account <id>]\n\
-                - calendar availability --attendees \"<emails>\" --from <date> --to <date> [--account <id>]\n\
+                - calendar [--day today|tomorrow|<date>] [--from <date> --to <date>] [--connection <id>]\n\
+                - calendar week [--connection <id>]\n\
+                - calendar create --title \"<t>\" --start \"<iso>\" [--end \"<iso>\"] [--attendees \"<emails>\"] [--meet] [--description \"<d>\"] [--connection <id>]\n\
+                - calendar search \"<query>\" [--from <date> --to <date>] [--connection <id>]\n\
+                - calendar update <event-id> [--title \"<t>\"] [--start \"<iso>\"] [--end \"<iso>\"] [--connection <id>]\n\
+                - calendar respond <event-id> --status accepted|declined|tentative [--comment \"<c>\"] [--email <e>] [--connection <id>]\n\
+                - calendar delete <event-id> [--connection <id>]\n\
+                - calendar availability --attendees \"<emails>\" --from <date> --to <date> [--connection <id>]\n\
                 - calendar calendars\n\n\
                 OTHER:\n\
                 - contacts [--connector <c>]\n\
@@ -80,15 +80,15 @@ impl Tool for VoidCommandTool {
                 NOTES:\n\
                 - Output is always JSON.\n\
                 - For multi-line bodies use heredoc: --body \"$(cat <<'EOF'\\n...\\nEOF\\n)\"\n\
-                - Gmail accounts: mgaudin@gladia.io (professional), me@maxime.ly (personal)\n\
-                - Calendar accounts: mgaudin@gladia.io-calendar, me@maxime.ly-calendar"
+                - Gmail connections: mgaudin@gladia.io (professional), me@maxime.ly (personal)\n\
+                - Calendar connections: mgaudin@gladia.io-calendar, me@maxime.ly-calendar"
                 .to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The void CLI command to execute, without the 'void' prefix. Example: 'inbox --connector gmail --account mgaudin@gladia.io'"
+                        "description": "The void CLI command to execute, without the 'void' prefix. Example: 'inbox --connector gmail --connection mgaudin@gladia.io'"
                     }
                 },
                 "required": ["command"]

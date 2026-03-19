@@ -19,7 +19,7 @@ pub(super) async fn run_sync(
     client: &Client,
     updates: UnboundedReceiver<UpdatesLike>,
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
     cancel: &CancellationToken,
 ) -> anyhow::Result<()> {
     // Start the live update stream BEFORE backfill so that real-time messages
@@ -34,27 +34,27 @@ pub(super) async fn run_sync(
         )
         .await;
 
-    info!(account_id, "telegram live update stream started");
+    info!(connection_id, "telegram live update stream started");
 
     let backfill_task = async {
-        if let Err(e) = backfill_dialogs(client, db, account_id).await {
-            warn!(account_id, error = %e, "telegram backfill failed");
+        if let Err(e) = backfill_dialogs(client, db, connection_id).await {
+            warn!(connection_id, error = %e, "telegram backfill failed");
         }
-        eprintln!("[telegram:{account_id}] listening for new messages");
+        eprintln!("[telegram:{connection_id}] listening for new messages");
     };
 
     let updates_task = async {
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
-                    info!(account_id, "telegram sync cancelled, persisting update state");
+                    info!(connection_id, "telegram sync cancelled, persisting update state");
                     stream.sync_update_state().await;
                     break;
                 }
                 update = stream.next() => {
                     match update {
                         Ok(update) => {
-                            if let Err(e) = handle_update(client, db, account_id, &update).await {
+                            if let Err(e) = handle_update(client, db, connection_id, &update).await {
                                 warn!(error = %e, "error handling telegram update");
                             }
                         }
@@ -75,9 +75,9 @@ pub(super) async fn run_sync(
 async fn backfill_dialogs(
     client: &Client,
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
 ) -> anyhow::Result<()> {
-    info!(account_id, "starting telegram dialog backfill");
+    info!(connection_id, "starting telegram dialog backfill");
     let mut progress = BackfillProgress::new("telegram", "dialogs");
 
     let mut dialogs = client.iter_dialogs();
@@ -85,7 +85,7 @@ async fn backfill_dialogs(
     while let Some(dialog) = dialogs.next().await? {
         let peer = dialog.peer();
         let chat_id = peer.id().to_string();
-        let conv_external_id = format!("telegram_{account_id}_{chat_id}");
+        let conv_external_id = format!("telegram_{connection_id}_{chat_id}");
 
         let kind = match &peer {
             Peer::User(_) => ConversationKind::Dm,
@@ -94,8 +94,8 @@ async fn backfill_dialogs(
         };
 
         let conv = Conversation {
-            id: format!("{account_id}-{chat_id}"),
-            account_id: account_id.to_string(),
+            id: format!("{connection_id}-{chat_id}"),
+            connection_id: connection_id.to_string(),
             connector: "telegram".to_string(),
             external_id: conv_external_id.clone(),
             name: peer.name().map(|n| n.to_string()),
@@ -107,14 +107,14 @@ async fn backfill_dialogs(
         };
         db.upsert_conversation(&conv)?;
 
-        backfill_messages(client, db, account_id, peer, &conv.id, &conv_external_id).await?;
+        backfill_messages(client, db, connection_id, peer, &conv.id, &conv_external_id).await?;
 
         progress.inc(1);
     }
 
     progress.finish();
     info!(
-        account_id,
+        connection_id,
         dialogs = progress.items,
         "telegram backfill complete"
     );
@@ -124,7 +124,7 @@ async fn backfill_dialogs(
 async fn backfill_messages(
     client: &Client,
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
     peer: &Peer,
     conv_id: &str,
     conv_external_id: &str,
@@ -136,13 +136,13 @@ async fn backfill_messages(
     let mut messages = client.iter_messages(peer_ref).limit(100);
 
     while let Some(msg) = messages.next().await? {
-        let external_id = format!("telegram_{account_id}_{}", msg.id());
+        let external_id = format!("telegram_{connection_id}_{}", msg.id());
 
-        if db.message_exists(account_id, &external_id)? {
+        if db.message_exists(connection_id, &external_id)? {
             break;
         }
 
-        let void_msg = tg_message_to_void(&msg, account_id, conv_id, conv_external_id);
+        let void_msg = tg_message_to_void(&msg, connection_id, conv_id, conv_external_id);
         db.upsert_message(&void_msg)?;
     }
 
@@ -152,19 +152,19 @@ async fn backfill_messages(
 async fn handle_update(
     client: &Client,
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
     update: &Update,
 ) -> anyhow::Result<()> {
     match update {
         Update::NewMessage(msg) => {
-            handle_new_message(client, db, account_id, msg).await?;
+            handle_new_message(client, db, connection_id, msg).await?;
         }
         Update::MessageEdited(msg) => {
-            handle_new_message(client, db, account_id, msg).await?;
+            handle_new_message(client, db, connection_id, msg).await?;
         }
         Update::MessageDeleted(deletion) => {
             for msg_id in deletion.messages() {
-                let external_id = format!("telegram_{account_id}_{msg_id}");
+                let external_id = format!("telegram_{connection_id}_{msg_id}");
                 debug!(external_id, "telegram message deleted (no-op in DB)");
             }
         }
@@ -176,7 +176,7 @@ async fn handle_update(
 async fn handle_new_message(
     _client: &Client,
     db: &Arc<Database>,
-    account_id: &str,
+    connection_id: &str,
     msg: &TgMessage,
 ) -> anyhow::Result<()> {
     let peer = match msg.peer() {
@@ -185,7 +185,7 @@ async fn handle_new_message(
     };
 
     let chat_id = peer.id().to_string();
-    let conv_external_id = format!("telegram_{account_id}_{chat_id}");
+    let conv_external_id = format!("telegram_{connection_id}_{chat_id}");
     let conv_name = peer.name().unwrap_or("?").to_string();
 
     let kind = match &peer {
@@ -194,10 +194,10 @@ async fn handle_new_message(
         Peer::Channel(_) => ConversationKind::Channel,
     };
 
-    let conv_id = format!("{account_id}-{chat_id}");
+    let conv_id = format!("{connection_id}-{chat_id}");
     let conv = Conversation {
         id: conv_id.clone(),
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "telegram".to_string(),
         external_id: conv_external_id.clone(),
         name: Some(conv_name.clone()),
@@ -209,7 +209,7 @@ async fn handle_new_message(
     };
     db.upsert_conversation(&conv)?;
 
-    let void_msg = tg_message_to_void(msg, account_id, &conv_id, &conv_external_id);
+    let void_msg = tg_message_to_void(msg, connection_id, &conv_id, &conv_external_id);
     db.upsert_message(&void_msg)?;
 
     let sender_name = msg
@@ -228,7 +228,7 @@ async fn handle_new_message(
         .to_string();
     let direction = if msg.outgoing() { "sent" } else { "new" };
     eprintln!(
-        "[telegram:{account_id}] {time} ({direction}) {conv_name} — {sender_name}: {preview}"
+        "[telegram:{connection_id}] {time} ({direction}) {conv_name} — {sender_name}: {preview}"
     );
 
     Ok(())
@@ -236,7 +236,7 @@ async fn handle_new_message(
 
 fn tg_message_to_void(
     msg: &TgMessage,
-    account_id: &str,
+    connection_id: &str,
     conv_id: &str,
     conv_external_id: &str,
 ) -> Message {
@@ -247,17 +247,17 @@ fn tg_message_to_void(
 
     let sender_name = msg.sender().and_then(|s| s.name().map(|n| n.to_string()));
 
-    let external_id = format!("telegram_{account_id}_{}", msg.id());
+    let external_id = format!("telegram_{connection_id}_{}", msg.id());
 
     let reply_to_id = msg
         .reply_to_message_id()
-        .map(|id| format!("telegram_{account_id}_{id}"));
+        .map(|id| format!("telegram_{connection_id}_{id}"));
 
     let msg_id = msg.id();
     Message {
-        id: format!("{account_id}-{msg_id}"),
+        id: format!("{connection_id}-{msg_id}"),
         conversation_id: conv_id.to_string(),
-        account_id: account_id.to_string(),
+        connection_id: connection_id.to_string(),
         connector: "telegram".to_string(),
         external_id,
         sender,

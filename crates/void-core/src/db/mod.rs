@@ -128,9 +128,9 @@ impl Database {
     pub fn upsert_conversation(&self, conv: &Conversation) -> Result<(), DbError> {
         debug!(conversation_id = %conv.id, "upserting conversation");
         self.conn()?.execute(
-            "INSERT INTO conversations (id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata)
+            "INSERT INTO conversations (id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-             ON CONFLICT(account_id, external_id) DO UPDATE SET
+             ON CONFLICT(connection_id, external_id) DO UPDATE SET
                 name = excluded.name,
                 connector = excluded.connector,
                 kind = excluded.kind,
@@ -139,7 +139,7 @@ impl Database {
                 metadata = excluded.metadata",
             params![
                 conv.id,
-                conv.account_id,
+                conv.connection_id,
                 conv.connector,
                 conv.external_id,
                 conv.name,
@@ -155,13 +155,13 @@ impl Database {
 
     pub fn list_conversations(
         &self,
-        account_filter: Option<&str>,
+        connection_filter: Option<&str>,
         connector_filter: Option<&str>,
         limit: i64,
         include_muted: bool,
     ) -> Result<Vec<Conversation>, DbError> {
         let mut sql = String::from(
-            "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+            "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
              FROM conversations WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -169,9 +169,9 @@ impl Database {
         if !include_muted {
             sql.push_str(" AND is_muted = 0");
         }
-        if let Some(acct) = account_filter {
+        if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -200,7 +200,7 @@ impl Database {
     ) -> Result<Option<Conversation>, DbError> {
         self.conn()?
             .query_row(
-                "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+                "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
                  FROM conversations WHERE name = ?1 AND connector = ?2 LIMIT 1",
                 params![name, connector],
                 row::row_to_conversation,
@@ -212,7 +212,7 @@ impl Database {
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>, DbError> {
         self.conn()?
             .query_row(
-                "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+                "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
                  FROM conversations WHERE id = ?1",
                 params![id],
                 row::row_to_conversation,
@@ -223,13 +223,13 @@ impl Database {
 
     // -- Messages --
 
-    /// Returns `true` if a message with this (account_id, external_id) already exists.
-    pub fn message_exists(&self, account_id: &str, external_id: &str) -> Result<bool, DbError> {
+    /// Returns `true` if a message with this (connection_id, external_id) already exists.
+    pub fn message_exists(&self, connection_id: &str, external_id: &str) -> Result<bool, DbError> {
         Ok(self
             .conn()?
             .query_row(
-                "SELECT 1 FROM messages WHERE account_id = ?1 AND external_id = ?2",
-                params![account_id, external_id],
+                "SELECT 1 FROM messages WHERE connection_id = ?1 AND external_id = ?2",
+                params![connection_id, external_id],
                 |_| Ok(()),
             )
             .is_ok())
@@ -238,12 +238,12 @@ impl Database {
     /// Insert or update a message. Returns `true` if the message was newly inserted.
     pub fn upsert_message(&self, msg: &Message) -> Result<bool, DbError> {
         debug!(message_id = %msg.id, "upserting message");
-        let is_new = !self.message_exists(&msg.account_id, &msg.external_id)?;
+        let is_new = !self.message_exists(&msg.connection_id, &msg.external_id)?;
         let now = chrono::Utc::now().timestamp();
         self.conn()?.execute(
-            "INSERT INTO messages (id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
+            "INSERT INTO messages (id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-             ON CONFLICT(account_id, external_id) DO UPDATE SET
+             ON CONFLICT(connection_id, external_id) DO UPDATE SET
                 body = excluded.body,
                 connector = excluded.connector,
                 sender_name = excluded.sender_name,
@@ -254,7 +254,7 @@ impl Database {
             params![
                 msg.id,
                 msg.conversation_id,
-                msg.account_id,
+                msg.connection_id,
                 msg.connector,
                 msg.external_id,
                 msg.sender,
@@ -290,11 +290,13 @@ impl Database {
     ) -> Result<Vec<Message>, DbError> {
         let suffix_pattern = format!("%-{conversation_id}");
         let mut sql = String::from(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+            "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE (conversation_id = ?1 OR conversation_id LIKE ?2)",
         );
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(conversation_id.to_string()), Box::new(suffix_pattern)];
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+            Box::new(conversation_id.to_string()),
+            Box::new(suffix_pattern),
+        ];
 
         if let Some(s) = since {
             sql.push_str(&format!(" AND timestamp >= ?{}", param_values.len() + 1));
@@ -323,7 +325,7 @@ impl Database {
         let suffix_pattern = format!("%-{id}");
         self.conn()?
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+                "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE id = ?1 OR id LIKE ?2",
                 params![id, suffix_pattern],
                 row::row_to_message,
@@ -334,13 +336,13 @@ impl Database {
 
     pub fn latest_message_timestamp(
         &self,
-        account_id: &str,
+        connection_id: &str,
         connector: &str,
     ) -> Result<Option<i64>, DbError> {
         self.conn()?
             .query_row(
-                "SELECT MAX(timestamp) FROM messages WHERE account_id = ?1 AND connector = ?2",
-                params![account_id, connector],
+                "SELECT MAX(timestamp) FROM messages WHERE connection_id = ?1 AND connector = ?2",
+                params![connection_id, connector],
                 |row| row.get::<_, Option<i64>>(0),
             )
             .map_err(Into::into)
@@ -348,14 +350,14 @@ impl Database {
 
     pub fn recent_messages(
         &self,
-        account_filter: Option<&str>,
+        connection_filter: Option<&str>,
         connector_filter: Option<&str>,
         limit: i64,
         include_archived: bool,
         include_muted: bool,
     ) -> Result<Vec<Message>, DbError> {
         let mut sql = String::from(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+            "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -368,9 +370,9 @@ impl Database {
                 " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = messages.conversation_id AND c.is_muted = 1)",
             );
         }
-        if let Some(acct) = account_filter {
+        if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -417,14 +419,14 @@ impl Database {
 
     pub fn find_message_by_external_id(
         &self,
-        account_id: &str,
+        connection_id: &str,
         external_id: &str,
     ) -> Result<Option<Message>, DbError> {
         self.conn()?
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
-                 FROM messages WHERE account_id = ?1 AND external_id = ?2",
-                params![account_id, external_id],
+                "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+                 FROM messages WHERE connection_id = ?1 AND external_id = ?2",
+                params![connection_id, external_id],
                 row::row_to_message,
             )
             .optional()
@@ -448,7 +450,7 @@ impl Database {
 
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+            "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
              FROM messages WHERE context_id = ?1 ORDER BY timestamp ASC LIMIT 50",
         )?;
 
@@ -478,7 +480,7 @@ impl Database {
     ) -> Result<Option<Message>, DbError> {
         self.conn()?
             .query_row(
-                "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+                "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
                  FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT 1",
                 params![conversation_id],
                 row::row_to_message,
@@ -492,9 +494,9 @@ impl Database {
     pub fn upsert_event(&self, event: &CalendarEvent) -> Result<(), DbError> {
         debug!(event_id = %event.id, "upserting event");
         self.conn()?.execute(
-            "INSERT INTO events (id, account_id, connector, external_id, title, description, location, start_at, end_at, all_day, attendees, status, calendar_name, meet_link, metadata)
+            "INSERT INTO events (id, connection_id, connector, external_id, title, description, location, start_at, end_at, all_day, attendees, status, calendar_name, meet_link, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-             ON CONFLICT(account_id, external_id) DO UPDATE SET
+             ON CONFLICT(connection_id, external_id) DO UPDATE SET
                 title = excluded.title,
                 connector = excluded.connector,
                 description = excluded.description,
@@ -509,7 +511,7 @@ impl Database {
                 metadata = excluded.metadata",
             params![
                 event.id,
-                event.account_id,
+                event.connection_id,
                 event.connector,
                 event.external_id,
                 event.title,
@@ -528,11 +530,11 @@ impl Database {
         Ok(())
     }
 
-    pub fn delete_event(&self, account_id: &str, external_id: &str) -> Result<bool, DbError> {
-        debug!(account_id, external_id, "deleting event");
+    pub fn delete_event(&self, connection_id: &str, external_id: &str) -> Result<bool, DbError> {
+        debug!(connection_id, external_id, "deleting event");
         let deleted = self.conn()?.execute(
-            "DELETE FROM events WHERE account_id = ?1 AND external_id = ?2",
-            params![account_id, external_id],
+            "DELETE FROM events WHERE connection_id = ?1 AND external_id = ?2",
+            params![connection_id, external_id],
         )?;
         Ok(deleted > 0)
     }
@@ -545,11 +547,11 @@ impl Database {
     ) -> Result<(usize, usize, usize, usize), DbError> {
         let conn = self.conn()?;
 
-        let account_ids: Vec<String> = {
+        let connection_ids: Vec<String> = {
             let mut stmt = conn.prepare(
-                "SELECT DISTINCT account_id FROM conversations WHERE connector = ?1
-                 UNION SELECT DISTINCT account_id FROM messages WHERE connector = ?1
-                 UNION SELECT DISTINCT account_id FROM events WHERE connector = ?1",
+                "SELECT DISTINCT connection_id FROM conversations WHERE connector = ?1
+                 UNION SELECT DISTINCT connection_id FROM messages WHERE connector = ?1
+                 UNION SELECT DISTINCT connection_id FROM events WHERE connector = ?1",
             )?;
             let rows = stmt.query_map(params![connector_type], |row| row.get(0))?;
             rows.collect::<Result<_, _>>()?
@@ -569,9 +571,9 @@ impl Database {
         )?;
 
         let mut sync_deleted = 0usize;
-        for aid in &account_ids {
+        for aid in &connection_ids {
             sync_deleted +=
-                conn.execute("DELETE FROM sync_state WHERE account_id = ?1", params![aid])?;
+                conn.execute("DELETE FROM sync_state WHERE connection_id = ?1", params![aid])?;
         }
 
         Ok((msgs, convs, evts, sync_deleted))
@@ -581,12 +583,12 @@ impl Database {
         &self,
         from: Option<i64>,
         to: Option<i64>,
-        account_filter: Option<&str>,
+        connection_filter: Option<&str>,
         connector_filter: Option<&str>,
         limit: i64,
     ) -> Result<Vec<CalendarEvent>, DbError> {
         let mut sql = String::from(
-            "SELECT id, account_id, connector, external_id, title, description, location, start_at, end_at, all_day, attendees, status, calendar_name, meet_link, metadata FROM events WHERE 1=1",
+            "SELECT id, connection_id, connector, external_id, title, description, location, start_at, end_at, all_day, attendees, status, calendar_name, meet_link, metadata FROM events WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -598,9 +600,9 @@ impl Database {
             sql.push_str(&format!(" AND start_at <= ?{}", param_values.len() + 1));
             param_values.push(Box::new(t));
         }
-        if let Some(acct) = account_filter {
+        if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -626,20 +628,20 @@ impl Database {
 
     pub fn list_contacts(
         &self,
-        account_filter: Option<&str>,
+        connection_filter: Option<&str>,
         connector_filter: Option<&str>,
         search: Option<&str>,
         limit: i64,
     ) -> Result<Vec<Contact>, DbError> {
         let mut sql = String::from(
-            "SELECT sender, sender_name, account_id, connector, COUNT(*) as msg_count, MAX(timestamp) as last_ts
-             FROM messages WHERE sender != account_id",
+            "SELECT sender, sender_name, connection_id, connector, COUNT(*) as msg_count, MAX(timestamp) as last_ts
+             FROM messages WHERE sender != connection_id",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-        if let Some(acct) = account_filter {
+        if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -657,7 +659,7 @@ impl Database {
             param_values.push(Box::new(pattern));
         }
 
-        sql.push_str(" GROUP BY sender, account_id");
+        sql.push_str(" GROUP BY sender, connection_id");
         sql.push_str(&format!(
             " ORDER BY last_ts DESC LIMIT ?{}",
             param_values.len() + 1
@@ -672,7 +674,7 @@ impl Database {
             Ok(Contact {
                 sender: row.get(0)?,
                 sender_name: row.get(1)?,
-                account_id: row.get(2)?,
+                connection_id: row.get(2)?,
                 connector: row.get(3)?,
                 message_count: row.get(4)?,
                 last_message_at: row.get(5)?,
@@ -685,14 +687,14 @@ impl Database {
 
     pub fn list_channels(
         &self,
-        account_filter: Option<&str>,
+        connection_filter: Option<&str>,
         connector_filter: Option<&str>,
         search: Option<&str>,
         limit: i64,
         include_muted: bool,
     ) -> Result<Vec<Conversation>, DbError> {
         let mut sql = String::from(
-            "SELECT id, account_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+            "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
              FROM conversations WHERE kind IN ('group', 'channel')",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -700,9 +702,9 @@ impl Database {
         if !include_muted {
             sql.push_str(" AND is_muted = 0");
         }
-        if let Some(acct) = account_filter {
+        if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND account_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -748,63 +750,63 @@ impl Database {
         Ok(updated > 0)
     }
 
-    /// Set mute state for a conversation identified by its external_id and account_id.
+    /// Set mute state for a conversation identified by its external_id and connection_id.
     /// Returns true if a row was updated.
     pub fn set_mute_by_external_id(
         &self,
-        account_id: &str,
+        connection_id: &str,
         external_id: &str,
         is_muted: bool,
     ) -> Result<bool, DbError> {
         debug!(
-            account_id,
+            connection_id,
             external_id, is_muted, "setting mute by external_id"
         );
         let updated = self.conn()?.execute(
-            "UPDATE conversations SET is_muted = ?3 WHERE account_id = ?1 AND external_id = ?2",
-            params![account_id, external_id, is_muted as i32],
+            "UPDATE conversations SET is_muted = ?3 WHERE connection_id = ?1 AND external_id = ?2",
+            params![connection_id, external_id, is_muted as i32],
         )?;
         Ok(updated > 0)
     }
 
     // -- Sync state --
 
-    pub fn get_sync_state(&self, account_id: &str, key: &str) -> Result<Option<String>, DbError> {
+    pub fn get_sync_state(&self, connection_id: &str, key: &str) -> Result<Option<String>, DbError> {
         self.conn()?
             .query_row(
-                "SELECT value FROM sync_state WHERE account_id = ?1 AND key = ?2",
-                params![account_id, key],
+                "SELECT value FROM sync_state WHERE connection_id = ?1 AND key = ?2",
+                params![connection_id, key],
                 |row| row.get(0),
             )
             .optional()
             .map_err(Into::into)
     }
 
-    pub fn set_sync_state(&self, account_id: &str, key: &str, value: &str) -> Result<(), DbError> {
-        debug!(account_id, key, "setting sync state");
+    pub fn set_sync_state(&self, connection_id: &str, key: &str, value: &str) -> Result<(), DbError> {
+        debug!(connection_id, key, "setting sync state");
         self.conn()?.execute(
-            "INSERT INTO sync_state (account_id, key, value) VALUES (?1, ?2, ?3)
-             ON CONFLICT(account_id, key) DO UPDATE SET value = excluded.value",
-            params![account_id, key, value],
+            "INSERT INTO sync_state (connection_id, key, value) VALUES (?1, ?2, ?3)
+             ON CONFLICT(connection_id, key) DO UPDATE SET value = excluded.value",
+            params![connection_id, key, value],
         )?;
         Ok(())
     }
 
-    pub fn rename_account(&self, old_id: &str, new_id: &str) -> Result<(), DbError> {
+    pub fn rename_connection(&self, old_id: &str, new_id: &str) -> Result<(), DbError> {
         let conn = self.conn()?;
         // Temporarily disable FKs: we update conversation ids first, which orphans
         // messages; then we update messages. With FKs on, the order would violate.
         conn.execute("PRAGMA foreign_keys = OFF", [])?;
         conn.execute(
-            "UPDATE sync_state SET account_id = ?2 WHERE account_id = ?1",
+            "UPDATE sync_state SET connection_id = ?2 WHERE connection_id = ?1",
             params![old_id, new_id],
         )?;
         conn.execute(
-            "UPDATE conversations SET account_id = ?2, id = REPLACE(id, ?1, ?2) WHERE account_id = ?1",
+            "UPDATE conversations SET connection_id = ?2, id = REPLACE(id, ?1, ?2) WHERE connection_id = ?1",
             params![old_id, new_id],
         )?;
         conn.execute(
-            "UPDATE messages SET account_id = ?2, id = REPLACE(id, ?1, ?2), conversation_id = REPLACE(conversation_id, ?1, ?2) WHERE account_id = ?1",
+            "UPDATE messages SET connection_id = ?2, id = REPLACE(id, ?1, ?2), conversation_id = REPLACE(conversation_id, ?1, ?2) WHERE connection_id = ?1",
             params![old_id, new_id],
         )?;
         conn.execute("PRAGMA foreign_keys = ON", [])?;
@@ -821,10 +823,10 @@ mod tests {
         Database::open_in_memory().unwrap()
     }
 
-    fn make_conversation(id: &str, account_id: &str, ext_id: &str) -> Conversation {
+    fn make_conversation(id: &str, connection_id: &str, ext_id: &str) -> Conversation {
         Conversation {
             id: id.into(),
-            account_id: account_id.into(),
+            connection_id: connection_id.into(),
             connector: "slack".into(),
             external_id: ext_id.into(),
             name: Some(format!("Conv {id}")),
@@ -836,11 +838,11 @@ mod tests {
         }
     }
 
-    fn make_message(id: &str, conv_id: &str, account_id: &str, body: &str, ts: i64) -> Message {
+    fn make_message(id: &str, conv_id: &str, connection_id: &str, body: &str, ts: i64) -> Message {
         Message {
             id: id.into(),
             conversation_id: conv_id.into(),
-            account_id: account_id.into(),
+            connection_id: connection_id.into(),
             connector: "slack".into(),
             external_id: format!("ext-{id}"),
             sender: "sender@test".into(),
@@ -1237,7 +1239,7 @@ mod tests {
     }
 
     #[test]
-    fn search_with_account_filter_and_special_chars() {
+    fn search_with_connection_filter_and_special_chars() {
         let db = seed_search_db();
         let results = db
             .search_messages("@MadMax", Some("test-slack"), None, 50, true)
@@ -1353,7 +1355,7 @@ mod tests {
         let db = test_db();
         let event = CalendarEvent {
             id: "e1".into(),
-            account_id: "my-calendar".into(),
+            connection_id: "my-calendar".into(),
             connector: "calendar".into(),
             external_id: "goog123".into(),
             title: "Standup".into(),
@@ -1466,7 +1468,7 @@ mod tests {
     }
 
     #[test]
-    fn list_contacts_account_filter() {
+    fn list_contacts_connection_filter() {
         let db = test_db();
         let c1 = make_conversation("c1", "gladiaio", "C123");
         db.upsert_conversation(&c1).unwrap();
@@ -1756,7 +1758,7 @@ mod tests {
     }
 
     #[test]
-    fn rename_account_updates_ids_in_all_tables() {
+    fn rename_connection_updates_ids_in_all_tables() {
         let db = test_db();
         let conv = make_conversation("old-id-c1", "old-id", "E1");
         db.upsert_conversation(&conv).unwrap();
@@ -1770,15 +1772,15 @@ mod tests {
         .unwrap();
         db.set_sync_state("old-id", "key1", "value1").unwrap();
 
-        db.rename_account("old-id", "new-id").unwrap();
+        db.rename_connection("old-id", "new-id").unwrap();
 
         let conv_after = db.get_conversation("new-id-c1").unwrap();
         assert!(conv_after.is_some());
-        assert_eq!(conv_after.unwrap().account_id, "new-id");
+        assert_eq!(conv_after.unwrap().connection_id, "new-id");
 
         let msg_after = db.get_message("new-id-m1").unwrap();
         assert!(msg_after.is_some());
-        assert_eq!(msg_after.unwrap().account_id, "new-id");
+        assert_eq!(msg_after.unwrap().connection_id, "new-id");
 
         let sync_val = db.get_sync_state("new-id", "key1").unwrap();
         assert_eq!(sync_val, Some("value1".to_string()));
@@ -1788,11 +1790,11 @@ mod tests {
 
     fn make_conversation_with_connector(
         id: &str,
-        account_id: &str,
+        connection_id: &str,
         ext_id: &str,
         connector: &str,
     ) -> Conversation {
-        let mut conv = make_conversation(id, account_id, ext_id);
+        let mut conv = make_conversation(id, connection_id, ext_id);
         conv.connector = connector.into();
         conv
     }
@@ -1800,12 +1802,12 @@ mod tests {
     fn make_message_with_connector(
         id: &str,
         conv_id: &str,
-        account_id: &str,
+        connection_id: &str,
         body: &str,
         ts: i64,
         connector: &str,
     ) -> Message {
-        let mut msg = make_message(id, conv_id, account_id, body, ts);
+        let mut msg = make_message(id, conv_id, connection_id, body, ts);
         msg.connector = connector.into();
         msg
     }

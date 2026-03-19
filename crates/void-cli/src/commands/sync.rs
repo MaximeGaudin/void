@@ -235,8 +235,8 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         )
     })?;
 
-    if cfg.accounts.is_empty() {
-        anyhow::bail!("No accounts configured. Add accounts to your config.toml first.");
+    if cfg.connections.is_empty() {
+        anyhow::bail!("No connections configured. Add connections to your config.toml first.");
     }
 
     let connector_filter = resolve_connector_list(args.connectors.as_deref())?;
@@ -275,9 +275,9 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         );
 
         if ct == "whatsapp" {
-            for account in &cfg.accounts {
-                if account.account_type.to_string() == "whatsapp" {
-                    let session_db = store_path.join(format!("whatsapp-{}.db", account.id));
+            for connection in &cfg.connections {
+                if connection.connector_type.to_string() == "whatsapp" {
+                    let session_db = store_path.join(format!("whatsapp-{}.db", connection.id));
                     if session_db.exists() {
                         std::fs::remove_file(&session_db)?;
                         eprintln!(
@@ -290,9 +290,9 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         }
 
         if ct == "telegram" {
-            for account in &cfg.accounts {
-                if account.account_type.to_string() == "telegram" {
-                    let session_file = store_path.join(format!("telegram-{}.json", account.id));
+            for connection in &cfg.connections {
+                if connection.connector_type.to_string() == "telegram" {
+                    let session_file = store_path.join(format!("telegram-{}.json", connection.id));
                     if session_file.exists() {
                         std::fs::remove_file(&session_file)?;
                         eprintln!(
@@ -307,34 +307,34 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
 
     let mut connectors: Vec<Arc<dyn void_core::connector::Connector>> = Vec::new();
 
-    for account in &cfg.accounts {
+    for connection in &cfg.connections {
         if let Some(ref filter) = connector_filter {
-            let type_str = account.account_type.to_string();
+            let type_str = connection.connector_type.to_string();
             if !filter.iter().any(|f| type_str.contains(f)) {
                 continue;
             }
         }
 
-        match connector_factory::build_connector(account, &store_path) {
+        match connector_factory::build_connector(connection, &store_path) {
             Ok(conn) => match conn.health_check().await {
                 Ok(status) if status.ok => connectors.push(conn),
                 Ok(status) => {
                     eprintln!(
-                        "[warn] Skipping account '{}' ({}): {}. Run `void setup` to authenticate.",
-                        account.id, account.account_type, status.message
+                        "[warn] Skipping connection '{}' ({}): {}. Run `void setup` to authenticate.",
+                        connection.id, connection.connector_type, status.message
                     );
                 }
                 Err(e) => {
                     eprintln!(
-                        "[warn] Skipping account '{}' ({}): {e}. Run `void setup` to authenticate.",
-                        account.id, account.account_type
+                        "[warn] Skipping connection '{}' ({}): {e}. Run `void setup` to authenticate.",
+                        connection.id, connection.connector_type
                     );
                 }
             },
             Err(e) => {
                 eprintln!(
-                    "[warn] Skipping account '{}' ({}): {e}",
-                    account.id, account.account_type
+                    "[warn] Skipping connection '{}' ({}): {e}",
+                    connection.id, connection.connector_type
                 );
             }
         }

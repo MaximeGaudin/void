@@ -21,7 +21,7 @@ mod sync;
 pub(crate) use mapping::{build_metadata, map_conversation, parse_ts};
 
 pub struct SlackConnector {
-    pub(crate) account_id: String,
+    pub(crate) connection_id: String,
     pub(crate) api: SlackApiClient,
     pub(crate) app_token: String,
     pub(crate) exclude_channels: Vec<String>,
@@ -29,13 +29,13 @@ pub struct SlackConnector {
 
 impl SlackConnector {
     pub fn new(
-        account_id: &str,
+        connection_id: &str,
         user_token: &str,
         app_token: &str,
         exclude_channels: Vec<String>,
     ) -> Self {
         Self {
-            account_id: account_id.to_string(),
+            connection_id: connection_id.to_string(),
             api: SlackApiClient::new(user_token),
             app_token: app_token.to_string(),
             exclude_channels,
@@ -132,8 +132,8 @@ impl Connector for SlackConnector {
         ConnectorType::Slack
     }
 
-    fn account_id(&self) -> &str {
-        &self.account_id
+    fn connection_id(&self) -> &str {
+        &self.connection_id
     }
 
     async fn authenticate(&mut self) -> anyhow::Result<()> {
@@ -152,7 +152,7 @@ impl Connector for SlackConnector {
         cancel: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<()> {
         let needs_backfill = db
-            .get_sync_state(&self.account_id, "backfill_done")?
+            .get_sync_state(&self.connection_id, "backfill_done")?
             .is_none();
 
         // Start Socket Mode immediately alongside backfill/catch-up so that
@@ -161,20 +161,20 @@ impl Connector for SlackConnector {
             if needs_backfill {
                 match self.backfill(&db).await {
                     Ok(()) => {
-                        db.set_sync_state(&self.account_id, "backfill_done", "1")
+                        db.set_sync_state(&self.connection_id, "backfill_done", "1")
                             .ok();
                     }
                     Err(e) => {
-                        warn!(account_id = %self.account_id, error = %e, "Slack backfill failed")
+                        warn!(connection_id = %self.connection_id, error = %e, "Slack backfill failed")
                     }
                 }
             } else {
                 info!(
-                    account_id = %self.account_id,
+                    connection_id = %self.connection_id,
                     "Slack backfill already complete, catching up missed messages"
                 );
                 if let Err(e) = self.catch_up(&db).await {
-                    warn!(account_id = %self.account_id, error = %e, "Slack catch-up failed");
+                    warn!(connection_id = %self.connection_id, error = %e, "Slack catch-up failed");
                 }
             }
         };
@@ -186,7 +186,7 @@ impl Connector for SlackConnector {
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
         match self.api.auth_test().await {
             Ok(resp) => Ok(HealthStatus {
-                account_id: self.account_id.clone(),
+                connection_id: self.connection_id.clone(),
                 connector_type: ConnectorType::Slack,
                 ok: true,
                 message: format!(
@@ -198,9 +198,9 @@ impl Connector for SlackConnector {
                 message_count: None,
             }),
             Err(e) => {
-                warn!(account_id = %self.account_id, error = %e, "Slack health check failed");
+                warn!(connection_id = %self.connection_id, error = %e, "Slack health check failed");
                 Ok(HealthStatus {
-                    account_id: self.account_id.clone(),
+                    connection_id: self.connection_id.clone(),
                     connector_type: ConnectorType::Slack,
                     ok: false,
                     message: format!("Auth failed: {e}"),
@@ -216,7 +216,7 @@ impl Connector for SlackConnector {
         external_id: &str,
         conversation_external_id: &str,
     ) -> anyhow::Result<()> {
-        info!(account_id = %self.account_id, ts = %external_id, channel = %conversation_external_id, "marking Slack message as read");
+        info!(connection_id = %self.connection_id, ts = %external_id, channel = %conversation_external_id, "marking Slack message as read");
         self.api
             .conversations_mark(conversation_external_id, external_id)
             .await?;
@@ -252,7 +252,7 @@ impl Connector for SlackConnector {
         content: MessageContent,
         in_thread: bool,
     ) -> anyhow::Result<String> {
-        info!(account_id = %self.account_id, message_id = %message_id, in_thread, "sending Slack reply");
+        info!(connection_id = %self.connection_id, message_id = %message_id, in_thread, "sending Slack reply");
 
         let parts: Vec<&str> = message_id.splitn(2, ':').collect();
         if parts.len() != 2 {
@@ -271,7 +271,7 @@ impl Connector for SlackConnector {
                 let thread_ts = if in_thread { Some(ts) } else { None };
                 let resp = self.api.chat_post_message(channel_id, t, thread_ts).await?;
                 let reply_ts = resp.ts.clone().unwrap_or_default();
-                debug!(account_id = %self.account_id, ts = %reply_ts, "Slack reply sent");
+                debug!(connection_id = %self.connection_id, ts = %reply_ts, "Slack reply sent");
                 Ok(reply_ts)
             }
         }
@@ -285,7 +285,7 @@ impl Connector for SlackConnector {
         comment: Option<&str>,
     ) -> anyhow::Result<String> {
         info!(
-            account_id = %self.account_id,
+            connection_id = %self.connection_id,
             message_ts = %external_id,
             channel = %conversation_external_id,
             to = %to,
@@ -334,7 +334,7 @@ impl Connector for SlackConnector {
             .chat_post_message(&target, &forwarded, None)
             .await?;
         let ts = resp.ts.unwrap_or_default();
-        debug!(account_id = %self.account_id, ts = %ts, "Slack message forwarded");
+        debug!(connection_id = %self.connection_id, ts = %ts, "Slack message forwarded");
         Ok(ts)
     }
 }
@@ -533,7 +533,7 @@ mod tests {
             .await;
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
@@ -591,7 +591,7 @@ mod tests {
             .await;
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
@@ -633,7 +633,7 @@ mod tests {
             .unwrap();
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
@@ -711,7 +711,7 @@ mod tests {
             .await;
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
@@ -772,7 +772,7 @@ mod tests {
             .await;
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec!["random".to_string()],
@@ -832,7 +832,7 @@ mod tests {
         std::fs::write(&file_path, file_content).unwrap();
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
@@ -914,7 +914,7 @@ mod tests {
 
         let existing_conv = Conversation {
             id: "test-slack-C1".into(),
-            account_id: "test-slack".into(),
+            connection_id: "test-slack".into(),
             connector: "slack".into(),
             external_id: "C1".into(),
             name: Some("general".into()),
@@ -929,7 +929,7 @@ mod tests {
         let existing_msg = Message {
             id: "test-slack-1741700000.000100".into(),
             conversation_id: "test-slack-C1".into(),
-            account_id: "test-slack".into(),
+            connection_id: "test-slack".into(),
             connector: "slack".into(),
             external_id: "1741700000.000100".into(),
             sender: "U1".into(),
@@ -947,7 +947,7 @@ mod tests {
         db.upsert_message(&existing_msg).unwrap();
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
@@ -1016,7 +1016,7 @@ mod tests {
 
         let existing_conv = Conversation {
             id: "test-slack-C1".into(),
-            account_id: "test-slack".into(),
+            connection_id: "test-slack".into(),
             connector: "slack".into(),
             external_id: "C1".into(),
             name: Some("general".into()),
@@ -1031,7 +1031,7 @@ mod tests {
         let existing_msg = Message {
             id: "test-slack-1741700000.000100".into(),
             conversation_id: "test-slack-C1".into(),
-            account_id: "test-slack".into(),
+            connection_id: "test-slack".into(),
             connector: "slack".into(),
             external_id: "1741700000.000100".into(),
             sender: "U1".into(),
@@ -1049,7 +1049,7 @@ mod tests {
         db.upsert_message(&existing_msg).unwrap();
 
         let connector = SlackConnector {
-            account_id: "test-slack".to_string(),
+            connection_id: "test-slack".to_string(),
             api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],

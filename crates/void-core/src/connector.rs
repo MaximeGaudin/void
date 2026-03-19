@@ -9,7 +9,7 @@ use crate::models::{ConnectorType, HealthStatus, MessageContent};
 #[async_trait]
 pub trait Connector: Send + Sync {
     fn connector_type(&self) -> ConnectorType;
-    fn account_id(&self) -> &str;
+    fn connection_id(&self) -> &str;
 
     /// Run the interactive authentication flow.
     async fn authenticate(&mut self) -> anyhow::Result<()>;

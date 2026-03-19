@@ -29,7 +29,10 @@ pub fn run(args: &MessagesArgs, enrich_context: bool) -> anyhow::Result<()> {
     let formatter = OutputFormatter::new();
 
     match resolve_messages_target(&args.target) {
-        MessagesTarget::Link { message_id, conversation_id } => {
+        MessagesTarget::Link {
+            message_id,
+            conversation_id,
+        } => {
             let msg = db
                 .get_message(&message_id)?
                 .ok_or_else(|| {

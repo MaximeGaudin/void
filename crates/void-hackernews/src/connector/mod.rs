@@ -17,13 +17,13 @@ pub struct HackerNewsConnector {
 
 impl HackerNewsConnector {
     pub fn new(
-        account_id: &str,
+        connection_id: &str,
         keywords: Vec<String>,
         min_score: u32,
         poll_interval_secs: u64,
     ) -> Self {
         Self {
-            config_id: account_id.to_string(),
+            config_id: connection_id.to_string(),
             keywords: keywords.iter().map(|k| k.to_lowercase()).collect(),
             min_score,
             poll_interval_secs,
@@ -37,7 +37,7 @@ impl Connector for HackerNewsConnector {
         ConnectorType::HackerNews
     }
 
-    fn account_id(&self) -> &str {
+    fn connection_id(&self) -> &str {
         &self.config_id
     }
 
@@ -59,7 +59,7 @@ impl Connector for HackerNewsConnector {
 
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
         Ok(HealthStatus {
-            account_id: self.config_id.clone(),
+            connection_id: self.config_id.clone(),
             connector_type: ConnectorType::HackerNews,
             ok: true,
             message: "HN API is public, no auth required".to_string(),

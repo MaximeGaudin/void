@@ -1,7 +1,8 @@
 use clap::Args;
 use tracing::{debug, info};
 
-use void_core::config::{self, AccountType, VoidConfig};
+use void_core::config::{self, VoidConfig};
+use void_core::models::ConnectorType;
 use void_core::db::Database;
 use void_core::models::MessageContent;
 
@@ -16,9 +17,9 @@ pub struct SendArgs {
     /// Connector to send via: whatsapp, slack, gmail
     #[arg(long)]
     pub via: String,
-    /// Account to use (for multi-account connectors)
+    /// Connection to use (for multi-connection connectors)
     #[arg(long)]
-    pub account: Option<String>,
+    pub connection: Option<String>,
     /// Message text
     #[arg(long)]
     pub message: String,
@@ -43,25 +44,25 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 
     let target_type = connector_type.to_string();
-    let account = cfg
-        .accounts
+    let connection = cfg
+        .connections
         .iter()
         .find(|a| {
-            let type_matches = a.account_type.to_string() == target_type;
-            let name_matches = args.account.as_ref().map_or(true, |n| a.id == *n);
+            let type_matches = a.connector_type.to_string() == target_type;
+            let name_matches = args.connection.as_ref().map_or(true, |n| a.id == *n);
             type_matches && name_matches
         })
-        .ok_or_else(|| anyhow::anyhow!("No {target_type} account found in config.toml"))?;
+        .ok_or_else(|| anyhow::anyhow!("No {target_type} connection found in config.toml"))?;
 
     if let Some(ref at_str) = args.at {
-        if account.account_type != AccountType::Slack {
+        if connection.connector_type != ConnectorType::Slack {
             anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
         }
-        return run_slack_scheduled_send(account, &cfg, &args.to, &args.message, at_str).await;
+        return run_slack_scheduled_send(connection, &cfg, &args.to, &args.message, at_str).await;
     }
 
     let store_path = cfg.store_path();
-    let conn = connector_factory::build_connector(account, &store_path)?;
+    let conn = connector_factory::build_connector(connection, &store_path)?;
     debug!("connector built");
 
     let to = resolve_target(&args.to, &target_type, &cfg)?;
@@ -82,7 +83,7 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
 }
 
 async fn run_slack_scheduled_send(
-    account: &void_core::config::AccountConfig,
+    connection: &void_core::config::ConnectionConfig,
     _cfg: &VoidConfig,
     channel: &str,
     message: &str,
@@ -96,8 +97,8 @@ async fn run_slack_scheduled_send(
         anyhow::bail!("Scheduled time must be in the future.");
     }
 
-    let (user_token, app_token, exclude_channels) = match &account.settings {
-        void_core::config::AccountSettings::Slack {
+    let (user_token, app_token, exclude_channels) = match &connection.settings {
+        void_core::config::ConnectionSettings::Slack {
             user_token,
             app_token,
             exclude_channels,
@@ -106,11 +107,11 @@ async fn run_slack_scheduled_send(
             app_token.clone(),
             exclude_channels.clone(),
         ),
-        _ => anyhow::bail!("Mismatched settings for Slack account"),
+        _ => anyhow::bail!("Mismatched settings for Slack connection"),
     };
 
     let connector = void_slack::connector::SlackConnector::new(
-        &account.id,
+        &connection.id,
         &user_token,
         &app_token,
         exclude_channels,
