@@ -53,15 +53,15 @@ pub struct AuthArgs {
     pub account: Option<String>,
 }
 
-pub async fn run(args: &GdriveArgs, json: bool) -> anyhow::Result<()> {
+pub async fn run(args: &GdriveArgs) -> anyhow::Result<()> {
     match &args.command {
-        GdriveCommand::Download(dl) => run_download(dl, json).await,
-        GdriveCommand::Info(info) => run_info(info, json).await,
+        GdriveCommand::Download(dl) => run_download(dl).await,
+        GdriveCommand::Info(info) => run_info(info).await,
         GdriveCommand::Auth(auth) => run_auth(auth).await,
     }
 }
 
-async fn run_download(args: &DownloadArgs, json: bool) -> anyhow::Result<()> {
+async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
     let (client, _cfg) = build_drive_client(args.account.as_deref())?;
     let client = client.await?;
 
@@ -91,39 +91,22 @@ async fn run_download(args: &DownloadArgs, json: bool) -> anyhow::Result<()> {
     let output_path = args.output.as_deref().map(std::path::Path::new);
     let dest = DriveApiClient::save_to_disk(&result, output_path)?;
 
-    if json {
-        let out = serde_json::json!({
-            "data": {
-                "file": dest.display().to_string(),
-                "name": result.file_name,
-                "mime_type": result.mime_type,
-                "size": result.data.len(),
-                "export_format": result.export_format.map(|f| f.extension()),
-            },
-            "error": null,
-        });
-        println!("{}", serde_json::to_string_pretty(&out)?);
-    } else {
-        let size = result.data.len();
-        let human_size = if size < 1024 {
-            format!("{size} B")
-        } else if size < 1024 * 1024 {
-            format!("{:.1} KB", size as f64 / 1024.0)
-        } else {
-            format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-        };
-        eprintln!(
-            "Downloaded \"{}\" ({}) → {}",
-            result.file_name,
-            human_size,
-            dest.display()
-        );
-    }
+    let out = serde_json::json!({
+        "data": {
+            "file": dest.display().to_string(),
+            "name": result.file_name,
+            "mime_type": result.mime_type,
+            "size": result.data.len(),
+            "export_format": result.export_format.map(|f| f.extension()),
+        },
+        "error": null,
+    });
+    println!("{}", serde_json::to_string_pretty(&out)?);
 
     Ok(())
 }
 
-async fn run_info(args: &InfoArgs, json: bool) -> anyhow::Result<()> {
+async fn run_info(args: &InfoArgs) -> anyhow::Result<()> {
     let (client, _cfg) = build_drive_client(args.account.as_deref())?;
     let client = client.await?;
 
@@ -138,36 +121,19 @@ async fn run_info(args: &InfoArgs, json: bool) -> anyhow::Result<()> {
         (None, None)
     };
 
-    if json {
-        let out = serde_json::json!({
-            "data": {
-                "id": meta.id,
-                "name": meta.name,
-                "mime_type": meta.mime_type,
-                "size": meta.size,
-                "google_native": is_native,
-                "default_text_format": text_fmt,
-                "default_binary_format": bin_fmt,
-            },
-            "error": null,
-        });
-        println!("{}", serde_json::to_string_pretty(&out)?);
-    } else {
-        eprintln!("  Name: {}", meta.name);
-        eprintln!("  ID:   {}", meta.id);
-        eprintln!("  Type: {}", meta.mime_type);
-        if let Some(size) = &meta.size {
-            eprintln!("  Size: {} bytes", size);
-        }
-        if is_native {
-            eprintln!("  Google native: yes");
-            eprintln!(
-                "  Default export: {} (text), {} (binary)",
-                text_fmt.unwrap_or("n/a"),
-                bin_fmt.unwrap_or("n/a")
-            );
-        }
-    }
+    let out = serde_json::json!({
+        "data": {
+            "id": meta.id,
+            "name": meta.name,
+            "mime_type": meta.mime_type,
+            "size": meta.size,
+            "google_native": is_native,
+            "default_text_format": text_fmt,
+            "default_binary_format": bin_fmt,
+        },
+        "error": null,
+    });
+    println!("{}", serde_json::to_string_pretty(&out)?);
 
     Ok(())
 }

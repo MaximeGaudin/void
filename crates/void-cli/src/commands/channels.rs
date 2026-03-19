@@ -24,11 +24,11 @@ pub struct ChannelsArgs {
     pub include_muted: bool,
 }
 
-pub fn run(args: &ChannelsArgs, json: bool) -> anyhow::Result<()> {
+pub fn run(args: &ChannelsArgs) -> anyhow::Result<()> {
     debug!(search = ?args.search, account = ?args.account, connector = ?args.connector, size = args.size, "channels");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
 
     let channels = db.list_channels(
         args.account.as_deref(),

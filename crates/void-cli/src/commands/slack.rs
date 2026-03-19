@@ -75,7 +75,7 @@ pub struct OpenArgs {
     pub account: Option<String>,
 }
 
-pub async fn run(args: &SlackArgs, _json: bool) -> anyhow::Result<()> {
+pub async fn run(args: &SlackArgs) -> anyhow::Result<()> {
     match &args.command {
         SlackCommand::React(a) => run_react(a).await,
         SlackCommand::Edit(a) => run_edit(a).await,

@@ -21,12 +21,12 @@ pub struct MuteArgs {
     pub list: bool,
 }
 
-pub fn run(args: &MuteArgs, json: bool) -> anyhow::Result<()> {
+pub fn run(args: &MuteArgs) -> anyhow::Result<()> {
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
 
     if args.list {
-        return list_muted(&db, args, json);
+        return list_muted(&db, args);
     }
 
     if args.targets.is_empty() {
@@ -91,13 +91,11 @@ pub fn run(args: &MuteArgs, json: bool) -> anyhow::Result<()> {
         }
     }
 
-    if json {
-        println!("{}", serde_json::json!({ "data": results, "error": null }));
-    }
+    println!("{}", serde_json::json!({ "data": results, "error": null }));
     Ok(())
 }
 
-fn list_muted(db: &Database, args: &MuteArgs, json: bool) -> anyhow::Result<()> {
+fn list_muted(db: &Database, args: &MuteArgs) -> anyhow::Result<()> {
     let all = db.list_conversations(
         args.account.as_deref(),
         args.connector.as_deref(),
@@ -106,28 +104,18 @@ fn list_muted(db: &Database, args: &MuteArgs, json: bool) -> anyhow::Result<()> 
     )?;
     let muted: Vec<_> = all.into_iter().filter(|c| c.is_muted).collect();
 
-    if json {
-        let items: Vec<_> = muted
-            .iter()
-            .map(|c| {
-                serde_json::json!({
-                    "id": c.id,
-                    "name": c.name,
-                    "connector": c.connector,
-                    "kind": c.kind.to_string(),
-                })
+    let items: Vec<_> = muted
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "id": c.id,
+                "name": c.name,
+                "connector": c.connector,
+                "kind": c.kind.to_string(),
             })
-            .collect();
-        println!("{}", serde_json::json!({ "data": items, "error": null }));
-    } else if muted.is_empty() {
-        eprintln!("no muted conversations");
-    } else {
-        eprintln!("{} muted conversation(s):\n", muted.len());
-        for c in &muted {
-            let name = c.name.as_deref().unwrap_or(&c.id);
-            eprintln!("  {} [{}] ({})", name, c.connector, c.id);
-        }
-    }
+        })
+        .collect();
+    println!("{}", serde_json::json!({ "data": items, "error": null }));
     Ok(())
 }
 

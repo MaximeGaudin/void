@@ -36,8 +36,6 @@ All dates in void CLI output (JSON) are ISO 8601 / RFC 3339 strings (e.g. "2026-
 - **NEVER send emails directly** — only create drafts via `void gmail draft create`
 - **NEVER send Slack/WhatsApp/Telegram messages without explicit user confirmation**
 - For Slack reactions/acknowledgements, you may proceed without asking
-- Use `--pretty` flag for human-readable output when displaying results to the user
-- Use JSON output (no --pretty) when you need to parse and process data programmatically
 - Archive items after they are processed: `void archive <id1> <id2> ...`
 - When scheduling meetings, check calendar availability first
 
@@ -45,11 +43,11 @@ All dates in void CLI output (JSON) are ISO 8601 / RFC 3339 strings (e.g. "2026-
 
 When the user asks to run their daily routine or process their inbox:
 
-1. **Calendar**: Start with `void calendar --day today --pretty` for context
-2. **Gmail**: Process each account separately with `void inbox --connector gmail --account <email> --pretty`
-3. **Slack**: Process with `void inbox --connector slack --pretty`
-4. **WhatsApp**: Process with `void inbox --connector whatsapp --pretty`
-5. **Telegram**: Process with `void inbox --connector telegram --pretty`
+1. **Calendar**: Start with `void calendar --day today` for context
+2. **Gmail**: Process each account separately with `void inbox --connector gmail --account <email>`
+3. **Slack**: Process with `void inbox --connector slack`
+4. **WhatsApp**: Process with `void inbox --connector whatsapp`
+5. **Telegram**: Process with `void inbox --connector telegram`
 6. **Archive & verify**: Archive processed items, verify each connector is clean
 7. **Summary**: Provide a final summary of all actions taken
 

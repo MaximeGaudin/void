@@ -152,7 +152,7 @@ pub struct DeleteEventArgs {
     pub account: Option<String>,
 }
 
-pub async fn run(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
+pub async fn run(args: &CalendarArgs) -> anyhow::Result<()> {
     let subcommand = match &args.command {
         None => "list",
         Some(CalendarCommand::Week) => "week",
@@ -166,22 +166,22 @@ pub async fn run(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
     };
     debug!(subcommand, "calendar");
     match &args.command {
-        Some(CalendarCommand::Week) => run_week(json),
-        Some(CalendarCommand::Create(create_args)) => run_create(create_args, json).await,
-        Some(CalendarCommand::Search(search_args)) => run_search(search_args, json).await,
-        Some(CalendarCommand::Calendars) => run_calendars(json).await,
-        Some(CalendarCommand::Update(update_args)) => run_update(update_args, json).await,
-        Some(CalendarCommand::Respond(respond_args)) => run_respond(respond_args, json).await,
+        Some(CalendarCommand::Week) => run_week(),
+        Some(CalendarCommand::Create(create_args)) => run_create(create_args).await,
+        Some(CalendarCommand::Search(search_args)) => run_search(search_args).await,
+        Some(CalendarCommand::Calendars) => run_calendars().await,
+        Some(CalendarCommand::Update(update_args)) => run_update(update_args).await,
+        Some(CalendarCommand::Respond(respond_args)) => run_respond(respond_args).await,
         Some(CalendarCommand::Delete(delete_args)) => run_delete(delete_args).await,
-        Some(CalendarCommand::Availability(avail_args)) => run_availability(avail_args, json).await,
-        None => run_list(args, json),
+        Some(CalendarCommand::Availability(avail_args)) => run_availability(avail_args).await,
+        None => run_list(args),
     }
 }
 
-fn run_list(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
+fn run_list(args: &CalendarArgs) -> anyhow::Result<()> {
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
 
     let (from, to) = if let Some(day) = &args.day {
         let date = parse_day_spec(day)?;
@@ -222,10 +222,10 @@ fn run_list(args: &CalendarArgs, json: bool) -> anyhow::Result<()> {
     formatter.print_events(&events)
 }
 
-fn run_week(json: bool) -> anyhow::Result<()> {
+fn run_week() -> anyhow::Result<()> {
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
 
     let today = Local::now().date_naive();
     let weekday = today.weekday().num_days_from_monday();
@@ -245,7 +245,7 @@ fn run_week(json: bool) -> anyhow::Result<()> {
     formatter.print_events(&events)
 }
 
-async fn run_create(args: &CreateEventArgs, json: bool) -> anyhow::Result<()> {
+async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {
     let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
@@ -267,11 +267,11 @@ async fn run_create(args: &CreateEventArgs, json: bool) -> anyhow::Result<()> {
     };
     let event = connector.create_event(&params, &db).await?;
 
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
     formatter.print_events(&[event])
 }
 
-async fn run_search(args: &SearchEventArgs, json: bool) -> anyhow::Result<()> {
+async fn run_search(args: &SearchEventArgs) -> anyhow::Result<()> {
     let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
@@ -292,48 +292,32 @@ async fn run_search(args: &SearchEventArgs, json: bool) -> anyhow::Result<()> {
         .search_events(&args.query, time_min.as_deref(), time_max.as_deref(), &db)
         .await?;
 
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
     formatter.print_events(&events)
 }
 
-async fn run_calendars(json: bool) -> anyhow::Result<()> {
+async fn run_calendars() -> anyhow::Result<()> {
     let (connector, _cfg) = build_calendar_connector(None)?;
     let calendars = connector.list_calendars().await?;
 
-    if json {
-        let items: Vec<serde_json::Value> = calendars
-            .iter()
-            .map(|c| {
-                serde_json::json!({
-                    "id": c.id,
-                    "summary": c.summary,
-                    "primary": c.primary.unwrap_or(false),
-                })
+    let items: Vec<serde_json::Value> = calendars
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "id": c.id,
+                "summary": c.summary,
+                "primary": c.primary.unwrap_or(false),
             })
-            .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({ "data": items, "error": null }))?
-        );
-    } else {
-        if calendars.is_empty() {
-            eprintln!("No calendars found.");
-            return Ok(());
-        }
-        for cal in &calendars {
-            let primary = if cal.primary.unwrap_or(false) {
-                " (primary)"
-            } else {
-                ""
-            };
-            let name = cal.summary.as_deref().unwrap_or("(unnamed)");
-            println!("  {}{primary}  —  {name}", cal.id);
-        }
-    }
+        })
+        .collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({ "data": items, "error": null }))?
+    );
     Ok(())
 }
 
-async fn run_update(args: &UpdateEventArgs, json: bool) -> anyhow::Result<()> {
+async fn run_update(args: &UpdateEventArgs) -> anyhow::Result<()> {
     let (connector, cfg) = build_calendar_connector(args.account.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
@@ -348,11 +332,11 @@ async fn run_update(args: &UpdateEventArgs, json: bool) -> anyhow::Result<()> {
     let event = connector.update_event(&params, &db).await?;
 
     eprintln!("Event updated.");
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
     formatter.print_events(&[event])
 }
 
-async fn run_respond(args: &RespondEventArgs, json: bool) -> anyhow::Result<()> {
+async fn run_respond(args: &RespondEventArgs) -> anyhow::Result<()> {
     let valid = ["accepted", "declined", "tentative"];
     if !valid.contains(&args.status.as_str()) {
         anyhow::bail!(
@@ -383,7 +367,7 @@ async fn run_respond(args: &RespondEventArgs, json: bool) -> anyhow::Result<()> 
         "Responded \"{}\" to event \"{}\".",
         args.status, event.title
     );
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
     formatter.print_events(&[event])
 }
 
@@ -396,7 +380,7 @@ async fn run_delete(args: &DeleteEventArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_availability(args: &AvailabilityArgs, json: bool) -> anyhow::Result<()> {
+async fn run_availability(args: &AvailabilityArgs) -> anyhow::Result<()> {
     let (connector, _cfg) = build_calendar_connector(args.account.as_deref())?;
 
     let emails: Vec<String> = args
@@ -417,52 +401,26 @@ async fn run_availability(args: &AvailabilityArgs, json: bool) -> anyhow::Result
         .check_availability(&time_min, &time_max, &emails)
         .await?;
 
-    if json {
-        let mut data = serde_json::Map::new();
-        for (email, cal) in &resp.calendars {
-            if !cal.errors.is_empty() {
-                let reasons: Vec<&str> = cal
-                    .errors
-                    .iter()
-                    .filter_map(|e| e.reason.as_deref())
-                    .collect();
-                data.insert(
-                    email.clone(),
-                    serde_json::json!({ "error": reasons.join(", ") }),
-                );
-            } else {
-                data.insert(email.clone(), serde_json::json!({ "busy": cal.busy }));
-            }
-        }
-        println!(
-            "{}",
-            serde_json::to_string(&serde_json::json!({ "data": data, "error": null }))?
-        );
-    } else {
-        for email in &emails {
-            if let Some(cal) = resp.calendars.get(email) {
-                if !cal.errors.is_empty() {
-                    let reasons: Vec<&str> = cal
-                        .errors
-                        .iter()
-                        .filter_map(|e| e.reason.as_deref())
-                        .collect();
-                    eprintln!("  {} — error: {}", email, reasons.join(", "));
-                } else if cal.busy.is_empty() {
-                    eprintln!("  {} — free (no busy slots)", email);
-                } else {
-                    eprintln!("  {} — {} busy slot(s):", email, cal.busy.len());
-                    for slot in &cal.busy {
-                        let start = format_freebusy_time(&slot.start);
-                        let end = format_freebusy_time(&slot.end);
-                        eprintln!("    {} — {}", start, end);
-                    }
-                }
-            } else {
-                eprintln!("  {} — no data returned", email);
-            }
+    let mut data = serde_json::Map::new();
+    for (email, cal) in &resp.calendars {
+        if !cal.errors.is_empty() {
+            let reasons: Vec<&str> = cal
+                .errors
+                .iter()
+                .filter_map(|e| e.reason.as_deref())
+                .collect();
+            data.insert(
+                email.clone(),
+                serde_json::json!({ "error": reasons.join(", ") }),
+            );
+        } else {
+            data.insert(email.clone(), serde_json::json!({ "busy": cal.busy }));
         }
     }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({ "data": data, "error": null }))?
+    );
     Ok(())
 }
 
@@ -478,12 +436,6 @@ fn parse_datetime_or_date(s: &str) -> anyhow::Result<String> {
         return Ok(dt.to_rfc3339());
     }
     anyhow::bail!("Invalid date/time: \"{s}\". Use YYYY-MM-DD or RFC 3339 format.")
-}
-
-fn format_freebusy_time(rfc3339: &str) -> String {
-    chrono::DateTime::parse_from_rfc3339(rfc3339)
-        .map(|dt| dt.with_timezone(&Local).format("%H:%M").to_string())
-        .unwrap_or_else(|_| rfc3339.to_string())
 }
 
 fn build_calendar_connector(

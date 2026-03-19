@@ -24,11 +24,11 @@ pub struct SearchArgs {
     pub include_muted: bool,
 }
 
-pub fn run(args: &SearchArgs, json: bool, enrich_context: bool) -> anyhow::Result<()> {
+pub fn run(args: &SearchArgs, enrich_context: bool) -> anyhow::Result<()> {
     debug!(query = %args.query, account = ?args.account, connector = ?args.connector, size = args.size, "search");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
 
     let mut messages = db.search_messages(
         &args.query,

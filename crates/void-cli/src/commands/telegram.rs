@@ -27,7 +27,7 @@ pub struct DownloadArgs {
     pub account: Option<String>,
 }
 
-pub async fn run(args: &TelegramArgs, _json: bool) -> anyhow::Result<()> {
+pub async fn run(args: &TelegramArgs) -> anyhow::Result<()> {
     match &args.command {
         TelegramCommand::Download(a) => run_download(a).await,
     }

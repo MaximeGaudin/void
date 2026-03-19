@@ -37,16 +37,16 @@ impl Tool for VoidCommandTool {
                 the 'void' prefix.\n\n\
                 AVAILABLE COMMANDS:\n\n\
                 INBOX & MESSAGES:\n\
-                - inbox [--connector gmail|slack|whatsapp|telegram] [--account <id>] [--pretty] [-n <max>] [--all] [--include-muted]\n\
-                - messages <conversation-id> [-n <count>] [--pretty]\n\
-                - search \"<query>\" [--connector <c>] [-n <max>] [--pretty]\n\
+                - inbox [--connector gmail|slack|whatsapp|telegram] [--account <id>] [-n <max>] [--all] [--include-muted]\n\
+                - messages <conversation-id> [-n <count>]\n\
+                - search \"<query>\" [--connector <c>] [-n <max>]\n\
                 - archive <id1> [<id2> ...]\n\
                 - mute <name> [--unmute] [--list]\n\n\
                 SENDING:\n\
                 - send --via <slack|gmail|telegram> --to \"<recipient>\" --message \"<text>\" [--file <path>] [--at \"<time>\"]\n\
                 - reply <message-id> --message \"<text>\" [--in-thread] [--file <path>] [--at \"<time>\"]\n\n\
                 GMAIL:\n\
-                - gmail search '<query>' [--max <n>] [--account <email>] [--pretty]\n\
+                - gmail search '<query>' [--max <n>] [--account <email>]\n\
                 - gmail thread <threadId> [--account <email>]\n\
                 - gmail url <threadId>\n\
                 - gmail labels [--account <email>]\n\
@@ -63,8 +63,8 @@ impl Tool for VoidCommandTool {
                 - slack schedule --channel \"<ch>\" --message \"<text>\" --at \"<time>\" [--thread <ts>]\n\
                 - slack open --users <uid1>,<uid2>\n\n\
                 CALENDAR:\n\
-                - calendar [--day today|tomorrow|<date>] [--from <date> --to <date>] [--account <id>] [--pretty]\n\
-                - calendar week [--account <id>] [--pretty]\n\
+                - calendar [--day today|tomorrow|<date>] [--from <date> --to <date>] [--account <id>]\n\
+                - calendar week [--account <id>]\n\
                 - calendar create --title \"<t>\" --start \"<iso>\" [--end \"<iso>\"] [--attendees \"<emails>\"] [--meet] [--description \"<d>\"] [--account <id>]\n\
                 - calendar search \"<query>\" [--from <date> --to <date>] [--account <id>]\n\
                 - calendar update <event-id> [--title \"<t>\"] [--start \"<iso>\"] [--end \"<iso>\"] [--account <id>]\n\
@@ -73,11 +73,11 @@ impl Tool for VoidCommandTool {
                 - calendar availability --attendees \"<emails>\" --from <date> --to <date> [--account <id>]\n\
                 - calendar calendars\n\n\
                 OTHER:\n\
-                - contacts [--connector <c>] [--pretty]\n\
-                - channels [--connector <c>] [--pretty]\n\
-                - conversations [--connector <c>] [--pretty]\n\n\
+                - contacts [--connector <c>]\n\
+                - channels [--connector <c>]\n\
+                - conversations [--connector <c>]\n\n\
                 NOTES:\n\
-                - Output is JSON by default; use --pretty for human-readable tables.\n\
+                - Output is always JSON.\n\
                 - For multi-line bodies use heredoc: --body \"$(cat <<'EOF'\\n...\\nEOF\\n)\"\n\
                 - Gmail accounts: mgaudin@gladia.io (professional), me@maxime.ly (personal)\n\
                 - Calendar accounts: mgaudin@gladia.io-calendar, me@maxime.ly-calendar"
@@ -87,7 +87,7 @@ impl Tool for VoidCommandTool {
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The void CLI command to execute, without the 'void' prefix. Example: 'inbox --connector gmail --account mgaudin@gladia.io --pretty'"
+                        "description": "The void CLI command to execute, without the 'void' prefix. Example: 'inbox --connector gmail --account mgaudin@gladia.io'"
                     }
                 },
                 "required": ["command"]

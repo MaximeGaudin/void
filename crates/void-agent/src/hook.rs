@@ -82,9 +82,9 @@ mod tests {
 
     #[test]
     fn extract_command_preview_void_cli() {
-        let args = r#"{"command": "inbox --pretty"}"#;
+        let args = r#"{"command": "inbox --connector gmail"}"#;
         let result = extract_command_preview("void_cli", args);
-        assert_eq!(result, "void inbox --pretty");
+        assert_eq!(result, "void inbox --connector gmail");
     }
 
     #[test]

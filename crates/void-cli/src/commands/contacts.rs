@@ -21,11 +21,11 @@ pub struct ContactsArgs {
     pub size: i64,
 }
 
-pub fn run(args: &ContactsArgs, json: bool) -> anyhow::Result<()> {
+pub fn run(args: &ContactsArgs) -> anyhow::Result<()> {
     debug!(search = ?args.search, account = ?args.account, connector = ?args.connector, size = args.size, "contacts");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
 
     let contacts = db.list_contacts(
         args.account.as_deref(),

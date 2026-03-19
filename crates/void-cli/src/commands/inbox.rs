@@ -25,11 +25,11 @@ pub struct InboxArgs {
     pub include_muted: bool,
 }
 
-pub fn run(args: &InboxArgs, json: bool, enrich_context: bool) -> anyhow::Result<()> {
+pub fn run(args: &InboxArgs, enrich_context: bool) -> anyhow::Result<()> {
     debug!(account = ?args.account, connector = ?args.connector, size = args.size, all = args.all, "inbox");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
 
     let include_muted = args.include_muted || args.all;
     let mut messages = db.recent_messages(
@@ -47,11 +47,11 @@ pub fn run(args: &InboxArgs, json: bool, enrich_context: bool) -> anyhow::Result
     formatter.print_messages(&messages)
 }
 
-pub fn run_conversations(args: &InboxArgs, json: bool) -> anyhow::Result<()> {
+pub fn run_conversations(args: &InboxArgs) -> anyhow::Result<()> {
     debug!(account = ?args.account, connector = ?args.connector, size = args.size, "inbox conversations");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
-    let formatter = OutputFormatter::new(json);
+    let formatter = OutputFormatter::new();
 
     let conversations = db.list_conversations(
         args.account.as_deref(),

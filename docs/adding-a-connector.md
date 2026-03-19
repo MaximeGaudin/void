@@ -506,7 +506,7 @@ Acme(commands::acme::AcmeArgs),
 Add the dispatch arm in `main()`:
 
 ```rust
-Some(Command::Acme(args)) => commands::acme::run(args, !cli.pretty).await,
+Some(Command::Acme(args)) => commands::acme::run(args).await,
 ```
 
 ### 8.4 `crates/void-cli/src/commands/acme.rs` (new file)
@@ -694,7 +694,7 @@ if ct == "acme" {
 Update `DEFAULT_SYSTEM_PROMPT`:
 
 - Add your connector to every mention of "Gmail, Slack, WhatsApp, and Google Calendar"
-- Add an inbox processing step: `void inbox --connector acme --pretty`
+- Add an inbox processing step: `void inbox --connector acme`
 - Add to the "NEVER send ... without confirmation" rule if applicable
 
 ### `crates/void-agent/src/tools.rs`

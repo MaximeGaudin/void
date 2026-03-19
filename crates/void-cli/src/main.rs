@@ -10,10 +10,6 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Output as human-readable tables instead of JSON
-    #[arg(long, global = true)]
-    pretty: bool,
-
     /// Override store directory
     #[arg(long, global = true)]
     store: Option<String>,
@@ -105,27 +101,25 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Setup) => commands::setup::run().await,
         Some(Command::Sync(args)) => commands::sync::run(args).await,
         Some(Command::Doctor) => commands::doctor::run(),
-        Some(Command::Inbox(args)) => commands::inbox::run(args, !cli.pretty, !cli.no_context),
-        Some(Command::Conversations(args)) => commands::inbox::run_conversations(args, !cli.pretty),
-        Some(Command::Messages(args)) => {
-            commands::messages::run(args, !cli.pretty, !cli.no_context)
-        }
-        Some(Command::Contacts(args)) => commands::contacts::run(args, !cli.pretty),
-        Some(Command::Channels(args)) => commands::channels::run(args, !cli.pretty),
-        Some(Command::Search(args)) => commands::search::run(args, !cli.pretty, !cli.no_context),
+        Some(Command::Inbox(args)) => commands::inbox::run(args, !cli.no_context),
+        Some(Command::Conversations(args)) => commands::inbox::run_conversations(args),
+        Some(Command::Messages(args)) => commands::messages::run(args, !cli.no_context),
+        Some(Command::Contacts(args)) => commands::contacts::run(args),
+        Some(Command::Channels(args)) => commands::channels::run(args),
+        Some(Command::Search(args)) => commands::search::run(args, !cli.no_context),
         Some(Command::Send(args)) => commands::send::run(args).await,
         Some(Command::Reply(args)) => commands::reply::run(args).await,
         Some(Command::Forward(args)) => commands::forward::run(args).await,
-        Some(Command::Archive(args)) => commands::archive::run(args, !cli.pretty).await,
-        Some(Command::Mute(args)) => commands::mute::run(args, !cli.pretty),
-        Some(Command::Gmail(args)) => commands::gmail::run(args, !cli.pretty).await,
-        Some(Command::Slack(args)) => commands::slack::run(args, !cli.pretty).await,
-        Some(Command::Whatsapp(args)) => commands::whatsapp::run(args, !cli.pretty).await,
-        Some(Command::Telegram(args)) => commands::telegram::run(args, !cli.pretty).await,
-        Some(Command::Calendar(args)) => commands::calendar::run(args, !cli.pretty).await,
-        Some(Command::Drive(args)) => commands::gdrive::run(args, !cli.pretty).await,
+        Some(Command::Archive(args)) => commands::archive::run(args).await,
+        Some(Command::Mute(args)) => commands::mute::run(args),
+        Some(Command::Gmail(args)) => commands::gmail::run(args).await,
+        Some(Command::Slack(args)) => commands::slack::run(args).await,
+        Some(Command::Whatsapp(args)) => commands::whatsapp::run(args).await,
+        Some(Command::Telegram(args)) => commands::telegram::run(args).await,
+        Some(Command::Calendar(args)) => commands::calendar::run(args).await,
+        Some(Command::Drive(args)) => commands::gdrive::run(args).await,
         Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,
-        Some(Command::Hook(args)) => commands::hook::run(args, !cli.pretty),
+        Some(Command::Hook(args)) => commands::hook::run(args),
         None => {
             commands::status::run();
             Ok(())

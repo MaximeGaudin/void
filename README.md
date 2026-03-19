@@ -158,7 +158,6 @@ void calendar
 
 | Flag | Description |
 |------|-------------|
-| `--pretty` | Human-readable table output (default is JSON) |
 | `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar` |
 | `--account <id>` | Filter by account ID |
 | `-n` / `--size <N>` | Limit number of results (default: 50) |

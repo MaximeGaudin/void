@@ -16,7 +16,7 @@ pub struct ArchiveArgs {
     pub message_ids: Vec<String>,
 }
 
-pub async fn run(args: &ArchiveArgs, json: bool) -> anyhow::Result<()> {
+pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
     if args.message_ids.is_empty() {
         anyhow::bail!("at least one message ID is required");
     }
@@ -94,12 +94,7 @@ pub async fn run(args: &ArchiveArgs, json: bool) -> anyhow::Result<()> {
         }));
     }
 
-    if json {
-        let output = serde_json::json!({ "data": results, "error": null });
-        println!("{}", serde_json::to_string(&output)?);
-    } else {
-        let output = serde_json::json!({ "data": results, "error": null });
-        println!("{}", serde_json::to_string_pretty(&output)?);
-    }
+    let output = serde_json::json!({ "data": results, "error": null });
+    println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
 }
