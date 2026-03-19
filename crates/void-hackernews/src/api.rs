@@ -45,12 +45,6 @@ impl HnClient {
         Ok(ids)
     }
 
-    pub async fn new_stories(&self) -> anyhow::Result<Vec<u64>> {
-        let url = format!("{BASE_URL}/newstories.json");
-        let ids: Vec<u64> = self.http.get(&url).send().await?.json().await?;
-        Ok(ids)
-    }
-
     pub async fn get_item(&self, id: u64) -> anyhow::Result<Option<HnItem>> {
         let url = format!("{BASE_URL}/item/{id}.json");
         let resp = self.http.get(&url).send().await?;

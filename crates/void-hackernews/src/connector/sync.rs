@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
@@ -73,16 +72,7 @@ async fn poll_stories(
     keywords: &[String],
     min_score: u32,
 ) -> anyhow::Result<()> {
-    let top = client.top_stories().await.unwrap_or_default();
-    let new = client.new_stories().await.unwrap_or_default();
-
-    let mut seen = HashSet::new();
-    let mut story_ids: Vec<u64> = Vec::with_capacity(top.len() + new.len());
-    for id in top.into_iter().chain(new) {
-        if seen.insert(id) {
-            story_ids.push(id);
-        }
-    }
+    let story_ids = client.top_stories().await.unwrap_or_default();
 
     let conv_external_id = format!("hackernews_{account_id}_feed");
     let mut ingested = 0u32;
