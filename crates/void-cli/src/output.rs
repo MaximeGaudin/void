@@ -67,9 +67,7 @@ pub fn resolve_connector_filter(raw: Option<&str>) -> anyhow::Result<Option<Stri
         None => Ok(None),
         Some(s) => {
             let ct = parse_connector_type(s).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Unknown connector \"{s}\". Valid connectors: {KNOWN_CONNECTORS}"
-                )
+                anyhow::anyhow!("Unknown connector \"{s}\". Valid connectors: {KNOWN_CONNECTORS}")
             })?;
             Ok(Some(ct.to_string()))
         }

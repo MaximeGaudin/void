@@ -156,7 +156,10 @@ async fn run_auth(args: &AuthArgs) -> anyhow::Result<()> {
     )
     .await?;
 
-    eprintln!("Google Drive authenticated for connection \"{}\".", connection.id);
+    eprintln!(
+        "Google Drive authenticated for connection \"{}\".",
+        connection.id
+    );
     Ok(())
 }
 

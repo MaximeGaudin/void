@@ -475,7 +475,9 @@ fn build_gmail_connector(
         })?;
 
     let credentials_file = match &connection.settings {
-        void_core::config::ConnectionSettings::Gmail { credentials_file } => credentials_file.clone(),
+        void_core::config::ConnectionSettings::Gmail { credentials_file } => {
+            credentials_file.clone()
+        }
         _ => anyhow::bail!(
             "Mismatched connection settings for Gmail connection '{}'",
             connection.id

@@ -171,7 +171,10 @@ impl Database {
         }
         if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(
+                " AND connection_id LIKE ?{}",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -372,7 +375,10 @@ impl Database {
         }
         if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(
+                " AND connection_id LIKE ?{}",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -572,8 +578,10 @@ impl Database {
 
         let mut sync_deleted = 0usize;
         for aid in &connection_ids {
-            sync_deleted +=
-                conn.execute("DELETE FROM sync_state WHERE connection_id = ?1", params![aid])?;
+            sync_deleted += conn.execute(
+                "DELETE FROM sync_state WHERE connection_id = ?1",
+                params![aid],
+            )?;
         }
 
         Ok((msgs, convs, evts, sync_deleted))
@@ -602,7 +610,10 @@ impl Database {
         }
         if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(
+                " AND connection_id LIKE ?{}",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -641,7 +652,10 @@ impl Database {
 
         if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(
+                " AND connection_id LIKE ?{}",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -704,7 +718,10 @@ impl Database {
         }
         if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(" AND connection_id LIKE ?{}", param_values.len() + 1));
+            sql.push_str(&format!(
+                " AND connection_id LIKE ?{}",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
@@ -771,7 +788,11 @@ impl Database {
 
     // -- Sync state --
 
-    pub fn get_sync_state(&self, connection_id: &str, key: &str) -> Result<Option<String>, DbError> {
+    pub fn get_sync_state(
+        &self,
+        connection_id: &str,
+        key: &str,
+    ) -> Result<Option<String>, DbError> {
         self.conn()?
             .query_row(
                 "SELECT value FROM sync_state WHERE connection_id = ?1 AND key = ?2",
@@ -782,7 +803,12 @@ impl Database {
             .map_err(Into::into)
     }
 
-    pub fn set_sync_state(&self, connection_id: &str, key: &str, value: &str) -> Result<(), DbError> {
+    pub fn set_sync_state(
+        &self,
+        connection_id: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
         debug!(connection_id, key, "setting sync state");
         self.conn()?.execute(
             "INSERT INTO sync_state (connection_id, key, value) VALUES (?1, ?2, ?3)

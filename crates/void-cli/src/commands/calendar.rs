@@ -2,9 +2,9 @@ use chrono::{Datelike, Local};
 use clap::{Args, Subcommand};
 use tracing::debug;
 use void_core::config::{self, expand_tilde, VoidConfig};
-use void_core::models::ConnectorType;
 use void_core::connector::Connector;
 use void_core::db::Database;
+use void_core::models::ConnectorType;
 
 use crate::output::{resolve_connector_filter, OutputFormatter};
 

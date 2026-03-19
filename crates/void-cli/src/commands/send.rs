@@ -2,8 +2,8 @@ use clap::Args;
 use tracing::{debug, info};
 
 use void_core::config::{self, VoidConfig};
-use void_core::models::ConnectorType;
 use void_core::db::Database;
+use void_core::models::ConnectorType;
 use void_core::models::MessageContent;
 
 use crate::commands::connector_factory;

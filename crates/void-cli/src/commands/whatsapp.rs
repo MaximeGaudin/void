@@ -1,8 +1,8 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
 use void_core::config::{self, VoidConfig};
-use void_core::models::ConnectorType;
 use void_core::db::Database;
+use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
 pub struct WhatsAppArgs {

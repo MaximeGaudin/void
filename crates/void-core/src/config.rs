@@ -351,10 +351,16 @@ calendar_ids = ["primary", "holidays"]
         assert_eq!(config.connections.len(), 4);
         assert_eq!(config.sync.gmail_poll_interval_secs, 15);
         assert_eq!(config.sync.calendar_poll_interval_secs, 120);
-        assert_eq!(config.connections[0].connector_type, ConnectorType::WhatsApp);
+        assert_eq!(
+            config.connections[0].connector_type,
+            ConnectorType::WhatsApp
+        );
         assert_eq!(config.connections[1].connector_type, ConnectorType::Slack);
         assert_eq!(config.connections[2].connector_type, ConnectorType::Gmail);
-        assert_eq!(config.connections[3].connector_type, ConnectorType::Calendar);
+        assert_eq!(
+            config.connections[3].connector_type,
+            ConnectorType::Calendar
+        );
     }
 
     #[test]
@@ -416,7 +422,10 @@ calendar_ids = ["primary", "holidays"]
             ],
         };
         assert!(config.find_connection("work-slack").is_some());
-        assert_eq!(config.find_connection("work-slack").unwrap().id, "work-slack");
+        assert_eq!(
+            config.find_connection("work-slack").unwrap().id,
+            "work-slack"
+        );
         assert!(config.find_connection("nonexistent").is_none());
     }
 
@@ -483,7 +492,10 @@ credentials_file = "~/.config/void/google-creds.json"
 calendar_ids = ["primary"]
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.connections[0].connector_type, ConnectorType::Calendar);
+        assert_eq!(
+            config.connections[0].connector_type,
+            ConnectorType::Calendar
+        );
         match &config.connections[0].settings {
             ConnectionSettings::Calendar {
                 credentials_file,
@@ -508,7 +520,10 @@ type = "calendar"
 credentials_file = "creds.json"
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.connections[0].connector_type, ConnectorType::Calendar);
+        assert_eq!(
+            config.connections[0].connector_type,
+            ConnectorType::Calendar
+        );
         match &config.connections[0].settings {
             ConnectionSettings::Calendar { calendar_ids, .. } => {
                 assert!(calendar_ids.is_empty());
@@ -571,7 +586,10 @@ keywords = ["rust", "ai", "startup"]
 min_score = 50
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.connections[0].connector_type, ConnectorType::HackerNews);
+        assert_eq!(
+            config.connections[0].connector_type,
+            ConnectorType::HackerNews
+        );
         match &config.connections[0].settings {
             ConnectionSettings::HackerNews {
                 keywords,
@@ -592,7 +610,10 @@ id = "hn"
 type = "hackernews"
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.connections[0].connector_type, ConnectorType::HackerNews);
+        assert_eq!(
+            config.connections[0].connector_type,
+            ConnectorType::HackerNews
+        );
         match &config.connections[0].settings {
             ConnectionSettings::HackerNews {
                 keywords,

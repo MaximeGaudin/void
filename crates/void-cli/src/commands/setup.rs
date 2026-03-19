@@ -1207,7 +1207,11 @@ fn pick_connector_action(
                 "You have {} {name} connections configured:",
                 existing_indices.len()
             ),
-            &["Keep all current connections", "Add another connection", "Skip"],
+            &[
+                "Keep all current connections",
+                "Add another connection",
+                "Skip",
+            ],
         );
         match choice {
             0 => ConnectorAction::Keep,
@@ -1217,7 +1221,10 @@ fn pick_connector_action(
     }
 }
 
-async fn authenticate_connection(connection: &ConnectionConfig, store_path: &Path) -> anyhow::Result<()> {
+async fn authenticate_connection(
+    connection: &ConnectionConfig,
+    store_path: &Path,
+) -> anyhow::Result<()> {
     let mut conn = connector_factory::build_connector(connection, store_path)?;
     let conn_mut = Arc::get_mut(&mut conn)
         .ok_or_else(|| anyhow::anyhow!("internal error: could not get mutable connector ref"))?;

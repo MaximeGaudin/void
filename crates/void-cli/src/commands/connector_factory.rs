@@ -3,8 +3,8 @@ use std::sync::Arc;
 use tracing::debug;
 
 use void_core::config::{expand_tilde, ConnectionConfig, ConnectionSettings};
-use void_core::models::ConnectorType;
 use void_core::connector::Connector;
+use void_core::models::ConnectorType;
 
 pub fn build_connector(
     connection: &ConnectionConfig,
