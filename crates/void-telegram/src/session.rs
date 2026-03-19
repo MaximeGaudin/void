@@ -21,12 +21,50 @@ pub struct JsonFileSession {
     data: RwLock<Data>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 struct Data {
     home_dc: i32,
     dc_options: HashMap<i32, DcData>,
     peers: HashMap<i64, PeerData>,
     updates: UpdatesData,
+}
+
+/// Telegram production DC addresses (port 443).
+const PRODUCTION_DCS: &[(i32, [u8; 4])] = &[
+    (1, [149, 154, 175, 53]),
+    (2, [149, 154, 167, 51]),
+    (3, [149, 154, 175, 100]),
+    (4, [149, 154, 167, 91]),
+    (5, [91, 108, 56, 130]),
+];
+
+impl Default for Data {
+    fn default() -> Self {
+        let dc_options = PRODUCTION_DCS
+            .iter()
+            .map(|&(id, ipv4)| {
+                let v4 = Ipv4Addr::from(ipv4);
+                (
+                    id,
+                    DcData {
+                        id,
+                        ipv4_addr: ipv4,
+                        ipv4_port: 443,
+                        ipv6_addr: v4.to_ipv6_mapped().octets(),
+                        ipv6_port: 443,
+                        auth_key: None,
+                    },
+                )
+            })
+            .collect();
+
+        Self {
+            home_dc: 2,
+            dc_options,
+            peers: HashMap::new(),
+            updates: UpdatesData::default(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -192,7 +230,7 @@ impl From<&PeerData> for PeerInfo {
 impl JsonFileSession {
     pub fn load_or_create(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
-        let data = if path.exists() {
+        let mut data: Data = if path.exists() {
             match std::fs::read_to_string(&path) {
                 Ok(json) => match serde_json::from_str(&json) {
                     Ok(d) => d,
@@ -209,6 +247,17 @@ impl JsonFileSession {
         } else {
             Data::default()
         };
+
+        if data.home_dc == 0 || data.dc_options.is_empty() {
+            let defaults = Data::default();
+            if data.home_dc == 0 {
+                data.home_dc = defaults.home_dc;
+            }
+            for (id, dc) in defaults.dc_options {
+                data.dc_options.entry(id).or_insert(dc);
+            }
+        }
+
         Self {
             path,
             data: RwLock::new(data),
