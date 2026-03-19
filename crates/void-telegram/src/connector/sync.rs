@@ -107,7 +107,7 @@ async fn backfill_dialogs(
         };
         db.upsert_conversation(&conv)?;
 
-        backfill_messages(client, db, account_id, peer, &conv_external_id).await?;
+        backfill_messages(client, db, account_id, peer, &conv.id, &conv_external_id).await?;
 
         progress.inc(1);
     }
@@ -126,6 +126,7 @@ async fn backfill_messages(
     db: &Arc<Database>,
     account_id: &str,
     peer: &Peer,
+    conv_id: &str,
     conv_external_id: &str,
 ) -> anyhow::Result<()> {
     let peer_ref = peer
@@ -141,7 +142,7 @@ async fn backfill_messages(
             break;
         }
 
-        let void_msg = tg_message_to_void(&msg, account_id, conv_external_id);
+        let void_msg = tg_message_to_void(&msg, account_id, conv_id, conv_external_id);
         db.upsert_message(&void_msg)?;
     }
 
@@ -193,8 +194,9 @@ async fn handle_new_message(
         Peer::Channel(_) => ConversationKind::Channel,
     };
 
+    let conv_id = format!("{account_id}-{chat_id}");
     let conv = Conversation {
-        id: format!("{account_id}-{chat_id}"),
+        id: conv_id.clone(),
         account_id: account_id.to_string(),
         connector: "telegram".to_string(),
         external_id: conv_external_id.clone(),
@@ -207,7 +209,7 @@ async fn handle_new_message(
     };
     db.upsert_conversation(&conv)?;
 
-    let void_msg = tg_message_to_void(msg, account_id, &conv_external_id);
+    let void_msg = tg_message_to_void(msg, account_id, &conv_id, &conv_external_id);
     db.upsert_message(&void_msg)?;
 
     let sender_name = msg
@@ -232,7 +234,12 @@ async fn handle_new_message(
     Ok(())
 }
 
-fn tg_message_to_void(msg: &TgMessage, account_id: &str, conv_external_id: &str) -> Message {
+fn tg_message_to_void(
+    msg: &TgMessage,
+    account_id: &str,
+    conv_id: &str,
+    conv_external_id: &str,
+) -> Message {
     let sender = msg
         .sender()
         .map(|s| s.id().to_string())
@@ -249,7 +256,7 @@ fn tg_message_to_void(msg: &TgMessage, account_id: &str, conv_external_id: &str)
     let msg_id = msg.id();
     Message {
         id: format!("{account_id}-{msg_id}"),
-        conversation_id: conv_external_id.to_string(),
+        conversation_id: conv_id.to_string(),
         account_id: account_id.to_string(),
         connector: "telegram".to_string(),
         external_id,
