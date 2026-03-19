@@ -154,18 +154,33 @@ impl Connector for SlackConnector {
         let needs_backfill = db
             .get_sync_state(&self.account_id, "backfill_done")?
             .is_none();
-        if needs_backfill {
-            self.backfill(&db).await?;
-            db.set_sync_state(&self.account_id, "backfill_done", "1")?;
-        } else {
-            info!(
-                account_id = %self.account_id,
-                "Slack backfill already complete, catching up missed messages"
-            );
-            self.catch_up(&db).await?;
-        }
 
-        self.run_socket_mode(&db, &cancel).await
+        // Start Socket Mode immediately alongside backfill/catch-up so that
+        // real-time messages arriving during backfill are not lost.
+        let backfill_task = async {
+            if needs_backfill {
+                match self.backfill(&db).await {
+                    Ok(()) => {
+                        db.set_sync_state(&self.account_id, "backfill_done", "1")
+                            .ok();
+                    }
+                    Err(e) => {
+                        warn!(account_id = %self.account_id, error = %e, "Slack backfill failed")
+                    }
+                }
+            } else {
+                info!(
+                    account_id = %self.account_id,
+                    "Slack backfill already complete, catching up missed messages"
+                );
+                if let Err(e) = self.catch_up(&db).await {
+                    warn!(account_id = %self.account_id, error = %e, "Slack catch-up failed");
+                }
+            }
+        };
+
+        let (_, socket_result) = tokio::join!(backfill_task, self.run_socket_mode(&db, &cancel));
+        socket_result
     }
 
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {

@@ -22,8 +22,8 @@ pub(super) async fn run_sync(
     account_id: &str,
     cancel: &CancellationToken,
 ) -> anyhow::Result<()> {
-    backfill_dialogs(client, db, account_id).await?;
-
+    // Start the live update stream BEFORE backfill so that real-time messages
+    // arriving during backfill are not lost. Duplicates are handled by upsert.
     let mut stream = client
         .stream_updates(
             updates,
@@ -36,29 +36,39 @@ pub(super) async fn run_sync(
 
     info!(account_id, "telegram live update stream started");
 
-    loop {
-        tokio::select! {
-            _ = cancel.cancelled() => {
-                info!(account_id, "telegram sync cancelled, persisting update state");
-                stream.sync_update_state().await;
-                break;
-            }
-            update = stream.next() => {
-                match update {
-                    Ok(update) => {
-                        if let Err(e) = handle_update(client, db, account_id, &update).await {
-                            warn!(error = %e, "error handling telegram update");
+    let backfill_task = async {
+        if let Err(e) = backfill_dialogs(client, db, account_id).await {
+            warn!(account_id, error = %e, "telegram backfill failed");
+        }
+        eprintln!("[telegram:{account_id}] listening for new messages");
+    };
+
+    let updates_task = async {
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    info!(account_id, "telegram sync cancelled, persisting update state");
+                    stream.sync_update_state().await;
+                    break;
+                }
+                update = stream.next() => {
+                    match update {
+                        Ok(update) => {
+                            if let Err(e) = handle_update(client, db, account_id, &update).await {
+                                warn!(error = %e, "error handling telegram update");
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "telegram update stream error");
                         }
                     }
-                    Err(e) => {
-                        warn!(error = %e, "telegram update stream error");
-                    }
+                    stream.sync_update_state().await;
                 }
-                stream.sync_update_state().await;
             }
         }
-    }
+    };
 
+    tokio::join!(backfill_task, updates_task);
     Ok(())
 }
 
