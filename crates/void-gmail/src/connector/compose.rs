@@ -2,7 +2,17 @@ use anyhow::Context;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 
+/// RFC 2047 encode a header value if it contains non-ASCII characters.
+pub fn encode_rfc2047(value: &str) -> String {
+    if value.is_ascii() {
+        return value.to_string();
+    }
+    let encoded = STANDARD.encode(value.as_bytes());
+    format!("=?UTF-8?B?{encoded}?=")
+}
+
 pub fn compose_rfc2822(to: &str, subject: &str, body: &str) -> String {
+    let subject = encode_rfc2047(subject);
     format!(
         "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
     )
@@ -35,6 +45,7 @@ pub fn compose_rfc2822_with_attachment(
 
     const BOUNDARY: &str = "void_boundary_001";
 
+    let subject = encode_rfc2047(subject);
     let mut headers = format!(
         "To: {to}\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"{BOUNDARY}\"\r\n"
     );

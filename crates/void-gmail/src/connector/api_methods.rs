@@ -3,6 +3,8 @@ use base64::Engine;
 use tracing::debug;
 use tracing::warn;
 
+use super::compose::encode_rfc2047;
+
 use crate::api::GmailApiClient;
 use crate::auth;
 
@@ -133,6 +135,7 @@ impl GmailConnector {
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
 
+        let subject = encode_rfc2047(subject);
         let mut headers = format!(
             "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
         );
@@ -158,6 +161,7 @@ impl GmailConnector {
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
 
+        let subject = encode_rfc2047(subject);
         let raw = format!(
             "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
         );

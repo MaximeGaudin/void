@@ -18,8 +18,8 @@ use crate::api::GmailApiClient;
 use crate::auth;
 
 pub use compose::{
-    compose_rfc2822, compose_rfc2822_with_attachment, html_to_markdown, looks_like_html,
-    parse_email_address, parse_email_name,
+    compose_rfc2822, compose_rfc2822_with_attachment, encode_rfc2047, html_to_markdown,
+    looks_like_html, parse_email_address, parse_email_name,
 };
 
 pub struct GmailConnector {
@@ -761,6 +761,19 @@ mod tests {
         .unwrap();
         std::fs::remove_file(&path).ok();
         assert!(result.contains("Content-Type: application/pdf"));
+    }
+
+    #[test]
+    fn compose_rfc2822_encodes_non_ascii_subject() {
+        let raw = compose_rfc2822("a@b.com", "Séjour — Réservation", "body");
+        assert!(raw.contains("Subject: =?UTF-8?B?"));
+        assert!(!raw.contains("Séjour"));
+    }
+
+    #[test]
+    fn compose_rfc2822_ascii_subject_unchanged() {
+        let raw = compose_rfc2822("a@b.com", "Hello World", "body");
+        assert!(raw.contains("Subject: Hello World"));
     }
 
     #[test]
