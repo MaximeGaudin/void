@@ -1,0 +1,20 @@
+[package]
+name = "void-hackernews"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Hacker News adapter for Void CLI"
+
+[dependencies]
+void-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio-util = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }

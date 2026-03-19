@@ -13,7 +13,7 @@ use crate::commands::connector_factory;
 
 #[derive(Debug, Args)]
 pub struct SyncArgs {
-    /// Sync only specific connectors (comma-separated: whatsapp,telegram,slack,gmail,calendar)
+    /// Sync only specific connectors (comma-separated: whatsapp,telegram,slack,gmail,calendar,hackernews)
     #[arg(long)]
     pub connectors: Option<String>,
     /// Detach and run as a background daemon
@@ -25,7 +25,7 @@ pub struct SyncArgs {
     /// Clear the database before syncing (fresh start)
     #[arg(long)]
     pub clear: bool,
-    /// Clear data for a specific connector before syncing (e.g. whatsapp, telegram, slack, gmail, calendar)
+    /// Clear data for a specific connector before syncing (e.g. whatsapp, telegram, slack, gmail, calendar, hackernews)
     #[arg(long)]
     pub clear_connector: Option<String>,
     /// Stop the running sync daemon

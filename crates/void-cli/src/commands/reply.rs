@@ -138,5 +138,6 @@ fn build_reply_id(
         ConnectorType::Telegram => format!("{conv_external_id}:{msg_external_id}"),
         ConnectorType::Gmail => msg_external_id.to_string(),
         ConnectorType::Calendar => msg_external_id.to_string(),
+        ConnectorType::HackerNews => msg_external_id.to_string(),
     }
 }

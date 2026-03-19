@@ -1,6 +1,14 @@
-use void_core::models::{CalendarEvent, ConnectorType, Contact, Conversation, HealthStatus, Message};
+use void_core::models::{
+    CalendarEvent, ConnectorType, Contact, Conversation, HealthStatus, Message,
+};
 
 pub struct OutputFormatter;
+
+impl Default for OutputFormatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl OutputFormatter {
     pub fn new() -> Self {
@@ -47,6 +55,7 @@ pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {
         "gmail" | "gm" | "email" => Some(ConnectorType::Gmail),
         "calendar" | "cal" | "ca" => Some(ConnectorType::Calendar),
         "telegram" | "tg" => Some(ConnectorType::Telegram),
+        "hackernews" | "hn" => Some(ConnectorType::HackerNews),
         _ => None,
     }
 }

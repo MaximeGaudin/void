@@ -33,17 +33,18 @@ impl Tool for VoidCommandTool {
         ToolDefinition {
             name: "void_cli".to_string(),
             description: "Execute a void CLI command. Void is a unified communication CLI that \
-                manages Gmail, Slack, WhatsApp, Telegram, and Google Calendar. Pass the command WITHOUT \
+                manages Gmail, Slack, WhatsApp, Telegram, Google Calendar, and Hacker News. Pass the command WITHOUT \
                 the 'void' prefix.\n\n\
                 AVAILABLE COMMANDS:\n\n\
                 INBOX & MESSAGES:\n\
-                - inbox [--connector gmail|slack|whatsapp|telegram] [--account <id>] [-n <max>] [--all] [--include-muted]\n\
+                - inbox [--connector gmail|slack|whatsapp|telegram|hackernews] [--account <id>] [-n <max>] [--all] [--include-muted]\n\
                 - messages <conversation-id> [-n <count>]\n\
                 - search \"<query>\" [--connector <c>] [-n <max>]\n\
                 - archive <id1> [<id2> ...]\n\
                 - mute <name> [--unmute] [--list]\n\n\
                 SENDING:\n\
                 - send --via <slack|gmail|telegram> --to \"<recipient>\" --message \"<text>\" [--file <path>] [--at \"<time>\"]\n\
+                  (Note: hackernews is read-only — no send/reply)\n\
                 - reply <message-id> --message \"<text>\" [--in-thread] [--file <path>] [--at \"<time>\"]\n\n\
                 GMAIL:\n\
                 - gmail search '<query>' [--max <n>] [--account <email>]\n\

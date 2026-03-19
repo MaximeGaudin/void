@@ -1,6 +1,6 @@
 # Void CLI
 
-A unified command-line interface for interacting with WhatsApp, Telegram, Slack, Gmail, Google Calendar, and Google Drive from a single tool — plus an AI agent and LLM-powered hooks.
+A unified command-line interface for interacting with WhatsApp, Telegram, Slack, Gmail, Google Calendar, Google Drive, and Hacker News from a single tool — plus an AI agent and LLM-powered hooks.
 
 ## Inbox Zero
 
@@ -40,7 +40,8 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │  ├── Telegram (grammers MTProto)                    │
 │  ├── Slack (Socket Mode WebSocket)                  │
 │  ├── Gmail (history.list polling)                   │
-│  └── Calendar (syncToken polling)                   │
+│  ├── Calendar (syncToken polling)                   │
+│  └── Hacker News (HN API polling)                   │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -158,7 +159,7 @@ void calendar
 
 | Flag | Description |
 |------|-------------|
-| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar` |
+| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `hackernews` (alias: `hn`) |
 | `--account <id>` | Filter by account ID |
 | `-n` / `--size <N>` | Limit number of results (default: 50) |
 | `--all` | Include archived items |
@@ -178,6 +179,7 @@ path = "~/.local/share/void"
 [sync]
 gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
+hackernews_poll_interval_secs = 3600
 
 [[accounts]]
 id = "whatsapp"
@@ -203,6 +205,12 @@ id = "mgaudin@gladia.io-calendar"
 type = "calendar"
 credentials_file = "~/.config/void/google-credentials.json"
 calendar_ids = ["primary"]
+
+[[accounts]]
+id = "hackernews"
+type = "hackernews"
+keywords = ["rust", "ai", "startup"]
+min_score = 100
 ```
 
 ## Connector Setup
@@ -228,6 +236,18 @@ Built-in OAuth2 credentials are included — no Google Cloud setup required:
 3. Complete the OAuth flow in your browser
 
 Gmail and Calendar share the same OAuth credentials.
+
+### Hacker News
+
+No credentials needed — the HN API is public. Run `void setup`, select Hacker News, enter keywords to watch and a minimum score threshold. Stories matching your keywords and exceeding the minimum score will appear in your inbox during each sync cycle.
+
+```toml
+[[accounts]]
+id = "hackernews"
+type = "hackernews"
+keywords = ["rust", "ai", "startup"]
+min_score = 100
+```
 
 ## Data Storage
 
@@ -262,6 +282,7 @@ crates/
   void-whatsapp/   # WhatsApp connector: wa-rs integration
   void-telegram/   # Telegram connector: grammers MTProto integration
   void-gdrive/     # Google Drive connector: download, export, metadata
+  void-hackernews/ # Hacker News connector: keyword-filtered story monitoring
   void-agent/      # AI agent: LLM-powered interactive assistant with tool access
 ```
 

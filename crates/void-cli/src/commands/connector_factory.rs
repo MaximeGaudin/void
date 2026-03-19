@@ -68,6 +68,27 @@ pub fn build_connector(
                 api_hash.as_deref(),
             )))
         }
+        (
+            AccountType::HackerNews,
+            AccountSettings::HackerNews {
+                keywords,
+                min_score,
+            },
+        ) => {
+            let poll_secs = void_core::config::VoidConfig::load_or_default(
+                &void_core::config::default_config_path(),
+            )
+            .sync
+            .hackernews_poll_interval_secs;
+            Ok(Arc::new(
+                void_hackernews::connector::HackerNewsConnector::new(
+                    &account.id,
+                    keywords.clone(),
+                    *min_score,
+                    poll_secs,
+                ),
+            ))
+        }
         _ => anyhow::bail!(
             "Mismatched account type and settings for '{}': type={}, settings don't match",
             account.id,

@@ -868,6 +868,21 @@ Common issues:
 
 ---
 
+## Read-Only Connectors
+
+Not all connectors support bidirectional communication. For read-only data sources (e.g. Hacker News, RSS feeds), the following simplifications apply:
+
+- **No `send.rs` / `media.rs` / `extract.rs`** — these files can be omitted entirely.
+- **`send_message()` and `reply()`** — return `anyhow::bail!("... is a read-only connector")`.
+- **`authenticate()`** — no-op `Ok(())` if the API is public.
+- **No session files** — skip session cleanup in `sync.rs` and rename logic in `setup.rs`.
+- **No connector-specific CLI subcommand** — no `void acme download` etc. The connector only surfaces items in the inbox.
+- **Polling sync only** — use `tokio::time::interval` with a configurable interval in `SyncConfig`.
+
+The `void-hackernews` crate is a reference implementation for this pattern.
+
+---
+
 ## Checklist
 
 Use this as a final review checklist:

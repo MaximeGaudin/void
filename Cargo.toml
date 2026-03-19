@@ -9,6 +9,7 @@ members = [
     "crates/void-whatsapp",
     "crates/void-telegram",
     "crates/void-gdrive",
+    "crates/void-hackernews",
     "crates/void-agent",
 ]
 
@@ -71,4 +72,5 @@ void-calendar = { path = "crates/void-calendar" }
 void-whatsapp = { path = "crates/void-whatsapp" }
 void-telegram = { path = "crates/void-telegram" }
 void-gdrive = { path = "crates/void-gdrive" }
+void-hackernews = { path = "crates/void-hackernews" }
 void-agent = { path = "crates/void-agent" }

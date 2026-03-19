@@ -4293,6 +4293,7 @@ dependencies = [
  "void-core",
  "void-gdrive",
  "void-gmail",
+ "void-hackernews",
  "void-slack",
  "void-telegram",
  "void-whatsapp",
@@ -4358,6 +4359,23 @@ dependencies = [
  "uuid",
  "void-core",
  "wiremock",
+]
+
+[[package]]
+name = "void-hackernews"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "void-core",
 ]
 
 [[package]]

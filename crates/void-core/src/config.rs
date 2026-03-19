@@ -43,6 +43,8 @@ pub struct SyncConfig {
     pub gmail_poll_interval_secs: u64,
     #[serde(default = "default_calendar_poll")]
     pub calendar_poll_interval_secs: u64,
+    #[serde(default = "default_hackernews_poll")]
+    pub hackernews_poll_interval_secs: u64,
 }
 
 impl Default for SyncConfig {
@@ -50,6 +52,7 @@ impl Default for SyncConfig {
         Self {
             gmail_poll_interval_secs: default_gmail_poll(),
             calendar_poll_interval_secs: default_calendar_poll(),
+            hackernews_poll_interval_secs: default_hackernews_poll(),
         }
     }
 }
@@ -60,6 +63,10 @@ fn default_gmail_poll() -> u64 {
 
 fn default_calendar_poll() -> u64 {
     60
+}
+
+fn default_hackernews_poll() -> u64 {
+    3600
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,6 +106,10 @@ impl<'de> Deserialize<'de> for AccountConfig {
                 api_id: raw.api_id,
                 api_hash: raw.api_hash,
             },
+            AccountType::HackerNews => AccountSettings::HackerNews {
+                keywords: raw.keywords.unwrap_or_default(),
+                min_score: raw.min_score.unwrap_or(0),
+            },
         };
         Ok(AccountConfig {
             id: raw.id,
@@ -127,6 +138,10 @@ struct RawAccountConfig {
     api_id: Option<i32>,
     #[serde(default)]
     api_hash: Option<String>,
+    #[serde(default)]
+    keywords: Option<Vec<String>>,
+    #[serde(default)]
+    min_score: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -137,6 +152,7 @@ pub enum AccountType {
     Gmail,
     Calendar,
     Telegram,
+    HackerNews,
 }
 
 impl std::fmt::Display for AccountType {
@@ -147,6 +163,7 @@ impl std::fmt::Display for AccountType {
             Self::Gmail => write!(f, "gmail"),
             Self::Calendar => write!(f, "calendar"),
             Self::Telegram => write!(f, "telegram"),
+            Self::HackerNews => write!(f, "hackernews"),
         }
     }
 }
@@ -176,6 +193,12 @@ pub enum AccountSettings {
         api_id: Option<i32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         api_hash: Option<String>,
+    },
+    HackerNews {
+        #[serde(default)]
+        keywords: Vec<String>,
+        #[serde(default)]
+        min_score: u32,
     },
 }
 
@@ -219,6 +242,7 @@ impl VoidConfig {
             "gmail" => AccountType::Gmail,
             "calendar" => AccountType::Calendar,
             "telegram" => AccountType::Telegram,
+            "hackernews" => AccountType::HackerNews,
             _ => return None,
         };
         self.accounts.iter().find(|a| a.account_type == target)
@@ -237,6 +261,7 @@ path = "~/.local/share/void"
 [sync]
 gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
+hackernews_poll_interval_secs = 3600
 
 # Example accounts (uncomment and fill in):
 #
@@ -268,6 +293,12 @@ calendar_poll_interval_secs = 60
 # # Optional: override built-in API credentials
 # # api_id = 12345
 # # api_hash = "0123456789abcdef0123456789abcdef"
+#
+# [[accounts]]
+# id = "hackernews"
+# type = "hackernews"
+# keywords = ["rust", "ai", "startup"]
+# min_score = 100
 "#
     .to_string()
 }
@@ -349,6 +380,7 @@ calendar_ids = ["primary", "holidays"]
         assert!(config.accounts.is_empty());
         assert_eq!(config.sync.gmail_poll_interval_secs, 30);
         assert_eq!(config.sync.calendar_poll_interval_secs, 60);
+        assert_eq!(config.sync.hackernews_poll_interval_secs, 3600);
     }
 
     #[test]
@@ -356,6 +388,7 @@ calendar_ids = ["primary", "holidays"]
         let config = VoidConfig::default();
         assert!(config.store.path.contains(".local/share/void"));
         assert_eq!(config.sync.gmail_poll_interval_secs, 30);
+        assert_eq!(config.sync.hackernews_poll_interval_secs, 3600);
     }
 
     #[test]
@@ -542,6 +575,50 @@ user_token = "xoxp-test"
                 assert!(exclude_channels.is_empty());
             }
             _ => panic!("expected Slack settings"),
+        }
+    }
+
+    #[test]
+    fn parse_hackernews_config() {
+        let toml = r#"
+[[accounts]]
+id = "hackernews"
+type = "hackernews"
+keywords = ["rust", "ai", "startup"]
+min_score = 50
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.accounts[0].account_type, AccountType::HackerNews);
+        match &config.accounts[0].settings {
+            AccountSettings::HackerNews {
+                keywords,
+                min_score,
+            } => {
+                assert_eq!(keywords, &["rust", "ai", "startup"]);
+                assert_eq!(*min_score, 50);
+            }
+            other => panic!("expected HackerNews settings, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_hackernews_without_optional_fields() {
+        let toml = r#"
+[[accounts]]
+id = "hn"
+type = "hackernews"
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.accounts[0].account_type, AccountType::HackerNews);
+        match &config.accounts[0].settings {
+            AccountSettings::HackerNews {
+                keywords,
+                min_score,
+            } => {
+                assert!(keywords.is_empty());
+                assert_eq!(*min_score, 0);
+            }
+            other => panic!("expected HackerNews settings, got {other:?}"),
         }
     }
 

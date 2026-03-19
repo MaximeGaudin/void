@@ -204,6 +204,7 @@ async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyho
             "Telegram",
             "Google Calendar",
             "Google Drive",
+            "Hacker News",
         ],
     );
 
@@ -215,6 +216,7 @@ async fn add_connector_account(cfg: &mut VoidConfig, store_path: &Path) -> anyho
         3 => setup_telegram(cfg, store_path, true).await?,
         4 => setup_calendar(cfg, store_path, true).await?,
         5 => setup_gdrive(cfg, store_path).await?,
+        6 => setup_hackernews(cfg, true)?,
         _ => {}
     }
     Ok(())
@@ -364,6 +366,10 @@ fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
         "  calendar_poll_interval_secs = {}",
         cfg.sync.calendar_poll_interval_secs
     );
+    eprintln!(
+        "  hackernews_poll_interval_secs = {}",
+        cfg.sync.hackernews_poll_interval_secs
+    );
     eprintln!();
 
     if cfg.accounts.is_empty() {
@@ -408,6 +414,17 @@ fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                         eprintln!("    (using built-in API credentials)");
                     }
                 }
+                config::AccountSettings::HackerNews {
+                    keywords,
+                    min_score,
+                } => {
+                    if keywords.is_empty() {
+                        eprintln!("    keywords:  (none — all stories)");
+                    } else {
+                        eprintln!("    keywords:  {}", keywords.join(", "));
+                    }
+                    eprintln!("    min_score: {min_score}");
+                }
             }
         }
     }
@@ -434,7 +451,7 @@ async fn run_full_wizard(
     eprintln!();
     eprintln!("This wizard will guide you through connecting your");
     eprintln!("communication services (Gmail, Slack, WhatsApp, Telegram,");
-    eprintln!("Google Calendar, Google Drive) to Void.");
+    eprintln!("Google Calendar, Google Drive, Hacker News) to Void.");
     eprintln!();
 
     separator();
@@ -449,6 +466,8 @@ async fn run_full_wizard(
     setup_calendar(cfg, store_path, false).await?;
     separator();
     setup_gdrive(cfg, store_path).await?;
+    separator();
+    setup_hackernews(cfg, false)?;
     separator();
 
     cfg.save(config_path)?;
@@ -1070,6 +1089,66 @@ async fn setup_gdrive(cfg: &VoidConfig, store_path: &Path) -> anyhow::Result<()>
             );
         }
     }
+    Ok(())
+}
+
+// ── Hacker News ─────────────────────────────────────────────────────────────
+
+fn setup_hackernews(cfg: &mut VoidConfig, add_only: bool) -> anyhow::Result<()> {
+    eprintln!("📰  HACKER NEWS");
+    eprintln!();
+    eprintln!("Monitors Hacker News for stories matching your keywords.");
+    eprintln!("Matching stories appear in your inbox (read-only, no auth needed).");
+
+    if !add_only {
+        let existing: Vec<usize> = cfg
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.account_type == AccountType::HackerNews)
+            .map(|(i, _)| i)
+            .collect();
+
+        let action = pick_connector_action("Hacker News", &existing, cfg);
+        match action {
+            ConnectorAction::Skip => return Ok(()),
+            ConnectorAction::Keep => return Ok(()),
+            ConnectorAction::Replace(idx) => {
+                cfg.accounts.remove(idx);
+            }
+            ConnectorAction::Add => {}
+        }
+    }
+
+    eprintln!();
+    eprintln!("Enter keywords to watch (comma-separated).");
+    eprintln!("Stories whose title contains any of these keywords will land in your inbox.");
+    eprintln!("Leave empty to get all stories above the minimum score.");
+    let kw_input = prompt("Keywords: ");
+    let keywords: Vec<String> = kw_input
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    eprintln!();
+    eprintln!("Minimum score for a story to appear in your inbox.");
+    let min_score_input = prompt_default("Minimum score", "100");
+    let min_score: u32 = min_score_input.parse().unwrap_or(100);
+
+    let account_id = prompt_default("\nAccount name", "hackernews");
+
+    let account = AccountConfig {
+        id: account_id,
+        account_type: AccountType::HackerNews,
+        settings: AccountSettings::HackerNews {
+            keywords,
+            min_score,
+        },
+    };
+
+    cfg.accounts.push(account);
+    eprintln!("  ✓ Hacker News configured (no authentication needed).");
     Ok(())
 }
 
