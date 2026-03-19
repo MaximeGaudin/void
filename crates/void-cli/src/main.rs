@@ -88,11 +88,12 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn async_main(cli: Cli) -> anyhow::Result<()> {
-    let log_level = if cli.verbose { "debug" } else { "warn" };
+    let base_level = if cli.verbose { "debug" } else { "warn" };
+    let filter = format!("{base_level},wa_rs::handlers::notification=error");
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level)),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&filter)),
         )
         .with_writer(std::io::stderr)
         .init();
