@@ -11,16 +11,26 @@ use super::GmailConnector;
 impl GmailConnector {
     pub(crate) async fn initial_sync(&self, db: &Database) -> anyhow::Result<()> {
         let api = self.get_client().await?;
-        info!(config_id = %self.config_id, "starting Gmail initial sync");
 
         let profile = api.get_profile().await?;
         if let Some(email) = &profile.email_address {
             *self.my_email.lock().expect("mutex") = Some(email.clone());
         }
 
+        let had_history = db
+            .get_sync_state(&self.config_id, "history_id")?
+            .is_some();
+
         if let Some(history_id) = &profile.history_id {
             db.set_sync_state(&self.config_id, "history_id", history_id)?;
         }
+
+        if had_history {
+            debug!(config_id = %self.config_id, "skipping initial sync — history_id exists, incremental will catch up");
+            return Ok(());
+        }
+
+        info!(config_id = %self.config_id, "starting Gmail initial sync");
 
         let mut page_token: Option<String> = None;
         let max_pages: u64 = 5;

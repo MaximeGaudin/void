@@ -24,24 +24,29 @@ pub(super) async fn run_sync(
 ) -> anyhow::Result<()> {
     backfill_dialogs(client, db, account_id).await?;
 
-    let stream = client
-        .stream_updates(updates, UpdatesConfiguration::default())
+    let mut stream = client
+        .stream_updates(
+            updates,
+            UpdatesConfiguration {
+                catch_up: true,
+                ..Default::default()
+            },
+        )
         .await;
 
     info!(account_id, "telegram live update stream started");
 
-    tokio::pin!(stream);
-
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
-                info!(account_id, "telegram sync cancelled");
+                info!(account_id, "telegram sync cancelled, persisting update state");
+                stream.sync_update_state().await;
                 break;
             }
             update = stream.next() => {
                 match update {
                     Ok(update) => {
-                        if let Err(e) = handle_update(client, db, account_id, update).await {
+                        if let Err(e) = handle_update(client, db, account_id, &update).await {
                             warn!(error = %e, "error handling telegram update");
                         }
                     }
@@ -49,6 +54,7 @@ pub(super) async fn run_sync(
                         warn!(error = %e, "telegram update stream error");
                     }
                 }
+                stream.sync_update_state().await;
             }
         }
     }
@@ -136,14 +142,14 @@ async fn handle_update(
     client: &Client,
     db: &Arc<Database>,
     account_id: &str,
-    update: Update,
+    update: &Update,
 ) -> anyhow::Result<()> {
     match update {
         Update::NewMessage(msg) => {
-            handle_new_message(client, db, account_id, &msg).await?;
+            handle_new_message(client, db, account_id, msg).await?;
         }
         Update::MessageEdited(msg) => {
-            handle_new_message(client, db, account_id, &msg).await?;
+            handle_new_message(client, db, account_id, msg).await?;
         }
         Update::MessageDeleted(deletion) => {
             for msg_id in deletion.messages() {
@@ -169,6 +175,7 @@ async fn handle_new_message(
 
     let chat_id = peer.id().to_string();
     let conv_external_id = format!("telegram_{account_id}_{chat_id}");
+    let conv_name = peer.name().unwrap_or("?").to_string();
 
     let kind = match &peer {
         Peer::User(_) => ConversationKind::Dm,
@@ -181,7 +188,7 @@ async fn handle_new_message(
         account_id: account_id.to_string(),
         connector: "telegram".to_string(),
         external_id: conv_external_id.clone(),
-        name: peer.name().map(|n| n.to_string()),
+        name: Some(conv_name.clone()),
         kind,
         last_message_at: Some(msg.date().timestamp()),
         unread_count: if msg.outgoing() { 0 } else { 1 },
@@ -192,6 +199,25 @@ async fn handle_new_message(
 
     let void_msg = tg_message_to_void(msg, account_id, &conv_external_id);
     db.upsert_message(&void_msg)?;
+
+    let sender_name = msg
+        .sender()
+        .and_then(|s| s.name().map(|n| n.to_string()))
+        .unwrap_or_else(|| "unknown".to_string());
+    let preview: String = extract::extract_text(msg)
+        .unwrap_or_default()
+        .chars()
+        .take(80)
+        .collect();
+    let time = msg
+        .date()
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d %H:%M:%S %Z")
+        .to_string();
+    let direction = if msg.outgoing() { "sent" } else { "new" };
+    eprintln!(
+        "[telegram:{account_id}] {time} ({direction}) {conv_name} — {sender_name}: {preview}"
+    );
 
     Ok(())
 }

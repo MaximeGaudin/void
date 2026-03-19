@@ -89,6 +89,18 @@ impl CalendarConnector {
     }
 
     async fn initial_sync(&self, db: &Database) -> anyhow::Result<()> {
+        let has_sync_tokens = self.calendar_ids.iter().any(|cal_id| {
+            db.get_sync_state(&self.account_id, &format!("sync_token:{cal_id}"))
+                .ok()
+                .flatten()
+                .is_some()
+        });
+
+        if has_sync_tokens {
+            debug!(account_id = %self.account_id, "skipping initial sync — sync tokens exist, incremental will catch up");
+            return Ok(());
+        }
+
         let api = self.get_client().await?;
         info!(account_id = %self.account_id, "starting Calendar initial sync");
 

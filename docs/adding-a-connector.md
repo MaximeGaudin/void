@@ -327,12 +327,71 @@ impl Connector for AcmeConnector {
 
 ## Step 4 — Implement Sync
 
+### Sync contract
+
+Every connector **must** satisfy three requirements:
+
+| Requirement | Description |
+|-------------|-------------|
+| **Resumable backfill** | Initial backfill runs once. On subsequent restarts, the connector must skip or shorten the backfill using a persisted cursor (sync token, history ID, or last message timestamp). It must **never** re-fetch the full history window on every restart. |
+| **Incremental sync** | After backfill, the connector must ingest new messages — either via a **real-time stream** (WebSocket, long-poll, server push) or **periodic polling**. The sync loop must run until the `CancellationToken` fires. |
+| **Log on ingest** | Every newly ingested message must produce an `eprintln!` line in the format `[connector:account_id] timestamp (new|sent) context — sender: preview`. This is the only way to confirm sync is working when the daemon runs in the background. |
+
+### `start_sync` structure
+
+```rust
+async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
+    // Phase 1: backfill (skip if sync cursor exists)
+    let has_cursor = db.get_sync_state(&self.account_id, "sync_cursor")?.is_some();
+    if !has_cursor {
+        self.initial_backfill(&db).await?;
+    }
+
+    // Phase 2: incremental sync (real-time or polling)
+    let mut interval = tokio::time::interval(Duration::from_secs(30));
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            _ = interval.tick() => {
+                self.incremental_sync(&db).await?;
+            }
+        }
+    }
+    Ok(())
+}
+```
+
+For real-time connectors (WebSocket, Telegram update stream, etc.), replace the polling interval with the event stream:
+
+```rust
+loop {
+    tokio::select! {
+        _ = cancel.cancelled() => {
+            // Persist update state before exiting
+            break;
+        }
+        event = stream.next() => {
+            handle_event(&db, event).await?;
+            // Persist sync state after each event (or batch)
+        }
+    }
+}
+```
+
+### Persisting sync state
+
+Use `db.get_sync_state` / `db.set_sync_state` to store cursors so the connector can resume:
+
+| Connector | Cursor key | Value | What it enables |
+|-----------|-----------|-------|-----------------|
+| Gmail | `history_id` | Gmail history ID | `history.list` API picks up where it left off |
+| Slack | `backfill_done` | `"1"` | Skips initial backfill; catch-up uses `latest_message_timestamp` |
+| Calendar | `sync_token:{cal_id}` | Google sync token | `events.list` returns only changes since token |
+| Telegram | (session file) | grammers update state | `stream_updates(catch_up: true)` replays missed updates |
+
+Your connector should follow the same pattern — persist whatever cursor the platform provides after each sync cycle.
+
 ### `src/connector/sync.rs`
-
-The sync module handles two phases:
-
-1. **Initial backfill** — fetch historical conversations and messages
-2. **Live updates** — stream new messages in real-time
 
 Key patterns:
 
@@ -385,16 +444,19 @@ pub(super) fn handle_message(
         reply_to_id: None,
         media_type: None,
         metadata: None,
-        context_id: Some(conv_external_id),
+        context_id: Some(conv_external_id.clone()),
         context: None,
     };
     db.upsert_message(&msg)?;
+
+    // Log the new message (required by sync contract)
+    eprintln!("[acme:{account_id}] 2026-01-01 12:00:00 (new) Chat — Sender: preview text");
 
     Ok(())
 }
 ```
 
-**Conventions for IDs:**
+### Conventions for IDs
 
 Every model has two ID fields — `id` (the primary key) and `external_id` (unique with `account_id`). Both **must** be set to non-empty, deterministic values. Setting `id` to `String::new()` will cause `UNIQUE constraint failed: messages.id` on the second insert.
 
@@ -407,7 +469,7 @@ Every model has two ID fields — `id` (the primary key) and `external_id` (uniq
 
 The `connector` field must match `ConnectorType::Display` (lowercase).
 
-**Database methods your sync will use:**
+### Database methods your sync will use
 
 | Method | Purpose |
 |--------|---------|
