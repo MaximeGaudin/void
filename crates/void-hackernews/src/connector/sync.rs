@@ -74,6 +74,7 @@ async fn poll_stories(
 ) -> anyhow::Result<()> {
     let story_ids = client.top_stories().await.unwrap_or_default();
 
+    let conv_id = format!("{account_id}-feed");
     let conv_external_id = format!("hackernews_{account_id}_feed");
     let mut ingested = 0u32;
 
@@ -96,7 +97,7 @@ async fn poll_stories(
             continue;
         }
 
-        let msg = build_message(&item, account_id, &conv_external_id);
+        let msg = build_message(&item, account_id, &conv_id, &conv_external_id);
         db.upsert_message(&msg)?;
         ingested += 1;
     }
@@ -132,7 +133,7 @@ fn matches_filters(item: &HnItem, keywords: &[String], min_score: u32) -> bool {
     keywords.iter().any(|kw| title.contains(kw.as_str()))
 }
 
-fn build_message(item: &HnItem, account_id: &str, conv_external_id: &str) -> Message {
+fn build_message(item: &HnItem, account_id: &str, conv_id: &str, conv_external_id: &str) -> Message {
     let id = item.id;
     let title = item.title.as_deref().unwrap_or("(untitled)");
     let author = item.by.as_deref().unwrap_or("unknown");
@@ -157,7 +158,7 @@ fn build_message(item: &HnItem, account_id: &str, conv_external_id: &str) -> Mes
 
     Message {
         id: format!("{account_id}-{id}"),
-        conversation_id: conv_external_id.to_string(),
+        conversation_id: conv_id.to_string(),
         account_id: account_id.to_string(),
         connector: "hackernews".to_string(),
         external_id: format!("hackernews_{account_id}_{id}"),
@@ -230,7 +231,7 @@ mod tests {
     #[test]
     fn build_message_includes_all_fields() {
         let item = make_item(42, "Show HN: Cool Tool", 350);
-        let msg = build_message(&item, "hn", "hackernews_hn_feed");
+        let msg = build_message(&item, "hn", "hn-feed", "hackernews_hn_feed");
         assert_eq!(msg.id, "hn-42");
         assert_eq!(msg.sender, "author");
         assert!(msg.body.as_ref().unwrap().contains("Show HN: Cool Tool"));
