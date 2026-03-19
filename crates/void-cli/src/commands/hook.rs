@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 
+use crate::output::resolve_connector_filter;
 use void_core::hooks::{self, Hook, PromptConfig, Trigger};
 
 #[derive(Debug, Args)]
@@ -135,9 +136,11 @@ fn cmd_create(
         _ => anyhow::bail!("Provide --prompt or --prompt-file"),
     };
 
+    let resolved_connector = resolve_connector_filter(connector)?;
+
     let trigger = match trigger.to_lowercase().as_str() {
         "new_message" | "new-message" | "message" => Trigger::NewMessage {
-            connector: connector.map(|s| s.to_string()),
+            connector: resolved_connector,
         },
         "schedule" | "cron" => {
             let cron_expr =
@@ -234,11 +237,7 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
     Ok(())
 }
 
-fn cmd_log(
-    limit: usize,
-    hook_filter: Option<&str>,
-    detail_id: Option<i64>,
-) -> anyhow::Result<()> {
+fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>) -> anyhow::Result<()> {
     let config_path = void_core::config::default_config_path();
     let cfg = void_core::config::VoidConfig::load_or_default(&config_path);
     let db = void_core::db::Database::open(&cfg.db_path())?;

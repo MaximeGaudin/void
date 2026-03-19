@@ -3,6 +3,8 @@ use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 
+use crate::output::resolve_connector_filter;
+
 #[derive(Debug, Args)]
 pub struct MuteArgs {
     /// Channel/conversation names or IDs to mute (supports partial match)
@@ -13,7 +15,7 @@ pub struct MuteArgs {
     /// Filter by account (partial match on account_id)
     #[arg(long)]
     pub account: Option<String>,
-    /// Filter by connector (slack, gmail, whatsapp)
+    /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
     #[arg(long)]
     pub connector: Option<String>,
     /// List all currently muted conversations
@@ -22,11 +24,12 @@ pub struct MuteArgs {
 }
 
 pub fn run(args: &MuteArgs) -> anyhow::Result<()> {
+    let connector = resolve_connector_filter(args.connector.as_deref())?;
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
 
     if args.list {
-        return list_muted(&db, args);
+        return list_muted(&db, args.account.as_deref(), connector.as_deref());
     }
 
     if args.targets.is_empty() {
@@ -54,7 +57,7 @@ pub fn run(args: &MuteArgs) -> anyhow::Result<()> {
 
         let matches = db.list_channels(
             args.account.as_deref(),
-            args.connector.as_deref(),
+            connector.as_deref(),
             Some(target),
             100,
             true,
@@ -64,7 +67,7 @@ pub fn run(args: &MuteArgs) -> anyhow::Result<()> {
             &db,
             target,
             args.account.as_deref(),
-            args.connector.as_deref(),
+            connector.as_deref(),
         )?;
 
         let all_matches: Vec<_> = matches.into_iter().chain(dm_matches).collect();
@@ -95,13 +98,12 @@ pub fn run(args: &MuteArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn list_muted(db: &Database, args: &MuteArgs) -> anyhow::Result<()> {
-    let all = db.list_conversations(
-        args.account.as_deref(),
-        args.connector.as_deref(),
-        500,
-        true,
-    )?;
+fn list_muted(
+    db: &Database,
+    account: Option<&str>,
+    connector: Option<&str>,
+) -> anyhow::Result<()> {
+    let all = db.list_conversations(account, connector, 500, true)?;
     let muted: Vec<_> = all.into_iter().filter(|c| c.is_muted).collect();
 
     let items: Vec<_> = muted

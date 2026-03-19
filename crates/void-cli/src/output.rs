@@ -60,6 +60,48 @@ pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {
     }
 }
 
+const KNOWN_CONNECTORS: &str = "whatsapp, slack, gmail, calendar, telegram, hackernews";
+
+pub fn resolve_connector_filter(raw: Option<&str>) -> anyhow::Result<Option<String>> {
+    match raw {
+        None => Ok(None),
+        Some(s) => {
+            let ct = parse_connector_type(s).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown connector \"{s}\". Valid connectors: {KNOWN_CONNECTORS}"
+                )
+            })?;
+            Ok(Some(ct.to_string()))
+        }
+    }
+}
+
+pub fn resolve_connector_list(raw: Option<&str>) -> anyhow::Result<Option<Vec<String>>> {
+    match raw {
+        None => Ok(None),
+        Some(s) => {
+            let mut resolved = Vec::new();
+            for part in s.split(',') {
+                let trimmed = part.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let ct = parse_connector_type(trimmed).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Unknown connector \"{trimmed}\". Valid connectors: {KNOWN_CONNECTORS}"
+                    )
+                })?;
+                resolved.push(ct.to_string());
+            }
+            if resolved.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(resolved))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

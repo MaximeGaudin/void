@@ -10,6 +10,7 @@ use void_core::hooks::{self, HookRunner};
 use void_core::sync::SyncEngine;
 
 use crate::commands::connector_factory;
+use crate::output::{resolve_connector_filter, resolve_connector_list};
 
 #[derive(Debug, Args)]
 pub struct SyncArgs {
@@ -238,10 +239,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         anyhow::bail!("No accounts configured. Add accounts to your config.toml first.");
     }
 
-    let connector_filter: Option<Vec<String>> = args
-        .connectors
-        .as_ref()
-        .map(|c| c.split(',').map(|s| s.trim().to_lowercase()).collect());
+    let connector_filter = resolve_connector_list(args.connectors.as_deref())?;
 
     let store_path = cfg.store_path();
     std::fs::create_dir_all(&store_path)?;
@@ -265,7 +263,8 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     let db = Arc::new(Database::open(&cfg.db_path())?);
 
     if let Some(ref connector_type) = args.clear_connector {
-        let ct = connector_type.trim().to_lowercase();
+        let ct = resolve_connector_filter(Some(connector_type))?
+            .expect("resolve_connector_filter returned None for Some input");
         let (msgs, convs, evts, sync_st) = db.clear_connector_data(&ct)?;
         eprintln!(
             "Cleared {ct} data: {msgs} messages, {convs} conversations, {evts} events, {sync_st} sync states"

@@ -5,7 +5,7 @@ use void_core::config::{self, expand_tilde, AccountType, VoidConfig};
 use void_core::connector::Connector;
 use void_core::db::Database;
 
-use crate::output::OutputFormatter;
+use crate::output::{resolve_connector_filter, OutputFormatter};
 
 #[derive(Debug, Args)]
 pub struct CalendarArgs {
@@ -23,7 +23,7 @@ pub struct CalendarArgs {
     /// Filter by calendar account
     #[arg(long)]
     pub account: Option<String>,
-    /// Filter by connector (slack, gmail, whatsapp, calendar)
+    /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
     #[arg(long)]
     pub connector: Option<String>,
 }
@@ -179,6 +179,7 @@ pub async fn run(args: &CalendarArgs) -> anyhow::Result<()> {
 }
 
 fn run_list(args: &CalendarArgs) -> anyhow::Result<()> {
+    let connector = resolve_connector_filter(args.connector.as_deref())?;
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new();
@@ -216,7 +217,7 @@ fn run_list(args: &CalendarArgs) -> anyhow::Result<()> {
         from,
         to,
         args.account.as_deref(),
-        args.connector.as_deref(),
+        connector.as_deref(),
         200,
     )?;
     formatter.print_events(&events)

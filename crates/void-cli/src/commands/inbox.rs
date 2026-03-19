@@ -4,14 +4,14 @@ use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 use void_core::models::dedup_context_messages;
 
-use crate::output::OutputFormatter;
+use crate::output::{resolve_connector_filter, OutputFormatter};
 
 #[derive(Debug, Args)]
 pub struct InboxArgs {
     /// Filter by account (partial match on account_id)
     #[arg(long)]
     pub account: Option<String>,
-    /// Filter by connector (slack, gmail, whatsapp, calendar)
+    /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
     #[arg(long)]
     pub connector: Option<String>,
     /// Maximum number of results to return
@@ -27,6 +27,7 @@ pub struct InboxArgs {
 
 pub fn run(args: &InboxArgs, enrich_context: bool) -> anyhow::Result<()> {
     debug!(account = ?args.account, connector = ?args.connector, size = args.size, all = args.all, "inbox");
+    let connector = resolve_connector_filter(args.connector.as_deref())?;
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new();
@@ -34,7 +35,7 @@ pub fn run(args: &InboxArgs, enrich_context: bool) -> anyhow::Result<()> {
     let include_muted = args.include_muted || args.all;
     let mut messages = db.recent_messages(
         args.account.as_deref(),
-        args.connector.as_deref(),
+        connector.as_deref(),
         args.size,
         args.all,
         include_muted,
@@ -49,13 +50,14 @@ pub fn run(args: &InboxArgs, enrich_context: bool) -> anyhow::Result<()> {
 
 pub fn run_conversations(args: &InboxArgs) -> anyhow::Result<()> {
     debug!(account = ?args.account, connector = ?args.connector, size = args.size, "inbox conversations");
+    let connector = resolve_connector_filter(args.connector.as_deref())?;
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new();
 
     let conversations = db.list_conversations(
         args.account.as_deref(),
-        args.connector.as_deref(),
+        connector.as_deref(),
         args.size,
         args.include_muted,
     )?;
