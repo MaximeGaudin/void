@@ -244,7 +244,7 @@ impl Connector for WhatsAppConnector {
                                     if !stored.body_preview.is_empty() {
                                         let time = chrono::DateTime::from_timestamp(stored.timestamp, 0)
                                             .map(|utc| utc.with_timezone(&chrono::Local))
-                                            .map(|local| local.format("%H:%M").to_string())
+                                            .map(|local| local.format("%Y-%m-%d %H:%M:%S %Z").to_string())
                                             .unwrap_or_default();
                                         eprintln!(
                                             "[whatsapp:{}] {} {} — {}: {}",

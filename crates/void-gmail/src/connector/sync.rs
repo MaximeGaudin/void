@@ -102,7 +102,7 @@ impl GmailConnector {
                                     .and_then(|d| d.parse::<i64>().ok())
                                     .and_then(|ms| chrono::DateTime::from_timestamp(ms / 1000, 0))
                                     .map(|utc| utc.with_timezone(&chrono::Local))
-                                    .map(|local| local.format("%H:%M").to_string())
+                                    .map(|local| local.format("%Y-%m-%d %H:%M:%S %Z").to_string())
                                     .unwrap_or_default();
                                 let direction = if is_sent { "sent" } else { "new" };
                                 eprintln!(

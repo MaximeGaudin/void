@@ -260,7 +260,7 @@ impl SlackConnector {
                     .unwrap_or_else(|| channel_id.to_string());
                 let time = chrono::DateTime::from_timestamp(timestamp, 0)
                     .map(|utc| utc.with_timezone(&chrono::Local))
-                    .map(|local| local.format("%H:%M").to_string())
+                    .map(|local| local.format("%Y-%m-%d %H:%M:%S %Z").to_string())
                     .unwrap_or_default();
                 let preview: String = message.body.as_deref().unwrap_or("").chars().take(80).collect();
                 eprintln!(
