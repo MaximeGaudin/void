@@ -4,6 +4,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use void_core::db::Database;
 use void_core::models::{Conversation, ConversationKind, Message};
+use void_core::progress::BackfillProgress;
 
 use crate::api::{HnClient, HnItem};
 
@@ -73,38 +74,47 @@ async fn poll_stories(
     min_score: u32,
 ) -> anyhow::Result<()> {
     let story_ids = client.top_stories().await.unwrap_or_default();
+    let total = story_ids.len() as u64;
 
     let conv_id = format!("{account_id}-feed");
     let conv_external_id = format!("hackernews_{account_id}_feed");
-    let mut ingested = 0u32;
+
+    let mut progress = BackfillProgress::new(&format!("hackernews:{account_id}"), "stories")
+        .with_secondary("ingested");
+    progress.set_items_total(total);
 
     for id in story_ids {
         let external_id = format!("hackernews_{account_id}_{id}");
         if db.message_exists(account_id, &external_id)? {
+            progress.inc(1);
             continue;
         }
 
         let item = match client.get_item(id).await {
             Ok(Some(item)) => item,
-            Ok(None) => continue,
+            Ok(None) => {
+                progress.inc(1);
+                continue;
+            }
             Err(e) => {
                 warn!(id, error = %e, "failed to fetch HN item");
+                progress.inc(1);
                 continue;
             }
         };
 
         if !matches_filters(&item, keywords, min_score) {
+            progress.inc(1);
             continue;
         }
 
         let msg = build_message(&item, account_id, &conv_id, &conv_external_id);
         db.upsert_message(&msg)?;
-        ingested += 1;
+        progress.inc(1);
+        progress.inc_secondary(1);
     }
 
-    if ingested > 0 {
-        info!(account_id, ingested, "new HN stories ingested");
-    }
+    progress.finish();
 
     db.set_sync_state(
         account_id,
