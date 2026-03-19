@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+When you need to install the void binary, ALWAYS use `./scripts/build-install.sh`. NEVER use `cp` or manual copy to `/Users/mgaudin/bin/void`. The script stops the running sync daemon first and does an atomic rename, which prevents macOS from creating unkillable zombie processes.
