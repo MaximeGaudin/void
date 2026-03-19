@@ -1,6 +1,6 @@
 # Adding a Connector
 
-This guide walks through every file you need to touch when adding a new communication connector to Void. It follows the same pattern used by the WhatsApp, Slack, Gmail, and Calendar connectors.
+This guide walks through every file you need to touch when adding a new communication connector to Void. It follows the same pattern used by the WhatsApp, Slack, Gmail, Calendar, Telegram, and Hacker News connectors.
 
 Use this as a checklist. Each step lists the exact files and code patterns to extend.
 
@@ -36,7 +36,7 @@ crates/
         extract.rs                  # Field extraction from platform messages
   void-cli/src/
     main.rs                         # Command enum
-    output.rs                       # parse_connector_type, badge_from_connector
+    output.rs                       # parse_connector_type (aliases + type resolution)
     commands/
       mod.rs                        # Module declarations
       connector_factory.rs          # Builds connectors from config
@@ -66,6 +66,8 @@ pub enum ConnectorType {
     Slack,
     Gmail,
     Calendar,
+    Telegram,
+    HackerNews,
     Acme,  // ← add
 }
 ```
@@ -102,8 +104,13 @@ impl ConnectorType {
 
 ```rust
 pub enum AccountType {
-    // ...existing...
-    Acme,
+    WhatsApp,
+    Slack,
+    Gmail,
+    Calendar,
+    Telegram,
+    HackerNews,
+    Acme,  // ← add
 }
 
 // In Display impl:
@@ -406,6 +413,7 @@ Use `db.get_sync_state` / `db.set_sync_state` to store cursors so the connector 
 | Slack | `backfill_done` | `"1"` | Skips initial backfill; catch-up uses `latest_message_timestamp` |
 | Calendar | `sync_token:{cal_id}` | Google sync token | `events.list` returns only changes since token |
 | Telegram | (session file) | grammers update state | `stream_updates(catch_up: true)` replays missed updates |
+| Hacker News | `last_max_item_id` | Item ID integer | Only fetches stories newer than the stored ID |
 
 Your connector should follow the same pattern — persist whatever cursor the platform provides after each sync cycle.
 
@@ -482,10 +490,13 @@ Every model has two ID fields — `id` (the primary key) and `external_id` (uniq
 |-------|--------------|----------|
 | `id` (PK) | `{account_id}-{platform_chat_id}` | `{account_id}-{platform_message_id}` |
 | `external_id` | `acme_{account_id}_{platform_chat_id}` | `acme_{account_id}_{platform_message_id}` |
-| `conversation_id` | — | Set to the conversation's `id` value |
+| `conversation_id` | — | **Must** be the conversation's `id` (PK), not its `external_id` |
+| `context_id` | — | Typically set to `conv_external_id` (for grouping related messages) |
 | `connector` | `"acme"` | `"acme"` |
 
 The `connector` field must match `ConnectorType::Display` (lowercase).
+
+> **Common pitfall:** `message.conversation_id` has a FOREIGN KEY constraint referencing `conversations(id)`. If you accidentally set it to `conv_external_id` instead of `conv_id`, inserts will fail with `FOREIGN KEY constraint failed`. The `context_id` field has no such constraint and can store any grouping key.
 
 ### Database methods your sync will use
 
@@ -711,18 +722,22 @@ let choice = select(
         "Gmail",
         "Slack",
         "WhatsApp",
-        "Acme",           // ← add
+        "Telegram",
         "Google Calendar",
         "Google Drive",
+        "Hacker News",
+        "Acme",           // ← add
     ],
 );
 // ...
 // Add a match arm for your index → setup_acme(cfg, store_path, true).await?
 ```
 
-**`run_full_wizard()`** — add the setup call in sequence:
+**`run_full_wizard()`** — add the setup call in sequence (after the existing connectors):
 
 ```rust
+// Existing calls: setup_gmail, setup_slack, setup_whatsapp, setup_telegram,
+//                 setup_calendar, setup_gdrive, setup_hackernews
 separator();
 setup_acme(cfg, store_path, false).await?;
 ```
@@ -771,17 +786,20 @@ async fn setup_acme(
 
 ### 8.7 `crates/void-cli/src/output.rs`
 
-**`parse_connector_type()`** — add the alias:
+**`parse_connector_type()`** — add aliases for your connector. Each connector has a full name and one or more short aliases:
 
 ```rust
+// Existing patterns:
+// "whatsapp" | "wa" => Some(ConnectorType::WhatsApp),
+// "gmail" | "gm" | "email" => Some(ConnectorType::Gmail),
+// "calendar" | "cal" | "ca" => Some(ConnectorType::Calendar),
+// "telegram" | "tg" => Some(ConnectorType::Telegram),
+// "hackernews" | "hn" => Some(ConnectorType::HackerNews),
+
 "acme" | "am" => Some(ConnectorType::Acme),
 ```
 
-**`badge_from_connector()`** — add the badge:
-
-```rust
-"acme" => "[AC]".into(),
-```
+Note: Badges are defined in `ConnectorType::badge()` (Step 1), not in `output.rs`.
 
 ### 8.8 `crates/void-cli/src/commands/reply.rs`
 
@@ -881,8 +899,9 @@ cargo build --release
 
 Common issues:
 - Missing match arms — the compiler will catch exhaustive-match errors for `ConnectorType`, `AccountType`, and `AccountSettings`
-- Forgotten `Display`/`badge` arm — causes a runtime panic or incomplete output
+- Forgotten `Display`/`badge()` arm — causes a runtime panic or incomplete output
 - `find_account_by_connector` not updated — connector won't be found when replying or archiving
+- `parse_connector_type` not updated — `--connector acme` and `--via acme` won't resolve
 
 ---
 
@@ -921,7 +940,7 @@ Use this as a final review checklist:
 - [ ] `void-cli/src/commands/acme.rs` — subcommand file
 - [ ] `void-cli/src/commands/connector_factory.rs` — build arm
 - [ ] `void-cli/src/commands/setup.rs` — `setup_acme()` + menu + wizard + show_config + rename
-- [ ] `void-cli/src/output.rs` — `parse_connector_type` + `badge_from_connector`
+- [ ] `void-cli/src/output.rs` — `parse_connector_type` (aliases)
 - [ ] `void-cli/src/commands/reply.rs` — `build_reply_id`
 - [ ] `void-cli/src/commands/sync.rs` — session cleanup in `--clear_connector`
 - [ ] `void-agent/src/prompt.rs` — system prompt updated
