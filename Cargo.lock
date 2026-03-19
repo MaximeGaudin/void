@@ -4409,6 +4409,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64",
+ "chrono",
  "qr2term",
  "serde_json",
  "thiserror 2.0.18",

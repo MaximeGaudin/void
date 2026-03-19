@@ -26,7 +26,6 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
-use extract::extract_text;
 use media::upload_and_build_media_message;
 use send::{build_wa_message, parse_reply_id};
 use sync::{handle_history_sync, handle_message, render_qr};
@@ -236,21 +235,24 @@ impl Connector for WhatsAppConnector {
                                 .clone()
                                 .unwrap_or_else(|| config_id.clone());
                             match handle_message(&db, &account_id, &msg, &info) {
-                                Ok(()) => {
+                                Ok(Some(stored)) => {
                                     let sender = if info.source.is_from_me {
                                         "me".to_string()
                                     } else {
                                         info.push_name.clone()
                                     };
-                                    let preview = extract_text(&msg).unwrap_or_default();
-                                    let preview: String = preview.chars().take(80).collect();
-                                    if !preview.is_empty() {
+                                    if !stored.body_preview.is_empty() {
+                                        let time = chrono::DateTime::from_timestamp(stored.timestamp, 0)
+                                            .map(|utc| utc.with_timezone(&chrono::Local))
+                                            .map(|local| local.format("%H:%M").to_string())
+                                            .unwrap_or_default();
                                         eprintln!(
-                                            "[whatsapp:{}] new: {} — {}",
-                                            account_id, sender, preview
+                                            "[whatsapp:{}] {} {} — {}: {}",
+                                            account_id, time, stored.conv_name, sender, stored.body_preview
                                         );
                                     }
                                 }
+                                Ok(None) => {}
                                 Err(e) => {
                                     warn!("Failed to store WA message: {e}");
                                 }

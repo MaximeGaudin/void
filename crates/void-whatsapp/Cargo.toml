@@ -22,3 +22,4 @@ wa-rs-ureq-http = "0.2"
 wa-rs-proto = "0.2"
 qr2term = "0.3"
 base64 = { workspace = true }
+chrono = { workspace = true }

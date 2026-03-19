@@ -92,16 +92,23 @@ impl GmailConnector {
                                 }
 
                                 let from = msg.get_header("From").unwrap_or_default();
+                                let sender = parse_email_name(&from);
                                 let subject = msg
                                     .get_header("Subject")
                                     .unwrap_or_else(|| "(no subject)".into());
+                                let time = msg
+                                    .internal_date
+                                    .as_deref()
+                                    .and_then(|d| d.parse::<i64>().ok())
+                                    .and_then(|ms| chrono::DateTime::from_timestamp(ms / 1000, 0))
+                                    .map(|utc| utc.with_timezone(&chrono::Local))
+                                    .map(|local| local.format("%H:%M").to_string())
+                                    .unwrap_or_default();
                                 let direction = if is_sent { "sent" } else { "new" };
                                 eprintln!(
-                                    "[gmail:{}] {}: {} — {}",
+                                    "[gmail:{}] {} ({direction}) {subject} — {sender}",
                                     self.display_account_id(),
-                                    direction,
-                                    from,
-                                    subject
+                                    time,
                                 );
                                 self.store_message(db, &msg)?;
                             }

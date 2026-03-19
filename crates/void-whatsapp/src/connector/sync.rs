@@ -160,21 +160,28 @@ pub(super) fn handle_history_sync(
     Ok(())
 }
 
+pub(super) struct StoredMessageInfo {
+    pub conv_name: String,
+    pub body_preview: String,
+    pub timestamp: i64,
+}
+
 pub(super) fn handle_message(
     db: &Database,
     account_id: &str,
     msg: &WaMessage,
     info: &MessageInfo,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<StoredMessageInfo>> {
     if is_system_message(msg) {
         debug!(msg_id = %info.id, "skipping system message");
-        return Ok(());
+        return Ok(None);
     }
 
     let base = msg.get_base_message();
 
     if let Some(ref reaction) = base.reaction_message {
-        return handle_reaction(db, account_id, reaction, info);
+        handle_reaction(db, account_id, reaction, info)?;
+        return Ok(None);
     }
 
     let chat_jid = info.source.chat.to_string();
@@ -214,7 +221,7 @@ pub(super) fn handle_message(
 
     if body.is_none() && media_type.is_none() {
         debug!(msg_id = %info.id, "skipping message with no extractable content");
-        return Ok(());
+        return Ok(None);
     }
 
     let msg_ts = info.timestamp.timestamp();
@@ -257,8 +264,21 @@ pub(super) fn handle_message(
     };
     db.upsert_message(&message)?;
 
-    debug!(msg_id = %info.id, chat = %chat_jid, "stored WA message");
-    Ok(())
+    let conv_name = conversation.name.unwrap_or(chat_jid);
+    let body_preview: String = message
+        .body
+        .as_deref()
+        .unwrap_or("")
+        .chars()
+        .take(80)
+        .collect();
+
+    debug!(msg_id = %info.id, chat = %conv_name, "stored WA message");
+    Ok(Some(StoredMessageInfo {
+        conv_name,
+        body_preview,
+        timestamp: msg_ts,
+    }))
 }
 
 fn handle_reaction(

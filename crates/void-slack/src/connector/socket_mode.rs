@@ -252,10 +252,20 @@ impl SlackConnector {
 
         match db.upsert_message(&message) {
             Ok(_) => {
-                let preview: String = text.chars().take(80).collect();
+                let conv_name = db
+                    .get_conversation(&conv_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|c| c.name)
+                    .unwrap_or_else(|| channel_id.to_string());
+                let time = chrono::DateTime::from_timestamp(timestamp, 0)
+                    .map(|utc| utc.with_timezone(&chrono::Local))
+                    .map(|local| local.format("%H:%M").to_string())
+                    .unwrap_or_default();
+                let preview: String = message.body.as_deref().unwrap_or("").chars().take(80).collect();
                 eprintln!(
-                    "[slack:{}] new: {} — {}",
-                    self.account_id, sender_name, preview
+                    "[slack:{}] {} {} — {}: {}",
+                    self.account_id, time, conv_name, sender_name, preview
                 );
             }
             Err(e) => {
