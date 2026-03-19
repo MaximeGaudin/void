@@ -1,4 +1,3 @@
-use anyhow::Context;
 use grammers_client::client::Client;
 use grammers_client::message::InputMessage;
 use grammers_client::peer::Peer;
@@ -34,12 +33,12 @@ pub(crate) async fn resolve_peer(client: &Client, input: &str) -> anyhow::Result
     }
 
     let username = input.strip_prefix('@').unwrap_or(input);
-    if let Some(peer) = client
-        .resolve_username(username)
-        .await
-        .context("failed to resolve username")?
-    {
-        return Ok(peer);
+    match client.resolve_username(username).await {
+        Ok(Some(peer)) => return Ok(peer),
+        Ok(None) => {}
+        Err(e) => {
+            tracing::debug!(input, error = %e, "resolve_username failed, falling back to search");
+        }
     }
 
     let results = client.search_peer(input, 5).await?;
