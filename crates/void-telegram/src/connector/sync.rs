@@ -78,7 +78,7 @@ async fn backfill_dialogs(
         };
 
         let conv = Conversation {
-            id: String::new(),
+            id: format!("{account_id}-{chat_id}"),
             account_id: account_id.to_string(),
             connector: "telegram".to_string(),
             external_id: conv_external_id.clone(),
@@ -177,7 +177,7 @@ async fn handle_new_message(
     };
 
     let conv = Conversation {
-        id: String::new(),
+        id: format!("{account_id}-{chat_id}"),
         account_id: account_id.to_string(),
         connector: "telegram".to_string(),
         external_id: conv_external_id.clone(),
@@ -210,9 +210,10 @@ fn tg_message_to_void(msg: &TgMessage, account_id: &str, conv_external_id: &str)
         .reply_to_message_id()
         .map(|id| format!("telegram_{account_id}_{id}"));
 
+    let msg_id = msg.id();
     Message {
-        id: String::new(),
-        conversation_id: String::new(),
+        id: format!("{account_id}-{msg_id}"),
+        conversation_id: conv_external_id.to_string(),
         account_id: account_id.to_string(),
         connector: "telegram".to_string(),
         external_id,
