@@ -77,7 +77,6 @@ async fn poll_stories(
     let total = story_ids.len() as u64;
 
     let conv_id = format!("{account_id}-feed");
-    let conv_external_id = format!("hackernews_{account_id}_feed");
 
     let mut progress = BackfillProgress::new(&format!("hackernews:{account_id}"), "stories")
         .with_secondary("ingested");
@@ -108,7 +107,7 @@ async fn poll_stories(
             continue;
         }
 
-        let msg = build_message(&item, account_id, &conv_id, &conv_external_id);
+        let msg = build_message(&item, account_id, &conv_id);
         db.upsert_message(&msg)?;
         progress.inc(1);
         progress.inc_secondary(1);
@@ -143,7 +142,7 @@ fn matches_filters(item: &HnItem, keywords: &[String], min_score: u32) -> bool {
     keywords.iter().any(|kw| title.contains(kw.as_str()))
 }
 
-fn build_message(item: &HnItem, account_id: &str, conv_id: &str, conv_external_id: &str) -> Message {
+fn build_message(item: &HnItem, account_id: &str, conv_id: &str) -> Message {
     let id = item.id;
     let title = item.title.as_deref().unwrap_or("(untitled)");
     let author = item.by.as_deref().unwrap_or("unknown");
@@ -181,7 +180,7 @@ fn build_message(item: &HnItem, account_id: &str, conv_id: &str, conv_external_i
         reply_to_id: None,
         media_type: None,
         metadata: Some(metadata),
-        context_id: Some(conv_external_id.to_string()),
+        context_id: None,
         context: None,
     }
 }
@@ -241,7 +240,7 @@ mod tests {
     #[test]
     fn build_message_includes_all_fields() {
         let item = make_item(42, "Show HN: Cool Tool", 350);
-        let msg = build_message(&item, "hn", "hn-feed", "hackernews_hn_feed");
+        let msg = build_message(&item, "hn", "hn-feed");
         assert_eq!(msg.id, "hn-42");
         assert_eq!(msg.sender, "author");
         assert!(msg.body.as_ref().unwrap().contains("Show HN: Cool Tool"));
