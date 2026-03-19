@@ -202,9 +202,7 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
             let config_path = void_core::config::default_config_path();
             let cfg = void_core::config::VoidConfig::load_or_default(&config_path);
             let db = void_core::db::Database::open(&cfg.db_path())?;
-            let msg = db
-                .get_message(mid)?
-                .ok_or_else(|| anyhow::anyhow!("Message '{}' not found in database", mid))?;
+            let msg = super::resolve::resolve_message(&db, mid)?;
             Some(msg)
         }
         (Trigger::NewMessage { .. }, None) => {

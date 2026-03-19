@@ -88,9 +88,7 @@ async fn run_react(args: &ReactArgs) -> anyhow::Result<()> {
     let cfg = load_config()?;
     let db = Database::open(&cfg.db_path())?;
 
-    let msg = db
-        .get_message(&args.message_id)?
-        .ok_or_else(|| anyhow::anyhow!("Message not found: {}", args.message_id))?;
+    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
     if msg.connector != "slack" {
         anyhow::bail!(
@@ -117,9 +115,7 @@ async fn run_edit(args: &EditArgs) -> anyhow::Result<()> {
     let cfg = load_config()?;
     let db = Database::open(&cfg.db_path())?;
 
-    let msg = db
-        .get_message(&args.message_id)?
-        .ok_or_else(|| anyhow::anyhow!("Message not found: {}", args.message_id))?;
+    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
     if msg.connector != "slack" {
         anyhow::bail!(

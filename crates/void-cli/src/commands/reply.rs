@@ -31,9 +31,7 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
 
     let db = Database::open(&cfg.db_path())?;
 
-    let msg = db
-        .get_message(&args.message_id)?
-        .ok_or_else(|| anyhow::anyhow!("Message not found: {}", args.message_id))?;
+    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
     let conv = db
         .get_conversation(&msg.conversation_id)?

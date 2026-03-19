@@ -29,9 +29,9 @@ pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
     let mut results = Vec::new();
 
     for message_id in &args.message_ids {
-        let msg = match db.get_message(message_id)? {
-            Some(m) => m,
-            None => {
+        let msg = match super::resolve::resolve_message(&db, message_id) {
+            Ok(m) => m,
+            Err(_) => {
                 warn!(message_id, "message not found, skipping");
                 results.push(serde_json::json!({
                     "message_id": message_id,

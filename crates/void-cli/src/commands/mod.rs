@@ -13,6 +13,7 @@ pub mod inbox;
 pub mod messages;
 pub mod mute;
 pub mod reply;
+pub mod resolve;
 pub mod search;
 pub mod send;
 pub mod setup;

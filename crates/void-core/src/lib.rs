@@ -3,6 +3,7 @@ pub mod connector;
 pub mod db;
 pub mod error;
 pub mod hooks;
+pub mod links;
 pub mod models;
 pub mod progress;
 pub mod sync;
