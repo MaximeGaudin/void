@@ -288,12 +288,13 @@ impl Database {
         since: Option<i64>,
         until: Option<i64>,
     ) -> Result<Vec<Message>, DbError> {
+        let suffix_pattern = format!("%-{conversation_id}");
         let mut sql = String::from(
             "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
-             FROM messages WHERE conversation_id = ?1",
+             FROM messages WHERE (conversation_id = ?1 OR conversation_id LIKE ?2)",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(conversation_id.to_string())];
+            vec![Box::new(conversation_id.to_string()), Box::new(suffix_pattern)];
 
         if let Some(s) = since {
             sql.push_str(&format!(" AND timestamp >= ?{}", param_values.len() + 1));
@@ -319,11 +320,12 @@ impl Database {
     }
 
     pub fn get_message(&self, id: &str) -> Result<Option<Message>, DbError> {
+        let suffix_pattern = format!("%-{id}");
         self.conn()?
             .query_row(
                 "SELECT id, conversation_id, account_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
-                 FROM messages WHERE id = ?1",
-                params![id],
+                 FROM messages WHERE id = ?1 OR id LIKE ?2",
+                params![id, suffix_pattern],
                 row::row_to_message,
             )
             .optional()
