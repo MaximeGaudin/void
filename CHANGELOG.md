@@ -5,6 +5,51 @@ All notable changes to Void CLI are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-19
+
+### Added
+
+- **Telegram connector** — full MTProto-based connector using grammers with QR code login, real-time sync, send, reply, and deterministic message IDs
+- **Hacker News connector** — monitor top stories with keyword/score filtering, backfill progress reporting, and real-time polling
+- **Gmail** — Exposed file attachment IDs in search, thread, and sync results
+- **Slack** — Resolve permalink URLs across all commands (`send`, `reply`, `search`, etc.)
+- **Sync** — Improved real-time message logging with datetime, conversation name, and sender
+- **Sync** — Full timestamps in daemon log lines
+- **Docs** — Added connector runbook for contributors with ID conventions and concurrency patterns
+
+### Changed
+
+- Removed `--pretty` flag — output is always JSON
+- Renamed "account" to "connection" across the entire codebase (CLI flags, config, database, commands)
+- License changed from MIT to GPL-3.0-only
+- Replaced unmaintained `daemonize` crate with manual double-fork daemon
+- **Hacker News** — Only poll top stories from HN API, dropped new stories endpoint
+- Updated and cleaned up dependencies; removed unused crates
+
+### Fixed
+
+- **Gmail** — Skipped sent-only messages in incremental sync
+- **Gmail** — Handled padded base64 in attachment/body decoding
+- **Gmail** — RFC 2047 encode non-ASCII email subject headers
+- **Slack** — Sync missing messages with proper pagination, fixed filter logic, handled `file_share` subtype
+- **Slack** — Resolve `#channel` names to IDs for file uploads
+- **Telegram** — Replaced libsql-backed session with JSON file storage for portability
+- **Telegram** — Seed session with production DC addresses and handle DC migration during QR login
+- **Telegram** — Poll frequently during QR login to avoid token expiry
+- **Telegram** — Fall through to `search_peer` when `resolve_username` fails
+- **Telegram** — Use conversation PK (not `external_id`) for `message.conversation_id`
+- **Hacker News** — Use conversation ID for message foreign key
+- **Hacker News** — Removed meaningless context field from messages
+- **WhatsApp** — Suppressed noisy `wa-rs` notification handler warning
+- **Sync** — Let sync overwrite archive state instead of using sticky MAX
+- **Sync** — Auto-detect and remove stale lock files
+- **Sync** — Stop daemon before installing new binary to prevent zombie processes
+- **Sync** — Start real-time listeners before backfill to avoid missing messages
+- **Sync** — Enforce sync contract across all connectors
+- Added HTTP timeouts to prevent CLI hangs
+- Validated and normalized `--connector` flag across all commands
+- Partial ID matching in `list_messages` and `get_message`
+
 ## [0.2.0] - 2026-03-16
 
 ### Added
