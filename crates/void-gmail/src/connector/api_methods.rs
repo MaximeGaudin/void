@@ -72,7 +72,7 @@ impl GmailConnector {
             .data
             .ok_or_else(|| anyhow::anyhow!("attachment has no data"))?;
         URL_SAFE_NO_PAD
-            .decode(&data)
+            .decode(data.trim_end_matches('='))
             .map_err(|e| anyhow::anyhow!("failed to decode attachment: {e}"))
     }
 
