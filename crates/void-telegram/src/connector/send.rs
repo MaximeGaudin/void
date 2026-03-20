@@ -3,13 +3,15 @@ use grammers_client::message::InputMessage;
 use grammers_client::peer::Peer;
 use void_core::models::MessageContent;
 
-pub(crate) fn build_input_message(content: &MessageContent) -> InputMessage {
+fn text_for_message_content(content: &MessageContent) -> &str {
     match content {
-        MessageContent::Text(text) => InputMessage::new().text(text),
-        MessageContent::File { caption, .. } => {
-            InputMessage::new().text(caption.as_deref().unwrap_or(""))
-        }
+        MessageContent::Text(text) => text.as_str(),
+        MessageContent::File { caption, .. } => caption.as_deref().unwrap_or(""),
     }
+}
+
+pub(crate) fn build_input_message(content: &MessageContent) -> InputMessage {
+    InputMessage::new().text(text_for_message_content(content))
 }
 
 pub(crate) fn parse_reply_id(message_id: &str) -> anyhow::Result<(String, String)> {
@@ -47,4 +49,65 @@ pub(crate) async fn resolve_peer(client: &Client, input: &str) -> anyhow::Result
     }
 
     anyhow::bail!("could not resolve peer: {input}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn parse_reply_id_valid() {
+        let (conv, msg) = parse_reply_id("telegram_conn_1_-100123:telegram_conn_1_42").unwrap();
+        assert_eq!(conv, "telegram_conn_1_-100123");
+        assert_eq!(msg, "telegram_conn_1_42");
+    }
+
+    #[test]
+    fn parse_reply_id_splits_on_first_colon_only() {
+        let (a, b) = parse_reply_id("left:mid:right").unwrap();
+        assert_eq!(a, "left");
+        assert_eq!(b, "mid:right");
+    }
+
+    #[test]
+    fn parse_reply_id_invalid_no_colon() {
+        let err = parse_reply_id("no-separator-here").unwrap_err();
+        assert!(
+            err.to_string().contains("invalid reply ID format"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn text_for_message_content_text() {
+        assert_eq!(
+            text_for_message_content(&MessageContent::Text("hello".into())),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn text_for_message_content_file_with_caption() {
+        assert_eq!(
+            text_for_message_content(&MessageContent::File {
+                path: PathBuf::from("/tmp/x.png"),
+                caption: Some("see this".into()),
+                mime_type: None,
+            }),
+            "see this"
+        );
+    }
+
+    #[test]
+    fn text_for_message_content_file_without_caption() {
+        assert_eq!(
+            text_for_message_content(&MessageContent::File {
+                path: PathBuf::from("/tmp/x.png"),
+                caption: None,
+                mime_type: None,
+            }),
+            ""
+        );
+    }
 }

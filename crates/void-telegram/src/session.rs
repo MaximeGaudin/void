@@ -405,3 +405,51 @@ impl Drop for JsonFileSession {
         self.save();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::JsonFileSession;
+    use grammers_session::Session;
+    use std::env::temp_dir;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_session_path() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        temp_dir().join(format!("void_telegram_session_test_{nanos}.json"))
+    }
+
+    #[test]
+    fn load_or_create_missing_file_has_default_home_dc() {
+        let path = unique_session_path();
+        let _ = std::fs::remove_file(&path);
+        let s = JsonFileSession::load_or_create(&path);
+        assert_eq!(s.home_dc_id(), 2);
+        assert!(s.dc_option(1).is_some());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_or_create_corrupt_json_falls_back_to_defaults() {
+        let path = unique_session_path();
+        std::fs::write(&path, "not valid json {{{").unwrap();
+        let s = JsonFileSession::load_or_create(&path);
+        assert_eq!(s.home_dc_id(), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn set_home_dc_id_persists_across_reload() {
+        let path = unique_session_path();
+        let _ = std::fs::remove_file(&path);
+        {
+            let s = JsonFileSession::load_or_create(&path);
+            s.set_home_dc_id(4).await;
+        }
+        let s2 = JsonFileSession::load_or_create(&path);
+        assert_eq!(s2.home_dc_id(), 4);
+        let _ = std::fs::remove_file(&path);
+    }
+}
