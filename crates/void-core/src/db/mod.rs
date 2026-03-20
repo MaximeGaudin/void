@@ -1,4 +1,7 @@
 //! Database access layer for conversations, messages, events, and sync state.
+//!
+//! SQL and row mapping live in submodules (`conversations`, `messages`, …); this file holds
+//! `Database` construction and the public type.
 
 mod conversations;
 mod database_access;
