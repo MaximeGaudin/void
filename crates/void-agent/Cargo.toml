@@ -7,7 +7,7 @@ rust-version.workspace = true
 description = "Agentic mode for the Void CLI — LLM-powered communication assistant"
 
 [dependencies]
-rig-core = "0.32"
+rig-core = "0.33"
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
