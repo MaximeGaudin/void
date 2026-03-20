@@ -111,8 +111,14 @@ void calendar
 |---------|-------------|
 | `void gmail search` | Search Gmail (Gmail query syntax) |
 | `void gmail thread <id>` | View a full email thread |
-| `void gmail draft create` | Create an email draft (never sends directly) |
+| `void gmail url <id>` | Generate Gmail web URL for a thread |
 | `void gmail labels` | List Gmail labels |
+| `void gmail label <id>` | Modify labels on a thread or message |
+| `void gmail batch-modify` | Batch modify labels on multiple messages |
+| `void gmail drafts` | List drafts |
+| `void gmail draft create` | Create an email draft (never sends directly) |
+| `void gmail draft update <id>` | Update an existing draft |
+| `void gmail draft delete <id>` | Delete a draft |
 | `void gmail attachment` | Download an attachment |
 | `void slack react <id>` | Add an emoji reaction |
 | `void slack edit <id>` | Edit a Slack message |
@@ -143,6 +149,7 @@ void calendar
 | `void hook enable <name>` | Enable a hook |
 | `void hook disable <name>` | Disable a hook |
 | `void hook test <name>` | Test a hook (dry-run) |
+| `void hook log` | View hook execution logs |
 
 ### System
 
