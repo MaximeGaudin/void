@@ -12,6 +12,7 @@ use void_core::db::Database;
 use void_core::models::*;
 
 use crate::api::SlackApiClient;
+use crate::error::SlackError;
 
 mod mapping;
 mod socket_mode;
@@ -33,13 +34,13 @@ impl SlackConnector {
         user_token: &str,
         app_token: &str,
         exclude_channels: Vec<String>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, SlackError> {
+        Ok(Self {
             connection_id: connection_id.to_string(),
-            api: SlackApiClient::new(user_token),
+            api: SlackApiClient::new(user_token)?,
             app_token: app_token.to_string(),
             exclude_channels,
-        }
+        })
     }
 
     pub async fn react(&self, channel: &str, ts: &str, emoji: &str) -> anyhow::Result<()> {
@@ -534,7 +535,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
         };
@@ -592,7 +593,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
         };
@@ -634,7 +635,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
         };
@@ -712,7 +713,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
         };
@@ -773,7 +774,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec!["random".to_string()],
         };
@@ -833,7 +834,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
         };
@@ -948,7 +949,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
         };
@@ -1050,7 +1051,7 @@ mod tests {
 
         let connector = SlackConnector {
             connection_id: "test-slack".to_string(),
-            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()),
+            api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
             app_token: "xapp-test".to_string(),
             exclude_channels: vec![],
         };

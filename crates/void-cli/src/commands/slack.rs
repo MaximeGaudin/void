@@ -274,7 +274,7 @@ fn build_slack_connector(
         &user_token,
         &app_token,
         exclude_channels,
-    ))
+    )?)
 }
 
 #[cfg(test)]

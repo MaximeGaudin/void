@@ -16,29 +16,29 @@ pub struct SlackApiClient {
 }
 
 impl SlackApiClient {
-    fn build_http_client() -> reqwest::Client {
+    fn build_http_client() -> Result<reqwest::Client, SlackError> {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .connect_timeout(std::time::Duration::from_secs(10))
             .build()
-            .expect("failed to build HTTP client")
+            .map_err(|e| SlackError::Other(format!("failed to build HTTP client: {e}")))
     }
 
-    pub fn new(user_token: &str) -> Self {
-        Self {
-            http: Self::build_http_client(),
+    pub fn new(user_token: &str) -> Result<Self, SlackError> {
+        Ok(Self {
+            http: Self::build_http_client()?,
             user_token: user_token.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
-        }
+        })
     }
 
     #[cfg(test)]
-    pub fn with_base_url(user_token: &str, base_url: &str) -> Self {
-        Self {
-            http: Self::build_http_client(),
+    pub fn with_base_url(user_token: &str, base_url: &str) -> Result<Self, SlackError> {
+        Ok(Self {
+            http: Self::build_http_client()?,
             user_token: user_token.to_string(),
             base_url: base_url.to_string(),
-        }
+        })
     }
 
     /// Extract `Retry-After` header (seconds) from a response, default to `DEFAULT_RETRY_SECS`.

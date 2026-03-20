@@ -33,7 +33,10 @@ pub fn compose_rfc2822_with_attachment(
     let wrapped = encoded
         .as_bytes()
         .chunks(76)
-        .map(|c| std::str::from_utf8(c).unwrap())
+        .map(|c| {
+            // SAFETY: STANDARD base64 alphabet is ASCII; each chunk is valid UTF-8.
+            unsafe { std::str::from_utf8_unchecked(c) }
+        })
         .collect::<Vec<_>>()
         .join("\r\n");
 

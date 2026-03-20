@@ -24,7 +24,7 @@ pub fn build_connector(
             user_token,
             app_token,
             exclude_channels.clone(),
-        ))),
+        )?)),
         (ConnectorType::Gmail, ConnectionSettings::Gmail { credentials_file }) => {
             let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
             Ok(Arc::new(void_gmail::connector::GmailConnector::new(

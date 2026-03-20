@@ -263,8 +263,9 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     let db = Arc::new(Database::open(&cfg.db_path())?);
 
     if let Some(ref connector_type) = args.clear_connector {
-        let ct = resolve_connector_filter(Some(connector_type))?
-            .expect("resolve_connector_filter returned None for Some input");
+        let ct = resolve_connector_filter(Some(connector_type))?.ok_or_else(|| {
+            anyhow::anyhow!("internal error: connector type missing after successful parse")
+        })?;
         let (msgs, convs, evts, sync_st) = db.clear_connector_data(&ct)?;
         eprintln!(
             "Cleared {ct} data: {msgs} messages, {convs} conversations, {evts} events, {sync_st} sync states"

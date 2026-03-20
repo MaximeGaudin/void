@@ -112,7 +112,7 @@ async fn run_slack_scheduled_reply(
         &user_token,
         &app_token,
         exclude_channels,
-    );
+    )?;
 
     let scheduled_id = connector
         .schedule_message(channel_id, message, post_at, Some(thread_ts))
