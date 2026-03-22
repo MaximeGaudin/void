@@ -132,6 +132,9 @@ pub struct DraftCreateArgs {
     /// Email body
     #[arg(long)]
     pub body: String,
+    /// File to attach
+    #[arg(long)]
+    pub file: Option<String>,
     /// Message ID to reply to (creates a reply draft)
     #[arg(long)]
     pub reply_to: Option<String>,
@@ -156,6 +159,9 @@ pub struct DraftUpdateArgs {
     /// Email body
     #[arg(long)]
     pub body: String,
+    /// File to attach
+    #[arg(long)]
+    pub file: Option<String>,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,
@@ -392,6 +398,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
     match &args.action {
         DraftAction::Create(a) => {
             let connector = build_gmail_connector(a.connection.as_deref())?;
+            let file_path = a.file.as_deref().map(std::path::Path::new);
             let draft = connector
                 .create_draft(
                     &a.to,
@@ -399,6 +406,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                     &a.body,
                     a.reply_to.as_deref(),
                     a.thread_id.as_deref(),
+                    file_path,
                 )
                 .await?;
 
@@ -414,8 +422,9 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
         }
         DraftAction::Update(a) => {
             let connector = build_gmail_connector(a.connection.as_deref())?;
+            let file_path = a.file.as_deref().map(std::path::Path::new);
             let draft = connector
-                .update_draft(&a.draft_id, &a.to, &a.subject, &a.body)
+                .update_draft(&a.draft_id, &a.to, &a.subject, &a.body, file_path)
                 .await?;
 
             let draft_id = draft.id.as_deref().unwrap_or("?");

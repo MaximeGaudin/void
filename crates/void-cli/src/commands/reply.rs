@@ -16,6 +16,9 @@ pub struct ReplyArgs {
     /// Message text
     #[arg(long)]
     pub message: String,
+    /// File to attach
+    #[arg(long)]
+    pub file: Option<String>,
     /// Reply in thread (Slack) or as quote (WhatsApp)
     #[arg(long)]
     pub in_thread: bool,
@@ -72,7 +75,15 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
 
     let reply_id = build_reply_id(connector_type, &conv.external_id, &msg.external_id);
 
-    let content = MessageContent::Text(args.message.clone());
+    let content = if let Some(ref path) = args.file {
+        MessageContent::File {
+            path: path.into(),
+            caption: Some(args.message.clone()),
+            mime_type: None,
+        }
+    } else {
+        MessageContent::Text(args.message.clone())
+    };
     let sent_id = conn.reply(&reply_id, content, args.in_thread).await?;
 
     eprintln!("Reply sent (id: {sent_id})");

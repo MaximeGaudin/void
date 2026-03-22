@@ -132,21 +132,35 @@ impl GmailConnector {
         body: &str,
         reply_to_message_id: Option<&str>,
         thread_id: Option<&str>,
+        file: Option<&std::path::Path>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
 
-        let subject = encode_rfc2047(subject);
-        let mut headers = format!(
-            "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
-        );
-        if let Some(ref_id) = reply_to_message_id {
-            headers.push_str(&format!(
-                "In-Reply-To: {ref_id}\r\nReferences: {ref_id}\r\n"
-            ));
-        }
-        headers.push_str(&format!("\r\n{body}"));
+        let raw = if let Some(file_path) = file {
+            super::compose::compose_rfc2822_with_attachment(
+                to,
+                subject,
+                body,
+                file_path,
+                None,
+                reply_to_message_id,
+                reply_to_message_id,
+            )?
+        } else {
+            let subject = encode_rfc2047(subject);
+            let mut headers = format!(
+                "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
+            );
+            if let Some(ref_id) = reply_to_message_id {
+                headers.push_str(&format!(
+                    "In-Reply-To: {ref_id}\r\nReferences: {ref_id}\r\n"
+                ));
+            }
+            headers.push_str(&format!("\r\n{body}"));
+            headers
+        };
 
-        let encoded = URL_SAFE_NO_PAD.encode(headers.as_bytes());
+        let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
         api.create_draft(&encoded, thread_id)
             .await
             .map_err(Into::into)
@@ -158,13 +172,21 @@ impl GmailConnector {
         to: &str,
         subject: &str,
         body: &str,
+        file: Option<&std::path::Path>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
 
-        let subject = encode_rfc2047(subject);
-        let raw = format!(
-            "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
-        );
+        let raw = if let Some(file_path) = file {
+            super::compose::compose_rfc2822_with_attachment(
+                to, subject, body, file_path, None, None, None,
+            )?
+        } else {
+            let subject = encode_rfc2047(subject);
+            format!(
+                "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
+            )
+        };
+
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
         api.update_draft(draft_id, &encoded)
             .await
