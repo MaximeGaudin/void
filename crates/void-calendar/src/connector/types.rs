@@ -20,6 +20,7 @@ pub struct UpdateEventParams<'a> {
     pub send_updates: Option<&'a str>,
 }
 
+/// Syncs Google Calendar for a single configured connection (OAuth via Gmail auth stack).
 pub struct CalendarConnector {
     pub(crate) connection_id: String,
     pub(crate) credentials_file: Option<String>,
