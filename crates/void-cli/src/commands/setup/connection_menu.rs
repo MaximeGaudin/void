@@ -1,0 +1,171 @@
+use std::path::Path;
+
+use void_core::config::VoidConfig;
+
+use super::auth::authenticate_connection;
+use super::prompt::{prompt, select, separator};
+use super::{calendar, gdrive, gmail, hackernews, slack, telegram, whatsapp};
+
+pub(crate) async fn add_connection(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
+    let choice = select(
+        "Which connector type?",
+        &[
+            "Gmail",
+            "Slack",
+            "WhatsApp",
+            "Telegram",
+            "Google Calendar",
+            "Google Drive",
+            "Hacker News",
+        ],
+    );
+
+    separator();
+    match choice {
+        0 => gmail::setup_gmail(cfg, store_path, true).await?,
+        1 => slack::setup_slack(cfg, store_path, true).await?,
+        2 => whatsapp::setup_whatsapp(cfg, store_path, true).await?,
+        3 => telegram::setup_telegram(cfg, store_path, true).await?,
+        4 => calendar::setup_calendar(cfg, store_path, true).await?,
+        5 => gdrive::setup_gdrive(cfg, store_path).await?,
+        6 => hackernews::setup_hackernews(cfg, true)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn remove_connection(cfg: &mut VoidConfig) -> anyhow::Result<()> {
+    if cfg.connections.is_empty() {
+        eprintln!("No connections to remove.");
+        return Ok(());
+    }
+
+    let options: Vec<String> = cfg
+        .connections
+        .iter()
+        .map(|a| format!("{} ({})", a.id, a.connector_type))
+        .collect();
+    let options_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+
+    let choice = select("Which connection would you like to remove?", &options_refs);
+    cfg.connections.remove(choice);
+    Ok(())
+}
+
+pub(crate) fn rename_connection(
+    cfg: &mut VoidConfig,
+    store_path: &std::path::Path,
+) -> anyhow::Result<()> {
+    if cfg.connections.is_empty() {
+        eprintln!("No connections to rename.");
+        return Ok(());
+    }
+
+    let options: Vec<String> = cfg
+        .connections
+        .iter()
+        .map(|a| format!("{} ({})", a.id, a.connector_type))
+        .collect();
+    let options_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+
+    let choice = select("Which connection would you like to rename?", &options_refs);
+    let new_name = prompt("New connection name: ");
+    if new_name.is_empty() {
+        return Ok(());
+    }
+
+    let old_name = cfg.connections[choice].id.clone();
+    let connector_type = &cfg.connections[choice].connector_type;
+
+    // Rename token files (Gmail / Calendar)
+    let old_token = store_path.join(format!("{old_name}-token.json"));
+    let new_token = store_path.join(format!("{new_name}-token.json"));
+    if old_token.exists() {
+        std::fs::rename(&old_token, &new_token)?;
+        eprintln!(
+            "  Renamed token: {} → {}",
+            old_token.display(),
+            new_token.display()
+        );
+    }
+
+    // Rename Drive token file if present
+    let old_drive_token = store_path.join(format!("{old_name}-drive-token.json"));
+    let new_drive_token = store_path.join(format!("{new_name}-drive-token.json"));
+    if old_drive_token.exists() {
+        std::fs::rename(&old_drive_token, &new_drive_token)?;
+        eprintln!(
+            "  Renamed drive token: {} → {}",
+            old_drive_token.display(),
+            new_drive_token.display()
+        );
+    }
+
+    // Rename WhatsApp session DB
+    if connector_type.to_string() == "whatsapp" {
+        let old_wa = store_path.join(format!("whatsapp-{old_name}.db"));
+        let new_wa = store_path.join(format!("whatsapp-{new_name}.db"));
+        if old_wa.exists() {
+            std::fs::rename(&old_wa, &new_wa)?;
+            eprintln!(
+                "  Renamed session: {} → {}",
+                old_wa.display(),
+                new_wa.display()
+            );
+        }
+    }
+
+    // Rename Telegram session file
+    if connector_type.to_string() == "telegram" {
+        let old_tg = store_path.join(format!("telegram-{old_name}.json"));
+        let new_tg = store_path.join(format!("telegram-{new_name}.json"));
+        if old_tg.exists() {
+            std::fs::rename(&old_tg, &new_tg)?;
+            eprintln!(
+                "  Renamed session: {} → {}",
+                old_tg.display(),
+                new_tg.display()
+            );
+        }
+    }
+
+    // Update DB references (sync_state, conversations, messages)
+    let db_path = cfg.db_path();
+    if db_path.exists() {
+        let db = void_core::db::Database::open(&db_path)?;
+        db.rename_connection(&old_name, &new_name)?;
+        eprintln!("  Updated database references.");
+    }
+
+    cfg.connections[choice].id = new_name;
+    Ok(())
+}
+
+pub(crate) async fn reauthenticate_connection(
+    cfg: &VoidConfig,
+    store_path: &Path,
+) -> anyhow::Result<()> {
+    if cfg.connections.is_empty() {
+        eprintln!("No connections to re-authenticate.");
+        return Ok(());
+    }
+
+    let options: Vec<String> = cfg
+        .connections
+        .iter()
+        .map(|a| format!("{} ({})", a.id, a.connector_type))
+        .collect();
+    let options_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+
+    let choice = select(
+        "Which connection would you like to re-authenticate?",
+        &options_refs,
+    );
+    let connection = &cfg.connections[choice];
+
+    match authenticate_connection(connection, store_path).await {
+        Ok(()) => eprintln!("  ✓ Re-authentication successful."),
+        Err(e) => eprintln!("  ✗ Re-authentication failed: {e}"),
+    }
+    Ok(())
+}
