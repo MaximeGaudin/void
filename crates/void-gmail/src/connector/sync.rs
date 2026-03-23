@@ -128,8 +128,7 @@ impl GmailConnector {
             }
         }
 
-        let (unarchived, archived) =
-            db.reconcile_inbox(&connection_id, "gmail", &inbox_ids)?;
+        let (unarchived, archived) = db.reconcile_inbox(&connection_id, "gmail", &inbox_ids)?;
 
         if unarchived > 0 || archived > 0 || !new_msg_ids.is_empty() {
             info!(
