@@ -212,16 +212,16 @@ impl GmailConnector {
                 // INBOX label added to existing message → re-fetch to update is_archived
                 if let Some(added) = &record.labels_added {
                     for item in added {
-                        if item.label_ids.iter().any(|l| l == "INBOX") {
-                            if db.message_exists(&connection_id, &item.message.id)? {
-                                match api.get_message(&item.message.id).await {
-                                    Ok(msg) => {
-                                        self.store_message(db, &msg)?;
-                                        debug!(message_id = %item.message.id, "updated (INBOX label added)");
-                                    }
-                                    Err(e) => {
-                                        warn!(message_id = %item.message.id, "failed to re-fetch: {e}");
-                                    }
+                        if item.label_ids.iter().any(|l| l == "INBOX")
+                            && db.message_exists(&connection_id, &item.message.id)?
+                        {
+                            match api.get_message(&item.message.id).await {
+                                Ok(msg) => {
+                                    self.store_message(db, &msg)?;
+                                    debug!(message_id = %item.message.id, "updated (INBOX label added)");
+                                }
+                                Err(e) => {
+                                    warn!(message_id = %item.message.id, "failed to re-fetch: {e}");
                                 }
                             }
                         }
