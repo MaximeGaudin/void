@@ -84,16 +84,12 @@ jobs:
           merge-multiple: true
 
       - name: Extract changelog
-        id: changelog
         run: |
           TAG="${{ inputs.tag }}"
           VERSION="${TAG#v}"
-          BODY=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md)
-          {
-            echo "body<<CHANGELOG_EOF"
-            echo "$BODY"
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
+          awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md > /tmp/release-notes.md
+          echo "--- Release notes ---"
+          cat /tmp/release-notes.md
 
       - name: List artifacts
         run: ls -lhR artifacts/
@@ -103,14 +99,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ inputs.tag }}"
-          ARGS=(
-            --title "v${TAG}"
-            --notes "${{ steps.changelog.outputs.body }}"
-          )
 
           if gh release view "$TAG" &>/dev/null; then
-            gh release edit "$TAG" "${ARGS[@]}"
+            gh release edit "$TAG" --title "v${TAG}" --notes-file /tmp/release-notes.md
             gh release upload "$TAG" artifacts/* --clobber
           else
-            gh release create "$TAG" artifacts/* "${ARGS[@]}"
+            gh release create "$TAG" artifacts/* --title "v${TAG}" --notes-file /tmp/release-notes.md
           fi
