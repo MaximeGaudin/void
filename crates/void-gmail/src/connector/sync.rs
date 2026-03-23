@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tracing::{debug, info, warn};
 
 use void_core::db::Database;
@@ -19,13 +21,14 @@ impl GmailConnector {
 
         let had_history = db.get_sync_state(&self.config_id, "history_id")?.is_some();
 
-        if let Some(history_id) = &profile.history_id {
-            db.set_sync_state(&self.config_id, "history_id", history_id)?;
+        if had_history {
+            debug!(config_id = %self.config_id, "history_id exists, refreshing inbox state");
+            self.refresh_inbox(db).await?;
+            return Ok(());
         }
 
-        if had_history {
-            debug!(config_id = %self.config_id, "skipping initial sync — history_id exists, incremental will catch up");
-            return Ok(());
+        if let Some(history_id) = &profile.history_id {
+            db.set_sync_state(&self.config_id, "history_id", history_id)?;
         }
 
         info!(config_id = %self.config_id, "starting Gmail initial sync");
@@ -75,6 +78,72 @@ impl GmailConnector {
         Ok(())
     }
 
+    /// Refresh inbox state: fetch current INBOX message IDs from Gmail and
+    /// reconcile `is_archived` in the local DB so it mirrors Gmail exactly.
+    /// Also fetches any new INBOX messages not yet in the local DB.
+    async fn refresh_inbox(&self, db: &Database) -> anyhow::Result<()> {
+        let api = self.get_client().await?;
+        let connection_id = self.display_connection_id();
+
+        let mut inbox_ids: HashSet<String> = HashSet::new();
+        let mut new_msg_ids: Vec<String> = Vec::new();
+        let mut page_token: Option<String> = None;
+        let max_pages = 5u32;
+        let mut pages = 0u32;
+
+        loop {
+            let resp = api
+                .list_messages(
+                    100,
+                    page_token.as_deref(),
+                    Some(&["INBOX"]),
+                    Some("newer_than:7d"),
+                )
+                .await?;
+            pages += 1;
+
+            if let Some(msgs) = &resp.messages {
+                for msg_ref in msgs {
+                    inbox_ids.insert(msg_ref.id.clone());
+                    if !db.message_exists(&connection_id, &msg_ref.id)? {
+                        new_msg_ids.push(msg_ref.id.clone());
+                    }
+                }
+            }
+
+            page_token = resp.next_page_token;
+            if page_token.is_none() || pages >= max_pages {
+                break;
+            }
+        }
+
+        for msg_id in &new_msg_ids {
+            match api.get_message(msg_id).await {
+                Ok(msg) => {
+                    self.store_message(db, &msg)?;
+                }
+                Err(e) => {
+                    warn!(message_id = %msg_id, "failed to fetch new message: {e}");
+                }
+            }
+        }
+
+        let (unarchived, archived) =
+            db.reconcile_inbox(&connection_id, "gmail", &inbox_ids)?;
+
+        if unarchived > 0 || archived > 0 || !new_msg_ids.is_empty() {
+            info!(
+                config_id = %self.config_id,
+                new = new_msg_ids.len(),
+                unarchived,
+                archived,
+                "inbox refresh complete"
+            );
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn incremental_sync(&self, db: &Database) -> anyhow::Result<()> {
         let Some(history_id) = db.get_sync_state(&self.config_id, "history_id")? else {
             debug!("no history_id, skipping incremental sync");
@@ -82,6 +151,7 @@ impl GmailConnector {
         };
 
         let api = self.get_client().await?;
+        let connection_id = self.display_connection_id();
         let resp = api.list_history(&history_id, Some("INBOX")).await?;
 
         if let Some(records) = resp.history {
@@ -122,6 +192,37 @@ impl GmailConnector {
                             }
                             Err(e) => {
                                 warn!(message_id = %item.message.id, "failed to fetch: {e}");
+                            }
+                        }
+                    }
+                }
+
+                // INBOX label removed → mark as archived locally
+                if let Some(removed) = &record.labels_removed {
+                    for item in removed {
+                        if item.label_ids.iter().any(|l| l == "INBOX") {
+                            let msg_id = format!("{}-{}", connection_id, item.message.id);
+                            if db.mark_message_archived(&msg_id)? {
+                                debug!(message_id = %msg_id, "marked archived (INBOX label removed)");
+                            }
+                        }
+                    }
+                }
+
+                // INBOX label added to existing message → re-fetch to update is_archived
+                if let Some(added) = &record.labels_added {
+                    for item in added {
+                        if item.label_ids.iter().any(|l| l == "INBOX") {
+                            if db.message_exists(&connection_id, &item.message.id)? {
+                                match api.get_message(&item.message.id).await {
+                                    Ok(msg) => {
+                                        self.store_message(db, &msg)?;
+                                        debug!(message_id = %item.message.id, "updated (INBOX label added)");
+                                    }
+                                    Err(e) => {
+                                        warn!(message_id = %item.message.id, "failed to re-fetch: {e}");
+                                    }
+                                }
                             }
                         }
                     }

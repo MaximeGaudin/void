@@ -664,11 +664,20 @@ pub struct HistoryListResponse {
 #[serde(rename_all = "camelCase")]
 pub struct HistoryRecord {
     pub messages_added: Option<Vec<HistoryMessageAdded>>,
+    pub labels_added: Option<Vec<HistoryLabelChange>>,
+    pub labels_removed: Option<Vec<HistoryLabelChange>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct HistoryMessageAdded {
     pub message: MessageRef,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryLabelChange {
+    pub message: MessageRef,
+    pub label_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

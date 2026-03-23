@@ -249,6 +249,45 @@ pub(super) fn enrich_with_context(
     Ok(())
 }
 
+/// Reconcile `is_archived` for a connection: messages whose external_id is in
+/// `inbox_external_ids` get `is_archived = 0`, all others get `is_archived = 1`.
+pub(super) fn reconcile_inbox(
+    conn: &Connection,
+    connection_id: &str,
+    connector: &str,
+    inbox_external_ids: &HashSet<String>,
+) -> Result<(usize, usize), DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT external_id, is_archived FROM messages WHERE connection_id = ?1 AND connector = ?2",
+    )?;
+    let rows: Vec<(String, bool)> = stmt
+        .query_map(params![connection_id, connector], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? != 0))
+        })?
+        .collect::<Result<_, _>>()?;
+
+    let mut unarchived = 0usize;
+    let mut archived = 0usize;
+
+    let mut mark_stmt = conn.prepare(
+        "UPDATE messages SET is_archived = ?3 WHERE connection_id = ?1 AND external_id = ?2",
+    )?;
+
+    for (ext_id, was_archived) in &rows {
+        let should_archive = !inbox_external_ids.contains(ext_id);
+        if should_archive != *was_archived {
+            mark_stmt.execute(params![connection_id, ext_id, should_archive as i32])?;
+            if should_archive {
+                archived += 1;
+            } else {
+                unarchived += 1;
+            }
+        }
+    }
+
+    Ok((unarchived, archived))
+}
+
 pub(super) fn last_in_conversation(
     conn: &Connection,
     conversation_id: &str,

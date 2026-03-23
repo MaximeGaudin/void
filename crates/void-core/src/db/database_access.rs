@@ -122,6 +122,17 @@ impl Database {
         messages::update_metadata(&*self.conn()?, id, metadata)
     }
 
+    /// Reconcile `is_archived` for all messages of a connection to match the given inbox set.
+    /// Returns (unarchived_count, archived_count).
+    pub fn reconcile_inbox(
+        &self,
+        connection_id: &str,
+        connector: &str,
+        inbox_external_ids: &std::collections::HashSet<String>,
+    ) -> Result<(usize, usize), DbError> {
+        messages::reconcile_inbox(&*self.conn()?, connection_id, connector, inbox_external_ids)
+    }
+
     pub fn find_message_by_external_id(
         &self,
         connection_id: &str,
