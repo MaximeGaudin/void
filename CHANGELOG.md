@@ -5,6 +5,27 @@ All notable changes to Void CLI are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-03-23
+
+### Added
+
+- **Hacker News** — `void hn` subcommand to view and manage keywords and min-score from the CLI (`void hn config`, `void hn keywords`, `void hn min-score`)
+- **Gmail** — `--file` attachment support on `void gmail draft create`, `void gmail draft update`, and `void reply`
+
+### Changed
+
+- **void-calendar** — Split monolithic connector into focused submodules (types, mapping, sync_ops, events)
+- **void-cli** — Split setup wizard into per-connector modules for better maintainability
+- **void-core** — Split database layer into focused submodules (schema, messages, conversations, contacts, search)
+- Updated dependencies (env_logger, html-to-markdown-rs, html5ever, moka, ureq, and more)
+- Expanded test coverage in void-core (models, links, config)
+
+### Fixed
+
+- **Gmail** — Inbox sync now mirrors the actual Gmail INBOX state; startup reconciliation ensures local `is_archived` flags match Gmail labels, and incremental sync handles `labelsAdded`/`labelsRemoved` events
+- **Gmail** — Fixed `history_id` overwrite on daemon restart that caused missed incremental changes
+- **Gmail** — Resolved clippy `collapsible_if` warning in incremental sync
+
 ## [0.3.1] - 2026-03-19
 
 ### Fixed
