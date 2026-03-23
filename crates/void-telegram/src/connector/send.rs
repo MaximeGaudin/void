@@ -54,7 +54,6 @@ pub(crate) async fn resolve_peer(client: &Client, input: &str) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn parse_reply_id_valid() {
@@ -89,9 +88,10 @@ mod tests {
 
     #[test]
     fn text_for_message_content_file_with_caption() {
+        let path = std::env::temp_dir().join("x.png");
         assert_eq!(
             text_for_message_content(&MessageContent::File {
-                path: PathBuf::from("/tmp/x.png"),
+                path,
                 caption: Some("see this".into()),
                 mime_type: None,
             }),
@@ -101,9 +101,10 @@ mod tests {
 
     #[test]
     fn text_for_message_content_file_without_caption() {
+        let path = std::env::temp_dir().join("x.png");
         assert_eq!(
             text_for_message_content(&MessageContent::File {
-                path: PathBuf::from("/tmp/x.png"),
+                path,
                 caption: None,
                 mime_type: None,
             }),

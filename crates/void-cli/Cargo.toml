@@ -31,3 +31,4 @@ chrono = { workspace = true }
 tokio-util = { workspace = true }
 libc = { workspace = true }
 croner = { workspace = true }
+sysinfo = { workspace = true }

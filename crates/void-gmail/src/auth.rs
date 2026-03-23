@@ -271,7 +271,8 @@ mod tests {
 
     #[test]
     fn token_cache_path_joins_connection_id() {
-        let store = std::path::Path::new("/tmp/void-store");
+        let store_dir = std::env::temp_dir().join("void-store");
+        let store = store_dir.as_path();
         let path = token_cache_path(store, "gmail-1");
         assert!(path.ends_with("gmail-1-token.json"));
         assert!(path.to_str().unwrap().contains("gmail-1"));

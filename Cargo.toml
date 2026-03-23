@@ -60,6 +60,8 @@ html-to-markdown-rs = "2"
 open = "5"
 url = "2"
 urlencoding = "2"
+dirs = "6"
+sysinfo = "0.36.1"
 
 # Testing
 wiremock = "0.6"

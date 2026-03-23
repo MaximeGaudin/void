@@ -6,8 +6,8 @@ use crate::error::ConfigError;
 use crate::models::ConnectorType;
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_CONFIG_DIR: &str = ".config/void";
-const DEFAULT_STORE_DIR: &str = ".local/share/void";
+const LEGACY_CONFIG_DIR: &str = ".config/void";
+const LEGACY_STORE_DIR: &str = ".local/share/void";
 const CONFIG_FILENAME: &str = "config.toml";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -35,7 +35,14 @@ impl Default for StoreConfig {
 }
 
 fn default_store_path() -> String {
-    format!("~/{DEFAULT_STORE_DIR}")
+    #[cfg(windows)]
+    {
+        preferred_store_dir().to_string_lossy().to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        format!("~/{LEGACY_STORE_DIR}")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -233,13 +240,13 @@ impl VoidConfig {
 }
 
 pub fn default_config_path() -> PathBuf {
-    let home = dirs_home();
-    home.join(DEFAULT_CONFIG_DIR).join(CONFIG_FILENAME)
+    preferred_config_dir().join(CONFIG_FILENAME)
 }
 
 pub fn default_config() -> String {
-    r#"[store]
-path = "~/.local/share/void"
+    format!(
+        r#"[store]
+path = "{}"
 
 [sync]
 gmail_poll_interval_secs = 30
@@ -282,8 +289,9 @@ hackernews_poll_interval_secs = 3600
 # type = "hackernews"
 # keywords = ["rust", "ai", "startup"]
 # min_score = 100
-"#
-    .to_string()
+"#,
+        default_store_path_template()
+    )
 }
 
 /// Expand `~` to the user's home directory.
@@ -298,9 +306,52 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 }
 
 fn dirs_home() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp"))
+    dirs::home_dir().unwrap_or_else(std::env::temp_dir)
+}
+
+fn legacy_config_dir() -> PathBuf {
+    dirs_home().join(LEGACY_CONFIG_DIR)
+}
+
+#[cfg(windows)]
+fn legacy_store_dir() -> PathBuf {
+    dirs_home().join(LEGACY_STORE_DIR)
+}
+
+fn preferred_config_dir() -> PathBuf {
+    let legacy = legacy_config_dir();
+    if legacy.exists() {
+        return legacy;
+    }
+
+    dirs::config_dir()
+        .map(|path| path.join("void"))
+        .unwrap_or(legacy)
+}
+
+#[cfg(windows)]
+fn preferred_store_dir() -> PathBuf {
+    let legacy = legacy_store_dir();
+    if legacy.exists() {
+        return legacy;
+    }
+
+    dirs::data_dir()
+        .map(|path| path.join("void"))
+        .unwrap_or(legacy)
+}
+
+#[cfg(windows)]
+fn default_store_path_template() -> String {
+    // TOML basic strings need escaped backslashes on Windows paths.
+    preferred_store_dir()
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+}
+
+#[cfg(not(windows))]
+fn default_store_path_template() -> String {
+    format!("~/{LEGACY_STORE_DIR}")
 }
 
 /// Redact a token for display: show first 8 chars + "..."
@@ -375,6 +426,9 @@ calendar_ids = ["primary", "holidays"]
     #[test]
     fn parse_defaults() {
         let config = VoidConfig::default();
+        #[cfg(windows)]
+        assert!(!config.store.path.is_empty());
+        #[cfg(not(windows))]
         assert!(config.store.path.contains(".local/share/void"));
         assert_eq!(config.sync.gmail_poll_interval_secs, 30);
         assert_eq!(config.sync.hackernews_poll_interval_secs, 3600);
@@ -638,7 +692,16 @@ type = "hackernews"
     #[test]
     fn default_config_path_returns_config_toml_under_void_dir() {
         let path = default_config_path();
-        assert!(path.to_str().unwrap().ends_with(".config/void/config.toml"));
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("config.toml")
+        );
+        assert!(
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                == Some("void")
+        );
     }
 
     #[test]

@@ -34,6 +34,9 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact: void-linux-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: void-windows-amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -57,11 +60,21 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
           tar -czf ${{ matrix.artifact }}.tar.gz void
           mv ${{ matrix.artifact }}.tar.gz ../../../
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ReleaseDir = "target/${{ matrix.target }}/release"
+          $Binary = Join-Path $ReleaseDir "void.exe"
+          $Archive = "${{ matrix.artifact }}.zip"
+          Compress-Archive -Path $Binary -DestinationPath $Archive -Force
 
       - uses: actions/upload-artifact@v4
         with:

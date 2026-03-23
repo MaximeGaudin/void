@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use sysinfo::{Pid, System};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -159,18 +160,11 @@ impl FileLock {
     /// Returns `Some(true)` if stale, `Some(false)` if alive, `None` if unparseable.
     fn is_stale_lock(content: &str) -> Option<bool> {
         let pid_str = content.trim().strip_prefix("pid=")?;
-        let pid: i32 = pid_str.parse().ok()?;
-        #[cfg(unix)]
-        {
-            // kill(pid, 0) checks if process exists without sending a signal
-            let alive = unsafe { libc::kill(pid, 0) } == 0;
-            Some(!alive)
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = pid;
-            None
-        }
+        let pid: u32 = pid_str.parse().ok()?;
+        let mut system = System::new_all();
+        system.refresh_all();
+        let alive = system.process(Pid::from_u32(pid)).is_some();
+        Some(!alive)
     }
 }
 

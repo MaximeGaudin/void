@@ -88,10 +88,10 @@ fn default_max_turns() -> usize {
 // ---------------------------------------------------------------------------
 
 pub fn hooks_dir() -> PathBuf {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp"));
-    home.join(".config/void/hooks")
+    crate::config::default_config_path()
+        .parent()
+        .map(|path| path.join("hooks"))
+        .unwrap_or_else(|| PathBuf::from(".config/void/hooks"))
 }
 
 pub fn slugify(name: &str) -> String {

@@ -1,6 +1,8 @@
+use std::process::Stdio;
 use std::sync::Arc;
 
 use clap::Args;
+use sysinfo::{Pid, Signal, System};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -12,7 +14,7 @@ use void_core::sync::SyncEngine;
 use crate::commands::connector_factory;
 use crate::output::{resolve_connector_filter, resolve_connector_list};
 
-#[derive(Debug, Args)]
+#[derive(Clone, Debug, Args)]
 pub struct SyncArgs {
     /// Sync only specific connectors (comma-separated: whatsapp,telegram,slack,gmail,calendar,hackernews)
     #[arg(long)]
@@ -32,6 +34,25 @@ pub struct SyncArgs {
     /// Stop the running sync daemon
     #[arg(long)]
     pub stop: bool,
+    /// Internal: run sync process as detached child.
+    #[arg(long, hide = true)]
+    pub daemon_inner: bool,
+}
+
+fn parse_lock_pid(content: &str) -> anyhow::Result<u32> {
+    let pid_str = content
+        .trim()
+        .strip_prefix("pid=")
+        .unwrap_or(content.trim());
+    let pid: u32 = pid_str
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid PID in lock file: {content}"))?;
+    Ok(pid)
+}
+
+fn refresh_process_exists(system: &mut System, pid: Pid) -> bool {
+    system.refresh_all();
+    system.process(pid).is_some()
 }
 
 /// Stop a running sync daemon by reading its PID from the lock file, sending
@@ -47,28 +68,38 @@ pub fn stop_daemon() -> anyhow::Result<()> {
     }
 
     let content = std::fs::read_to_string(&lock_path)?;
-    let pid_str = content
-        .trim()
-        .strip_prefix("pid=")
-        .unwrap_or(content.trim());
-    let pid: i32 = pid_str
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid PID in lock file: {content}"))?;
+    let pid = parse_lock_pid(&content)?;
+    let sys_pid = Pid::from_u32(pid);
+    let mut system = System::new_all();
+    let mut process_alive = refresh_process_exists(&mut system, sys_pid);
 
-    let process_alive = |p: i32| -> bool { unsafe { libc::kill(p, 0) == 0 } };
-
-    if !process_alive(pid) {
+    if !process_alive {
         eprintln!("Daemon (pid {pid}) is no longer running. Cleaning up stale lock file.");
         std::fs::remove_file(&lock_path).ok();
         return Ok(());
     }
 
     eprintln!("Stopping sync daemon (pid {pid})...");
-    info!(pid, "sending SIGTERM to daemon");
-    unsafe {
-        if libc::kill(pid, libc::SIGTERM) != 0 {
-            let err = std::io::Error::last_os_error();
-            anyhow::bail!("Failed to send SIGTERM to daemon (pid {pid}): {err}");
+    #[cfg(unix)]
+    {
+        info!(pid, "sending SIGTERM to daemon");
+        if let Some(process) = system.process(sys_pid) {
+            match process.kill_with(Signal::Term) {
+                Some(true) => {}
+                Some(false) => anyhow::bail!("Failed to send SIGTERM to daemon (pid {pid})"),
+                None => {
+                    anyhow::bail!(
+                        "Failed to send SIGTERM to daemon (pid {pid}): unsupported signal"
+                    );
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        info!(pid, "sending termination signal to daemon");
+        if let Some(process) = system.process(sys_pid) {
+            process.kill();
         }
     }
 
@@ -76,16 +107,27 @@ pub fn stop_daemon() -> anyhow::Result<()> {
     const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
     let start = std::time::Instant::now();
 
-    while process_alive(pid) {
+    while process_alive {
         if start.elapsed() > MAX_WAIT {
-            eprintln!("Daemon did not exit within {MAX_WAIT:?}, sending SIGKILL...");
-            unsafe {
-                libc::kill(pid, libc::SIGKILL);
+            #[cfg(unix)]
+            {
+                eprintln!("Daemon did not exit within {MAX_WAIT:?}, sending SIGKILL...");
+                if let Some(process) = system.process(sys_pid) {
+                    let _ = process.kill_with(Signal::Kill);
+                }
+            }
+            #[cfg(windows)]
+            {
+                eprintln!("Daemon did not exit within {MAX_WAIT:?}, forcing termination...");
+                if let Some(process) = system.process(sys_pid) {
+                    process.kill();
+                }
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
             break;
         }
         std::thread::sleep(POLL_INTERVAL);
+        process_alive = refresh_process_exists(&mut system, sys_pid);
     }
 
     if lock_path.exists() {
@@ -96,65 +138,7 @@ pub fn stop_daemon() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Double-fork to fully detach a background daemon, redirect stdout/stderr to
-/// `log_file`/`log_err`, and set the working directory.  The parent process
-/// exits with `_exit(0)` after the first fork; the intermediate child calls
-/// `setsid` and forks again; only the grandchild survives and returns `Ok(())`.
-fn fork_daemon(
-    work_dir: &std::path::Path,
-    log_out: std::fs::File,
-    log_err: std::fs::File,
-) -> anyhow::Result<()> {
-    use std::os::unix::io::IntoRawFd;
-
-    unsafe {
-        // First fork – parent exits immediately so the shell gets its prompt back.
-        let pid = libc::fork();
-        if pid < 0 {
-            anyhow::bail!("First fork failed: {}", std::io::Error::last_os_error());
-        }
-        if pid > 0 {
-            libc::_exit(0);
-        }
-
-        // Child: become session leader, detach from controlling terminal.
-        if libc::setsid() < 0 {
-            anyhow::bail!("setsid failed: {}", std::io::Error::last_os_error());
-        }
-
-        // Second fork – prevent re-acquiring a controlling terminal.
-        let pid2 = libc::fork();
-        if pid2 < 0 {
-            anyhow::bail!("Second fork failed: {}", std::io::Error::last_os_error());
-        }
-        if pid2 > 0 {
-            libc::_exit(0);
-        }
-
-        // Grandchild: redirect stdin/stdout/stderr and chdir.
-        let dev_null = libc::open(b"/dev/null\0".as_ptr().cast(), libc::O_RDWR);
-        if dev_null >= 0 {
-            libc::dup2(dev_null, libc::STDIN_FILENO);
-            libc::close(dev_null);
-        }
-
-        let out_fd = log_out.into_raw_fd();
-        libc::dup2(out_fd, libc::STDOUT_FILENO);
-        libc::close(out_fd);
-
-        let err_fd = log_err.into_raw_fd();
-        libc::dup2(err_fd, libc::STDERR_FILENO);
-        libc::close(err_fd);
-
-        let dir = std::ffi::CString::new(work_dir.to_string_lossy().as_bytes()).unwrap_or_default();
-        libc::chdir(dir.as_ptr());
-    }
-
-    Ok(())
-}
-
-/// Fork into a background daemon, then run sync in the child process.
-/// Must be called *before* any tokio runtime is created.
+/// Spawn a detached child process that runs sync in daemon mode.
 pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path).map_err(|e| {
@@ -192,38 +176,81 @@ pub fn daemonize(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
 
     eprintln!("Starting sync daemon... logs at {}", log_path.display());
 
-    fork_daemon(&store_path, log_file, log_err)?;
+    let exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(exe);
+    if verbose {
+        cmd.arg("--verbose");
+    }
+    cmd.arg("sync").arg("--daemon-inner");
+    if let Some(ref connectors) = args.connectors {
+        cmd.arg("--connectors").arg(connectors);
+    }
+    if args.clear {
+        cmd.arg("--clear");
+    }
+    if let Some(ref clear_connector) = args.clear_connector {
+        cmd.arg("--clear-connector").arg(clear_connector);
+    }
 
-    // We're now in the detached child process -- build a fresh tokio runtime
+    cmd.current_dir(&store_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(log_err));
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Detach from controlling terminal in child process.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    let child = cmd.spawn()?;
+    eprintln!("Sync daemon started (pid {}).", child.id());
+    Ok(())
+}
+
+pub fn run_daemon_inner(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
-    let connectors_clone = args.connectors.clone();
+    let connectors = args.connectors.clone();
     let clear = args.clear;
     let clear_connector = args.clear_connector.clone();
+
     rt.block_on(async move {
         let log_level = if verbose { "debug" } else { "info" };
-        tracing_subscriber::fmt()
+        let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::try_from_default_env()
                     .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level)),
             )
             .with_writer(std::io::stderr)
-            .init();
-
-        info!(log_path = %log_path.display(), "daemon started");
+            .try_init();
 
         let inner_args = SyncArgs {
-            connectors: connectors_clone,
+            connectors,
             daemon: false,
             restart: false,
             clear,
             clear_connector,
             stop: false,
+            daemon_inner: false,
         };
-        if let Err(e) = run(&inner_args).await {
-            tracing::error!("sync daemon error: {e}");
-        }
-    });
-    Ok(())
+        info!("daemon child started");
+        run(&inner_args).await
+    })
 }
 
 pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {

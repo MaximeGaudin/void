@@ -81,9 +81,14 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
 }
 
 pub(crate) fn edit_config_file(config_path: &Path) -> anyhow::Result<()> {
+    #[cfg(windows)]
+    let fallback_editor = "notepad";
+    #[cfg(not(windows))]
+    let fallback_editor = "vi";
+
     let editor = std::env::var("VISUAL")
         .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "vi".into());
+        .unwrap_or_else(|_| fallback_editor.into());
     let status = std::process::Command::new(&editor)
         .arg(config_path)
         .status()?;

@@ -20,4 +20,5 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 tokio-util = { workspace = true }
 croner = { workspace = true }
-libc = { workspace = true }
+dirs = { workspace = true }
+sysinfo = { workspace = true }

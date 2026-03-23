@@ -83,6 +83,9 @@ fn main() -> anyhow::Result<()> {
         if args.daemon {
             return commands::sync::daemonize(args, cli.verbose);
         }
+        if args.daemon_inner {
+            return commands::sync::run_daemon_inner(args, cli.verbose);
+        }
     }
 
     let rt = tokio::runtime::Runtime::new()?;

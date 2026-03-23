@@ -2,6 +2,7 @@ use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
 
@@ -22,6 +23,21 @@ pub struct VoidCommandArgs {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoidCommandTool;
+
+fn build_shell_command(command: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg(command);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(command);
+        cmd
+    }
+}
 
 impl Tool for VoidCommandTool {
     const NAME: &'static str = "void_cli";
@@ -100,9 +116,7 @@ impl Tool for VoidCommandTool {
         let full_command = format!("void {}", args.command);
         tracing::debug!(command = %full_command, "executing void command");
 
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(&full_command)
+        let output = build_shell_command(&full_command)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -170,11 +184,9 @@ impl Tool for ShellCommandTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         tracing::debug!(command = %args.command, "executing shell command");
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let home: PathBuf = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
 
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(&args.command)
+        let output = build_shell_command(&args.command)
             .current_dir(&home)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
