@@ -520,6 +520,16 @@ calendar_ids = ["primary", "holidays"]
     }
 
     #[test]
+    fn redact_token_exactly_eight_chars() {
+        assert_eq!(redact_token("12345678"), "***");
+    }
+
+    #[test]
+    fn redact_token_nine_chars_shows_prefix() {
+        assert_eq!(redact_token("123456789"), "12345678...");
+    }
+
+    #[test]
     fn save_and_load_roundtrip() {
         let dir = std::env::temp_dir().join(format!("void-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();

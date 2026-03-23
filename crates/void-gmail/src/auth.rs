@@ -277,4 +277,52 @@ mod tests {
         assert!(path.ends_with("gmail-1-token.json"));
         assert!(path.to_str().unwrap().contains("gmail-1"));
     }
+
+    #[test]
+    fn token_cache_load_missing_file_err() {
+        let path = std::env::temp_dir().join(format!("void-gmail-no-token-{}", uuid::Uuid::new_v4()));
+        let err = TokenCache::load(&path).unwrap_err();
+        match err {
+            GmailError::Auth(msg) => {
+                assert!(
+                    msg.contains("failed to read token cache"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected Auth error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn token_cache_load_invalid_json_err() {
+        let dir = std::env::temp_dir().join(format!("void-gmail-bad-json-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("token.json");
+        std::fs::write(&path, "not json").unwrap();
+
+        let err = TokenCache::load(&path).unwrap_err();
+        match err {
+            GmailError::Parse(msg) => assert!(!msg.is_empty(), "expected parse detail"),
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_client_credentials_missing_installed_err() {
+        let dir =
+            std::env::temp_dir().join(format!("void-gmail-creds-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("creds.json");
+        std::fs::write(&path, r#"{"web": {}}"#).unwrap();
+
+        let err = load_client_credentials(Some(path.to_str().unwrap())).unwrap_err();
+        match err {
+            GmailError::Auth(msg) => assert_eq!(msg, "credentials missing 'installed' key"),
+            other => panic!("expected Auth error, got {other:?}"),
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

@@ -213,4 +213,23 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    #[test]
+    fn file_lock_malformed_lock_file_overwritten() {
+        let dir =
+            std::env::temp_dir().join(format!("void-lock-garbage-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lock_path = dir.join("LOCK");
+
+        std::fs::write(&lock_path, "not-a-pid-line\n").unwrap();
+
+        let _lock = FileLock::acquire(&lock_path).unwrap();
+        let content = std::fs::read_to_string(&lock_path).unwrap();
+        assert!(
+            content.starts_with("pid="),
+            "expected lock to be overwritten with pid=..., got {content:?}"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
