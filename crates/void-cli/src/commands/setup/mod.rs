@@ -1,3 +1,5 @@
+//! Interactive setup wizard: per-connector flows, config inspection, and connection management.
+
 mod auth;
 mod calendar;
 mod config_ui;

@@ -1,3 +1,5 @@
+//! Google Calendar connector: token refresh, incremental sync, event CRUD, and `Connector` trait.
+
 mod connector_trait;
 mod events;
 mod mapping;
