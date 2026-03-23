@@ -55,6 +55,8 @@ enum Command {
     Mute(commands::mute::MuteArgs),
     /// Gmail-specific operations (search, threads, drafts, labels, attachments)
     Gmail(commands::gmail::GmailArgs),
+    /// Hacker News configuration (keywords, min-score)
+    Hn(commands::hackernews::HackerNewsArgs),
     /// Slack-specific operations (react, edit)
     Slack(commands::slack::SlackArgs),
     /// WhatsApp-specific operations (media download)
@@ -114,6 +116,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Archive(args)) => commands::archive::run(args).await,
         Some(Command::Mute(args)) => commands::mute::run(args),
         Some(Command::Gmail(args)) => commands::gmail::run(args).await,
+        Some(Command::Hn(args)) => Ok(commands::hackernews::run(args)?),
         Some(Command::Slack(args)) => commands::slack::run(args).await,
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args).await,
         Some(Command::Telegram(args)) => commands::telegram::run(args).await,
