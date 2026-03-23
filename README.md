@@ -133,6 +133,9 @@ void calendar
 | `void calendar delete <id>` | Delete an event |
 | `void calendar availability` | Check attendee availability (FreeBusy) |
 | `void calendar calendars` | List available calendars |
+| `void hn config` | Show current Hacker News configuration |
+| `void hn keywords list\|add\|remove\|set` | Manage watched keywords |
+| `void hn min-score <N>` | Set minimum score threshold |
 | `void drive download <url>` | Download a file from Google Drive/Docs/Sheets/Slides |
 | `void drive info <url>` | Show metadata for a Google Drive file |
 | `void drive auth` | Authenticate with Google Drive |
