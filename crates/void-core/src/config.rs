@@ -398,6 +398,15 @@ calendar_ids = ["primary", "holidays"]
     }
 
     #[test]
+    fn expand_tilde_other_user_prefix_unchanged() {
+        // Only "~/..." and exactly "~" expand; "~alice/..." is not POSIX home syntax here.
+        assert_eq!(
+            expand_tilde("~alice/projects"),
+            PathBuf::from("~alice/projects")
+        );
+    }
+
+    #[test]
     fn find_connection_returns_match() {
         let config = VoidConfig {
             store: StoreConfig::default(),

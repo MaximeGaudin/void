@@ -356,6 +356,53 @@ mod tests {
     }
 
     #[test]
+    fn message_deserializes_legacy_integer_timestamp() {
+        let json = r#"{
+            "id": "m1",
+            "conversation_id": "c1",
+            "connection_id": "a1",
+            "connector": "slack",
+            "external_id": "ext1",
+            "sender": "u@x",
+            "sender_name": null,
+            "body": "hi",
+            "timestamp": 1700000000,
+            "synced_at": null,
+            "is_archived": false,
+            "reply_to_id": null,
+            "media_type": null,
+            "metadata": null,
+            "context_id": null
+        }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.timestamp, 1_700_000_000);
+        assert_eq!(msg.synced_at, None);
+    }
+
+    #[test]
+    fn message_deserializes_synced_at_as_integer() {
+        let json = r#"{
+            "id": "m1",
+            "conversation_id": "c1",
+            "connection_id": "a1",
+            "connector": "slack",
+            "external_id": "ext1",
+            "sender": "u@x",
+            "sender_name": null,
+            "body": null,
+            "timestamp": 1700000000,
+            "synced_at": 1700000010,
+            "is_archived": false,
+            "reply_to_id": null,
+            "media_type": null,
+            "metadata": null,
+            "context_id": null
+        }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.synced_at, Some(1_700_000_010));
+    }
+
+    #[test]
     fn calendar_event_serialization() {
         let event = CalendarEvent {
             id: "e1".into(),

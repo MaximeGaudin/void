@@ -73,6 +73,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parse_http_slack_link() {
+        let link =
+            SlackLink::parse("http://team.slack.com/archives/CABC123/p1234567890123456").unwrap();
+        assert_eq!(link.workspace, "team");
+        assert_eq!(link.channel_id, "CABC123");
+        assert_eq!(link.message_ts, "1234567890.123456");
+    }
+
+    #[test]
     fn parse_standard_link() {
         let link =
             SlackLink::parse("https://gladiaio.slack.com/archives/D09R63ASNEL/p1773903727112369")
