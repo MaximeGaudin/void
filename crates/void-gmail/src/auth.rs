@@ -280,7 +280,8 @@ mod tests {
 
     #[test]
     fn token_cache_load_missing_file_err() {
-        let path = std::env::temp_dir().join(format!("void-gmail-no-token-{}", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("void-gmail-no-token-{}", uuid::Uuid::new_v4()));
         let err = TokenCache::load(&path).unwrap_err();
         match err {
             GmailError::Auth(msg) => {
@@ -295,7 +296,8 @@ mod tests {
 
     #[test]
     fn token_cache_load_invalid_json_err() {
-        let dir = std::env::temp_dir().join(format!("void-gmail-bad-json-{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("void-gmail-bad-json-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("token.json");
         std::fs::write(&path, "not json").unwrap();
@@ -311,8 +313,7 @@ mod tests {
 
     #[test]
     fn load_client_credentials_missing_installed_err() {
-        let dir =
-            std::env::temp_dir().join(format!("void-gmail-creds-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("void-gmail-creds-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("creds.json");
         std::fs::write(&path, r#"{"web": {}}"#).unwrap();
