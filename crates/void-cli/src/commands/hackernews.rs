@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use void_core::config::{self, ConnectionSettings, VoidConfig};
+use void_core::config::{self, ConnectionConfig, ConnectionSettings, VoidConfig};
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -129,17 +129,26 @@ fn run_min_score(args: &MinScoreArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn get_hn_settings(cfg: &VoidConfig) -> anyhow::Result<(Vec<String>, u32)> {
-    let conn = cfg
-        .connections
+fn hn_connection_not_found() -> anyhow::Error {
+    anyhow::anyhow!("No Hacker News connection found in config. Run `void setup` to add one.")
+}
+
+fn find_hn_connection(cfg: &VoidConfig) -> anyhow::Result<&ConnectionConfig> {
+    cfg.connections
         .iter()
         .find(|c| c.connector_type == ConnectorType::HackerNews)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No Hacker News connection found in config. Run `void setup` to add one."
-            )
-        })?;
+        .ok_or_else(hn_connection_not_found)
+}
 
+fn find_hn_connection_mut(cfg: &mut VoidConfig) -> anyhow::Result<&mut ConnectionConfig> {
+    cfg.connections
+        .iter_mut()
+        .find(|c| c.connector_type == ConnectorType::HackerNews)
+        .ok_or_else(hn_connection_not_found)
+}
+
+fn get_hn_settings(cfg: &VoidConfig) -> anyhow::Result<(Vec<String>, u32)> {
+    let conn = find_hn_connection(cfg)?;
     match &conn.settings {
         ConnectionSettings::HackerNews {
             keywords,
@@ -150,16 +159,7 @@ fn get_hn_settings(cfg: &VoidConfig) -> anyhow::Result<(Vec<String>, u32)> {
 }
 
 fn set_hn_keywords(cfg: &mut VoidConfig, keywords: Vec<String>) -> anyhow::Result<()> {
-    let conn = cfg
-        .connections
-        .iter_mut()
-        .find(|c| c.connector_type == ConnectorType::HackerNews)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No Hacker News connection found in config. Run `void setup` to add one."
-            )
-        })?;
-
+    let conn = find_hn_connection_mut(cfg)?;
     match &mut conn.settings {
         ConnectionSettings::HackerNews {
             keywords: ref mut kw,
@@ -173,16 +173,7 @@ fn set_hn_keywords(cfg: &mut VoidConfig, keywords: Vec<String>) -> anyhow::Resul
 }
 
 fn set_hn_min_score(cfg: &mut VoidConfig, score: u32) -> anyhow::Result<()> {
-    let conn = cfg
-        .connections
-        .iter_mut()
-        .find(|c| c.connector_type == ConnectorType::HackerNews)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No Hacker News connection found in config. Run `void setup` to add one."
-            )
-        })?;
-
+    let conn = find_hn_connection_mut(cfg)?;
     match &mut conn.settings {
         ConnectionSettings::HackerNews {
             min_score: ref mut ms,
