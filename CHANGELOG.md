@@ -5,6 +5,28 @@ All notable changes to Void CLI are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-03-23
+
+### Added
+
+- **Cross-platform runtime** — Added Windows support for the sync daemon lifecycle, including detached background execution and stop handling.
+- **Windows install script** — Added `scripts/build-install.ps1` for native PowerShell install/update workflow.
+- **CI/Release** — Added Windows targets to CI and release packaging, including `void.exe` zip artifacts.
+
+### Changed
+
+- **Sync daemon** — Replaced Unix-only double-fork daemonization with a cross-platform re-exec daemon model and internal daemon mode routing.
+- **Process management** — Switched stale-lock and daemon process checks to `sysinfo` for cross-platform behavior.
+- **Configuration paths** — Made default config/store path resolution platform-aware using `dirs`, while preserving legacy Unix path compatibility when existing paths are present.
+- **Agent shell execution** — Added OS-specific shell invocation (`sh -c` on Unix, `cmd /C` on Windows) and home directory resolution via `dirs`.
+- **Codebase structure** — Split large connector modules and reorganized connector crate internals for maintainability.
+- **Documentation** — Updated README to reflect daemon behavior (`void sync` foreground vs `void sync --daemon`), Windows install steps, and platform-specific config/storage paths.
+
+### Fixed
+
+- **CLI setup editor fallback** — Uses `notepad` by default on Windows instead of Unix-only editor assumptions.
+- **Tests** — Replaced hardcoded `/tmp` paths with `std::env::temp_dir()` in connector/auth tests and added targeted edge-case coverage for config redaction, lock-file parsing, and Gmail auth cache loading.
+
 ## [0.3.2] - 2026-03-23
 
 ### Added

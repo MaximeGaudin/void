@@ -55,12 +55,20 @@ Void runs a background sync daemon that continuously pulls messages and events f
 ./scripts/build-install.sh /usr/local/bin
 ```
 
+```powershell
+# Windows (PowerShell)
+.\scripts\build-install.ps1
+
+# Or specify a custom directory
+.\scripts\build-install.ps1 -InstallDir "$HOME\\bin"
+```
+
 ```bash
 # Interactive setup — configure connectors, authenticate connections
 void setup
 
-# Start background sync
-void sync
+# Start background sync daemon
+void sync --daemon
 
 # Read your unified inbox
 void inbox
@@ -159,7 +167,8 @@ void calendar
 | Command | Description |
 |---------|-------------|
 | `void setup` | Interactive setup wizard — add, configure, rename connections |
-| `void sync` | Start background sync daemon |
+| `void sync` | Run sync in the foreground (Ctrl+C to stop) |
+| `void sync --daemon` | Start the background sync daemon |
 | `void sync --restart` | Restart the sync daemon |
 | `void sync --stop` | Stop the sync daemon |
 | `void sync --clear` | Clear database and start fresh |
@@ -180,7 +189,13 @@ void calendar
 
 ## Configuration
 
-Configuration lives at `~/.config/void/config.toml`. Use `void setup` to create and manage it interactively.
+Configuration is stored at a platform-specific default path and created by `void setup`:
+
+- Linux: `~/.config/void/config.toml`
+- macOS: prefers existing `~/.config/void/config.toml`, otherwise uses `~/Library/Application Support/void/config.toml`
+- Windows: `%APPDATA%\\void\\config.toml`
+
+Void keeps backward compatibility with existing Unix-style paths when those directories already exist.
 
 ```toml
 [store]
@@ -261,13 +276,17 @@ min_score = 100
 
 ## Data Storage
 
-All data is stored locally:
+All data is stored locally in the configured `store.path` directory:
 
-- **Database**: `~/.local/share/void/void.db` (SQLite with WAL mode)
-- **WhatsApp sessions**: `~/.local/share/void/whatsapp-*.db`
-- **Telegram sessions**: `~/.local/share/void/telegram-*.json`
-- **OAuth tokens**: `~/.local/share/void/*-token.json`
-- **Config**: `~/.config/void/config.toml`
+- **Database**: `<store.path>/void.db` (SQLite with WAL mode)
+- **WhatsApp sessions**: `<store.path>/whatsapp-*.db`
+- **Telegram sessions**: `<store.path>/telegram-*.json`
+- **OAuth tokens**: `<store.path>/*-token.json`
+- **Config**: platform default path (see Configuration section)
+
+Default `store.path` values:
+- Linux/macOS: `~/.local/share/void` (legacy-compatible default on Unix)
+- Windows: `%APPDATA%\\void` unless a legacy Unix-style path already exists
 
 No external database or Docker required.
 
