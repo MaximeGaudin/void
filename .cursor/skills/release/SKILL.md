@@ -1,6 +1,6 @@
 ---
 name: release
-description: Prepare, tag, and publish a new release — bump version, update CHANGELOG.md, build/install via project script, commit, create annotated tag, and optionally push + create GitHub release when requested. Use when the user asks to release, tag, cut a release, bump version, update the changelog, or publish.
+description: Prepare, tag, and publish a new release — bump version, update CHANGELOG.md, build/install via project script, commit, create annotated tag, and optionally push + trigger CI release workflow when requested. Use when the user asks to release, tag, cut a release, bump version, update the changelog, or publish.
 ---
 
 # Release
@@ -106,29 +106,30 @@ void --version
 
 ## 8. Publish (only when explicitly requested)
 
-If the user asks to publish the release, run:
+If the user asks to publish the release, push the commit and tag:
 
 ```bash
 git push origin HEAD
 git push origin X.Y.Z
 ```
 
-Then create the GitHub release:
+Then trigger the CI release workflow, which builds cross-platform binaries and creates the GitHub release automatically:
 
 ```bash
-# Generate release notes from CHANGELOG section
-awk "/^## \\[X.Y.Z\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > /tmp/release-notes.md
-
-gh release create X.Y.Z \
-  --title "vX.Y.Z" \
-  --notes-file /tmp/release-notes.md
+gh workflow run release.yml -f tag=X.Y.Z
 ```
 
-If a release already exists, update it instead:
+Monitor the workflow run to confirm it started:
 
 ```bash
-gh release edit X.Y.Z --title "vX.Y.Z" --notes-file /tmp/release-notes.md
+sleep 5
+gh run list --workflow=release.yml --limit=1
 ```
+
+The CI workflow (`release.yml`) handles:
+- Building binaries for macOS (arm64/amd64), Linux (arm64/amd64), and Windows (amd64)
+- Extracting the changelog section for the release notes
+- Creating (or updating) the GitHub release with all artifacts attached
 
 ## Checklist
 
@@ -141,17 +142,17 @@ Release X.Y.Z:
 - [ ] Update CHANGELOG.md
 - [ ] Bump version in Cargo.toml
 - [ ] cargo check
-- [ ] cargo install --path crates/void-cli
-- [ ] Update ~/bin/void (cp + codesign)
+- [ ] Build and install locally (./scripts/build-install.sh)
 - [ ] void --version shows new version
 - [ ] git commit
 - [ ] git tag -a X.Y.Z
 - [ ] Verify tag
 - [ ] (If requested) Push commit and tag
-- [ ] (If requested) Create/update GitHub release
+- [ ] (If requested) Trigger CI release workflow
 ```
 
 ## Notes
 
 - Use `./scripts/build-install.sh` (or `build-install.ps1` on Windows) instead of manual copy.
-- Do NOT push commits/tags or create a GitHub release unless the user explicitly asks.
+- Do NOT push commits/tags or trigger the CI release unless the user explicitly asks.
+- The GitHub release and cross-platform binaries are created by CI (`release.yml`), not locally. Always use `gh workflow run` to trigger it.
