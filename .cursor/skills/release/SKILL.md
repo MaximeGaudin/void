@@ -1,6 +1,6 @@
 ---
 name: release
-description: Prepare and tag a new release — bump version, update CHANGELOG.md, build, install, commit, and create an annotated git tag. Use when the user asks to release, tag, cut a release, bump version, or update the changelog.
+description: Prepare, tag, and publish a new release — bump version, update CHANGELOG.md, build/install via project script, commit, create annotated tag, and optionally push + create GitHub release when requested. Use when the user asks to release, tag, cut a release, bump version, update the changelog, or publish.
 ---
 
 # Release
@@ -71,11 +71,20 @@ Verify with `cargo check`.
 ## 5. Build and install
 
 ```
-cargo install --path crates/void-cli
-cp ~/.cargo/bin/void ~/bin/void
-xattr -cr ~/bin/void && codesign -s - ~/bin/void   # macOS only
+./scripts/build-install.sh
 void --version   # confirm new version
 ```
+
+Windows:
+
+```powershell
+.\scripts\build-install.ps1
+void --version
+```
+
+Important:
+- **Always** use project install scripts. Do not use `cp` or manual binary copy.
+- The script safely stops the sync daemon and performs an atomic replace.
 
 ## 6. Commit and tag
 
@@ -95,6 +104,32 @@ git tag -l "X.Y.Z" -n1
 void --version
 ```
 
+## 8. Publish (only when explicitly requested)
+
+If the user asks to publish the release, run:
+
+```bash
+git push origin HEAD
+git push origin X.Y.Z
+```
+
+Then create the GitHub release:
+
+```bash
+# Generate release notes from CHANGELOG section
+awk "/^## \\[X.Y.Z\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > /tmp/release-notes.md
+
+gh release create X.Y.Z \
+  --title "vX.Y.Z" \
+  --notes-file /tmp/release-notes.md
+```
+
+If a release already exists, update it instead:
+
+```bash
+gh release edit X.Y.Z --title "vX.Y.Z" --notes-file /tmp/release-notes.md
+```
+
 ## Checklist
 
 Copy and track:
@@ -112,10 +147,11 @@ Release X.Y.Z:
 - [ ] git commit
 - [ ] git tag -a X.Y.Z
 - [ ] Verify tag
+- [ ] (If requested) Push commit and tag
+- [ ] (If requested) Create/update GitHub release
 ```
 
 ## Notes
 
-- The `~/bin/void` binary takes precedence over `~/.cargo/bin/void` in PATH. Always copy after `cargo install`.
-- On macOS, the copied binary needs `xattr -cr` and `codesign -s -` to avoid quarantine/gatekeeper hangs.
-- Do NOT push tags unless the user explicitly asks (`git push origin X.Y.Z`).
+- Use `./scripts/build-install.sh` (or `build-install.ps1` on Windows) instead of manual copy.
+- Do NOT push commits/tags or create a GitHub release unless the user explicitly asks.
