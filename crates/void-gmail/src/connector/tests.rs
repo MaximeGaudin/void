@@ -1,9 +1,31 @@
+use base64::Engine;
 use super::*;
-use crate::api::GmailApiClient;
+use super::api_methods::build_reply_all_recipients;
+use crate::api::{GmailApiClient, GmailMessage};
 use void_core::db::Database;
 use void_core::models::{Conversation, ConversationKind, Message};
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn make_message(from: &str, to: &str, cc: Option<&str>) -> GmailMessage {
+    let mut headers = vec![
+        serde_json::json!({"name": "From", "value": from}),
+        serde_json::json!({"name": "To",   "value": to}),
+    ];
+    if let Some(c) = cc {
+        headers.push(serde_json::json!({"name": "Cc", "value": c}));
+    }
+    serde_json::from_value(serde_json::json!({
+        "id": "m1",
+        "threadId": "t1",
+        "payload": { "headers": headers }
+    }))
+    .unwrap()
+}
 
 #[tokio::test]
 async fn api_list_messages_paginates() {
@@ -550,4 +572,129 @@ fn looks_like_html_plain_text_is_false() {
 fn gmail_url_formats_correctly() {
     let url = GmailConnector::gmail_url("thread123");
     assert_eq!(url, "https://mail.google.com/mail/u/0/#inbox/thread123");
+}
+
+// ---------------------------------------------------------------------------
+// build_reply_all_recipients
+// ---------------------------------------------------------------------------
+
+#[test]
+fn reply_all_includes_sender_excludes_own() {
+    let msg = make_message("alice@example.com", "me@example.com", None);
+    let result = build_reply_all_recipients(&msg, "me@example.com");
+    assert_eq!(result, "alice@example.com");
+}
+
+#[test]
+fn reply_all_includes_all_to_recipients() {
+    let msg = make_message(
+        "alice@example.com",
+        "me@example.com, bob@example.com",
+        None,
+    );
+    let result = build_reply_all_recipients(&msg, "me@example.com");
+    assert!(result.contains("alice@example.com"), "should include From");
+    assert!(result.contains("bob@example.com"), "should include other To");
+    assert!(!result.contains("me@example.com"), "should exclude own address");
+}
+
+#[test]
+fn reply_all_includes_cc_recipients() {
+    let msg = make_message(
+        "alice@example.com",
+        "me@example.com",
+        Some("carol@example.com, dave@example.com"),
+    );
+    let result = build_reply_all_recipients(&msg, "me@example.com");
+    assert!(result.contains("alice@example.com"));
+    assert!(result.contains("carol@example.com"));
+    assert!(result.contains("dave@example.com"));
+    assert!(!result.contains("me@example.com"));
+}
+
+#[test]
+fn reply_all_deduplicates_addresses() {
+    // alice appears in both From and To
+    let msg = make_message(
+        "alice@example.com",
+        "alice@example.com, me@example.com",
+        None,
+    );
+    let result = build_reply_all_recipients(&msg, "me@example.com");
+    let count = result.matches("alice@example.com").count();
+    assert_eq!(count, 1, "alice should appear only once");
+}
+
+#[test]
+fn reply_all_preserves_display_names() {
+    let msg = make_message(
+        "Alice Smith <alice@example.com>",
+        "me@example.com",
+        None,
+    );
+    let result = build_reply_all_recipients(&msg, "me@example.com");
+    assert_eq!(result, "Alice Smith <alice@example.com>");
+}
+
+#[test]
+fn reply_all_own_exclusion_is_case_insensitive() {
+    let msg = make_message("alice@example.com", "ME@EXAMPLE.COM", None);
+    let result = build_reply_all_recipients(&msg, "me@example.com");
+    assert!(!result.contains("ME@EXAMPLE.COM"), "own address excluded regardless of case");
+    assert!(result.contains("alice@example.com"));
+}
+
+#[test]
+fn reply_all_empty_when_only_own_address() {
+    let msg = make_message("me@example.com", "me@example.com", None);
+    let result = build_reply_all_recipients(&msg, "me@example.com");
+    assert!(result.is_empty(), "no recipients left when own address is the only one");
+}
+
+// ---------------------------------------------------------------------------
+// GmailApiClient::create_draft (low-level)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn api_create_draft_posts_raw_message() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft1",
+            "message": { "id": "m1", "threadId": "t1" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode("To: alice@example.com\r\nSubject: Test\r\n\r\nBody".as_bytes());
+
+    let draft = api.create_draft(&raw, Some("t1")).await.unwrap();
+    assert_eq!(draft.id.as_deref(), Some("draft1"));
+}
+
+#[tokio::test]
+async fn api_create_draft_without_thread_id() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft2",
+            "message": { "id": "m2" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode("To: bob@example.com\r\nSubject: No thread\r\n\r\nHi".as_bytes());
+
+    let draft = api.create_draft(&raw, None).await.unwrap();
+    assert_eq!(draft.id.as_deref(), Some("draft2"));
 }

@@ -223,7 +223,7 @@ impl GmailConnector {
 }
 
 /// Build a reply-all recipient string from From + To + CC headers, excluding `own_email`.
-fn build_reply_all_recipients(msg: &crate::api::GmailMessage, own_email: &str) -> String {
+pub(super) fn build_reply_all_recipients(msg: &crate::api::GmailMessage, own_email: &str) -> String {
     let own = own_email.to_lowercase();
     let mut seen: Vec<String> = Vec::new();
     let mut recipients: Vec<String> = Vec::new();
