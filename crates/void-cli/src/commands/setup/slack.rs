@@ -200,11 +200,13 @@ pub(crate) async fn setup_slack(
     eprintln!("  running for a while. To let void auto-repair them on each");
     eprintln!("  sync, provide your App ID and a Config Refresh Token.");
     eprintln!();
-    eprintln!("  1. Find your App ID in \"Basic Information\" > \"App Credentials\"");
-    eprintln!("  2. Go to https://api.slack.com/apps");
-    eprintln!("     Scroll down to \"Your App Configuration Tokens\"");
-    eprintln!("     Click \"Generate Token\" for your workspace");
-    eprintln!("     Copy the Refresh Token (starts with xoxe-)");
+    eprintln!("  1. Your App ID is shown above (from \"Basic Information\" >");
+    eprintln!("     \"App Credentials\"). It looks like A0123ABC456.");
+    eprintln!("  2. Go to https://api.slack.com/apps (the main apps list).");
+    eprintln!("     Scroll DOWN past your list of apps — below the app list");
+    eprintln!("     you'll find a section called \"Your App Configuration Tokens\".");
+    eprintln!("     Click \"Generate Token\" and select your workspace.");
+    eprintln!("     Copy the Refresh Token (starts with xoxe-).");
     eprintln!();
 
     if confirm_default_yes("Set up auto-repair?") {
