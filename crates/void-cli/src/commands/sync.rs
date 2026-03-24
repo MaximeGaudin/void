@@ -2,9 +2,9 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use clap::Args;
-use sysinfo::{Pid, System};
 #[cfg(unix)]
 use sysinfo::Signal;
+use sysinfo::{Pid, System};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
