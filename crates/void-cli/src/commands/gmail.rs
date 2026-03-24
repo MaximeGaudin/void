@@ -123,9 +123,9 @@ pub enum DraftAction {
 
 #[derive(Debug, Args)]
 pub struct DraftCreateArgs {
-    /// Recipient email(s), comma-separated
+    /// Recipient email(s), comma-separated. Optional when --reply-to is set (defaults to reply-all).
     #[arg(long)]
-    pub to: String,
+    pub to: Option<String>,
     /// Email subject
     #[arg(long)]
     pub subject: String,
@@ -401,7 +401,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             let file_path = a.file.as_deref().map(std::path::Path::new);
             let draft = connector
                 .create_draft(
-                    &a.to,
+                    a.to.as_deref(),
                     &a.subject,
                     &a.body,
                     a.reply_to.as_deref(),

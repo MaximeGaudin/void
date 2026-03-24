@@ -127,7 +127,7 @@ impl GmailConnector {
 
     pub async fn create_draft(
         &self,
-        to: &str,
+        to: Option<&str>,
         subject: &str,
         body: &str,
         reply_to_message_id: Option<&str>,
@@ -136,9 +136,32 @@ impl GmailConnector {
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
 
+        // Resolve recipients: explicit --to takes priority; otherwise derive reply-all from the message.
+        let resolved_to: String;
+        let to_str: &str = match to {
+            Some(t) => t,
+            None => {
+                let msg_id = reply_to_message_id.ok_or_else(|| {
+                    anyhow::anyhow!("--to is required when --reply-to is not set")
+                })?;
+                let msg = api
+                    .get_message(msg_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("failed to fetch reply-to message: {e}"))?;
+                resolved_to = build_reply_all_recipients(&msg, &self.config_id);
+                if resolved_to.is_empty() {
+                    anyhow::bail!(
+                        "could not determine recipients from message {msg_id}; provide --to explicitly"
+                    );
+                }
+                debug!(to = %resolved_to, "auto-derived reply-all recipients");
+                &resolved_to
+            }
+        };
+
         let raw = if let Some(file_path) = file {
             super::compose::compose_rfc2822_with_attachment(
-                to,
+                to_str,
                 subject,
                 body,
                 file_path,
@@ -149,7 +172,7 @@ impl GmailConnector {
         } else {
             let subject = encode_rfc2047(subject);
             let mut headers = format!(
-                "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
+                "To: {to_str}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
             );
             if let Some(ref_id) = reply_to_message_id {
                 headers.push_str(&format!(
@@ -197,4 +220,30 @@ impl GmailConnector {
         let api = self.get_client().await?;
         api.delete_draft(draft_id).await.map_err(Into::into)
     }
+}
+
+/// Build a reply-all recipient string from From + To + CC headers, excluding `own_email`.
+fn build_reply_all_recipients(msg: &crate::api::GmailMessage, own_email: &str) -> String {
+    let own = own_email.to_lowercase();
+    let mut seen: Vec<String> = Vec::new();
+    let mut recipients: Vec<String> = Vec::new();
+
+    for header in ["From", "To", "Cc"] {
+        if let Some(val) = msg.get_header(header) {
+            for raw_addr in val.split(',') {
+                let raw_addr = raw_addr.trim();
+                if raw_addr.is_empty() {
+                    continue;
+                }
+                let email = super::compose::parse_email_address(raw_addr).to_lowercase();
+                if email == own || seen.contains(&email) {
+                    continue;
+                }
+                seen.push(email);
+                recipients.push(raw_addr.to_string());
+            }
+        }
+    }
+
+    recipients.join(", ")
 }
