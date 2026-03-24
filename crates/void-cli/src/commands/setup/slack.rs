@@ -167,6 +167,8 @@ pub(crate) async fn setup_slack(
 
     let connection_id = prompt_default("Connection name", "slack");
 
+    let mut app_id: Option<String> = None;
+
     let connection = ConnectionConfig {
         id: connection_id.clone(),
         connector_type: ConnectorType::Slack,
@@ -174,6 +176,7 @@ pub(crate) async fn setup_slack(
             app_token,
             user_token,
             exclude_channels: vec![],
+            app_id: None,
         },
     };
 
@@ -187,6 +190,56 @@ pub(crate) async fn setup_slack(
         }
     } else {
         eprintln!("  You can verify later with: void setup");
+    }
+
+    // ── Step 6 (optional): Auto-repair Event Subscriptions ───────────
+    separator();
+    eprintln!("STEP 6 (optional) — Auto-repair Event Subscriptions");
+    eprintln!();
+    eprintln!("  Slack may disable your event subscriptions if void is not");
+    eprintln!("  running for a while. To let void auto-repair them on each");
+    eprintln!("  sync, provide your App ID and a Config Refresh Token.");
+    eprintln!();
+    eprintln!("  1. Find your App ID in \"Basic Information\" > \"App Credentials\"");
+    eprintln!("  2. Go to https://api.slack.com/apps");
+    eprintln!("     Scroll down to \"Your App Configuration Tokens\"");
+    eprintln!("     Click \"Generate Token\" for your workspace");
+    eprintln!("     Copy the Refresh Token (starts with xoxe-)");
+    eprintln!();
+
+    if confirm_default_yes("Set up auto-repair?") {
+        let input_app_id = prompt("App ID (e.g. A012ABCD0A0): ");
+        if !input_app_id.is_empty() {
+            let refresh_token = prompt("Config Refresh Token (xoxe-...): ");
+            if !refresh_token.is_empty() {
+                let token_path = store_path
+                    .join(format!("slack-config-token-{connection_id}.json"));
+                if let Err(e) =
+                    void_slack::manifest::save_refresh_token(&token_path, &refresh_token)
+                {
+                    eprintln!("  ✗ Failed to save refresh token: {e}");
+                } else {
+                    app_id = Some(input_app_id);
+                    eprintln!("  ✓ Auto-repair configured. Event subscriptions will be");
+                    eprintln!("    checked and restored automatically on each `void sync`.");
+                }
+            } else {
+                eprintln!("  Skipped (no refresh token provided).");
+            }
+        } else {
+            eprintln!("  Skipped (no App ID provided).");
+        }
+    } else {
+        eprintln!("  Skipped. You can configure this later in config.toml.");
+    }
+
+    let mut connection = connection;
+    if let ConnectionSettings::Slack {
+        app_id: ref mut cfg_app_id,
+        ..
+    } = connection.settings
+    {
+        *cfg_app_id = app_id;
     }
 
     cfg.connections.push(connection);

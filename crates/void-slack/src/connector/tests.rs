@@ -197,6 +197,8 @@ async fn backfill_stores_conversations_and_messages() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec![],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     let db = void_core::db::Database::open_in_memory().unwrap();
@@ -255,6 +257,8 @@ async fn backfill_saves_done_state() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec![],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     let db = void_core::db::Database::open_in_memory().unwrap();
@@ -297,6 +301,8 @@ async fn start_sync_skips_backfill_when_already_done() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec![],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -375,6 +381,8 @@ async fn backfill_paginates_conversations() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec![],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     let db = void_core::db::Database::open_in_memory().unwrap();
@@ -436,6 +444,8 @@ async fn backfill_excludes_channels() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec!["random".to_string()],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     let db = void_core::db::Database::open_in_memory().unwrap();
@@ -496,6 +506,8 @@ async fn upload_file_calls_three_step_flow() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec![],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     let file_id = connector
@@ -611,6 +623,8 @@ async fn catch_up_fetches_messages_since_latest() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec![],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     connector.catch_up(&db).await.unwrap();
@@ -713,6 +727,8 @@ async fn start_sync_runs_catch_up_when_backfill_done() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         exclude_channels: vec![],
+        app_id: None,
+        store_path: std::env::temp_dir(),
     };
 
     let cancel = tokio_util::sync::CancellationToken::new();

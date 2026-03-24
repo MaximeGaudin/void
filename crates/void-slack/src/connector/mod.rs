@@ -1,6 +1,6 @@
 //! Slack connector: struct, Connector trait impl, action methods.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
@@ -23,6 +23,8 @@ pub struct SlackConnector {
     pub(crate) api: SlackApiClient,
     pub(crate) app_token: String,
     pub(crate) exclude_channels: Vec<String>,
+    pub(crate) app_id: Option<String>,
+    pub(crate) store_path: PathBuf,
 }
 
 impl SlackConnector {
@@ -31,13 +33,22 @@ impl SlackConnector {
         user_token: &str,
         app_token: &str,
         exclude_channels: Vec<String>,
+        app_id: Option<&str>,
+        store_path: &Path,
     ) -> Result<Self, SlackError> {
         Ok(Self {
             connection_id: connection_id.to_string(),
             api: SlackApiClient::new(user_token)?,
             app_token: app_token.to_string(),
             exclude_channels,
+            app_id: app_id.map(|s| s.to_string()),
+            store_path: store_path.to_path_buf(),
         })
+    }
+
+    pub(crate) fn config_token_path(&self) -> PathBuf {
+        self.store_path
+            .join(format!("slack-config-token-{}.json", self.connection_id))
     }
 
     pub async fn react(&self, channel: &str, ts: &str, emoji: &str) -> anyhow::Result<()> {

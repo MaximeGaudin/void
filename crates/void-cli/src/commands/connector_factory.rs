@@ -18,12 +18,15 @@ pub fn build_connector(
                 user_token,
                 app_token,
                 exclude_channels,
+                app_id,
             },
         ) => Ok(Arc::new(void_slack::connector::SlackConnector::new(
             &connection.id,
             user_token,
             app_token,
             exclude_channels.clone(),
+            app_id.as_deref(),
+            store_path,
         )?)),
         (ConnectorType::Gmail, ConnectionSettings::Gmail { credentials_file }) => {
             let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));

@@ -33,6 +33,7 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                     app_token,
                     user_token,
                     exclude_channels,
+                    ..
                 } => {
                     eprintln!("    app_token:  {}", config::redact_token(app_token));
                     eprintln!("    user_token: {}", config::redact_token(user_token));

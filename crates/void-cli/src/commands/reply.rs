@@ -110,6 +110,7 @@ async fn run_slack_scheduled_reply(
             user_token,
             app_token,
             exclude_channels,
+            ..
         } => (
             user_token.clone(),
             app_token.clone(),
@@ -123,6 +124,8 @@ async fn run_slack_scheduled_reply(
         &user_token,
         &app_token,
         exclude_channels,
+        None,
+        std::env::temp_dir().as_path(),
     )?;
 
     let scheduled_id = connector

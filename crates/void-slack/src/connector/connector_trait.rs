@@ -35,6 +35,34 @@ impl Connector for SlackConnector {
         db: Arc<Database>,
         cancel: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<()> {
+        if let Some(app_id) = &self.app_id {
+            let token_path = self.config_token_path();
+            if token_path.exists() {
+                if let Err(e) = crate::manifest::ensure_event_subscriptions(
+                    &token_path,
+                    app_id,
+                    &self.connection_id,
+                )
+                .await
+                {
+                    warn!(
+                        connection_id = %self.connection_id,
+                        error = %e,
+                        "event subscription check failed (non-fatal, continuing sync)"
+                    );
+                    eprintln!(
+                        "[slack:{}] Warning: event subscription check failed: {e}",
+                        self.connection_id
+                    );
+                }
+            } else {
+                debug!(
+                    connection_id = %self.connection_id,
+                    "no config token file found, skipping event subscription check"
+                );
+            }
+        }
+
         let needs_backfill = db
             .get_sync_state(&self.connection_id, "backfill_done")?
             .is_none();

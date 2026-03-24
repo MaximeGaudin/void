@@ -101,6 +101,7 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
                     .user_token
                     .ok_or_else(|| serde::de::Error::missing_field("user_token"))?,
                 exclude_channels: raw.exclude_channels.unwrap_or_default(),
+                app_id: raw.slack_app_id,
             },
             ConnectorType::Gmail => ConnectionSettings::Gmail {
                 credentials_file: raw.credentials_file,
@@ -146,6 +147,8 @@ struct RawConnectionConfig {
     api_id: Option<i32>,
     #[serde(default)]
     api_hash: Option<String>,
+    #[serde(default, rename = "app_id")]
+    slack_app_id: Option<String>,
     #[serde(default)]
     keywords: Option<Vec<String>>,
     #[serde(default)]
@@ -160,6 +163,8 @@ pub enum ConnectionSettings {
         user_token: String,
         #[serde(default)]
         exclude_channels: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_id: Option<String>,
     },
     Gmail {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -265,6 +270,7 @@ hackernews_poll_interval_secs = 3600
 # app_token = "xapp-1-..."
 # user_token = "xoxp-..."
 # exclude_channels = ["random", "social"]
+# # app_id = "A012ABCD0A0"  # optional — enables auto-repair of event subscriptions
 #
 # [[connections]]
 # id = "personal-gmail"
@@ -473,6 +479,7 @@ calendar_ids = ["primary", "holidays"]
                         app_token: "xapp".into(),
                         user_token: "xoxp".into(),
                         exclude_channels: vec![],
+                        app_id: None,
                     },
                 },
                 ConnectionConfig {

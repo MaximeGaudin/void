@@ -257,6 +257,7 @@ fn build_slack_connector(
             user_token,
             app_token,
             exclude_channels,
+            ..
         } => (
             user_token.clone(),
             app_token.clone(),
@@ -274,6 +275,8 @@ fn build_slack_connector(
         &user_token,
         &app_token,
         exclude_channels,
+        None,
+        std::env::temp_dir().as_path(),
     )?)
 }
 
