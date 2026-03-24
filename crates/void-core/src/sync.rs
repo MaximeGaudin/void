@@ -67,11 +67,13 @@ impl SyncEngine {
             handles.push(handle);
         }
 
+        let (shutdown_done_tx, shutdown_done_rx) = tokio::sync::oneshot::channel::<()>();
+
         let cancel_on_signal = cancel.clone();
         tokio::spawn(async move {
-            wait_for_shutdown_signal().await;
+            let signal = wait_for_shutdown_signal().await;
             eprintln!("\nShutting down gracefully... (press Ctrl+C again to force quit)");
-            info!("received shutdown signal, shutting down...");
+            info!(signal, "received shutdown signal, shutting down...");
             cancel_on_signal.cancel();
 
             tokio::select! {
@@ -79,16 +81,19 @@ impl SyncEngine {
                     eprintln!("\nForce exiting.");
                     std::process::exit(1);
                 }
-                _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
                     eprintln!("Graceful shutdown timed out, force exiting.");
                     std::process::exit(1);
                 }
+                _ = shutdown_done_rx => {}
             }
         });
 
         for handle in handles {
             handle.await.ok();
         }
+
+        drop(shutdown_done_tx);
 
         info!("all syncs stopped");
         Ok(())
@@ -99,16 +104,16 @@ impl SyncEngine {
     }
 }
 
-/// Wait for either SIGINT (Ctrl+C) or SIGTERM.
-async fn wait_for_shutdown_signal() {
+/// Wait for either SIGINT (Ctrl+C) or SIGTERM and return which signal fired.
+async fn wait_for_shutdown_signal() -> &'static str {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
         let mut sigterm =
             signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = sigterm.recv() => {}
+            _ = tokio::signal::ctrl_c() => "SIGINT (Ctrl+C)",
+            _ = sigterm.recv() => "SIGTERM",
         }
     }
     #[cfg(not(unix))]
@@ -116,6 +121,7 @@ async fn wait_for_shutdown_signal() {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to listen for ctrl_c");
+        "SIGINT (Ctrl+C)"
     }
 }
 

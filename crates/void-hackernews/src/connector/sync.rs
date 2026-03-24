@@ -23,7 +23,7 @@ pub(super) async fn run_sync(
     ensure_feed_conversation(db, connection_id)?;
 
     info!(connection_id, "running initial HN sync");
-    if let Err(e) = poll_stories(&client, db, connection_id, keywords, min_score).await {
+    if let Err(e) = poll_stories(&client, db, connection_id, keywords, min_score, &cancel).await {
         error!(connection_id, error = %e, "initial HN sync failed");
     }
 
@@ -39,7 +39,7 @@ pub(super) async fn run_sync(
             }
             _ = interval.tick() => {
                 info!(connection_id, "polling Hacker News");
-                if let Err(e) = poll_stories(&client, db, connection_id, keywords, min_score).await {
+                if let Err(e) = poll_stories(&client, db, connection_id, keywords, min_score, &cancel).await {
                     error!(connection_id, error = %e, "HN poll error");
                 }
             }
@@ -72,6 +72,7 @@ async fn poll_stories(
     connection_id: &str,
     keywords: &[String],
     min_score: u32,
+    cancel: &CancellationToken,
 ) -> anyhow::Result<()> {
     let story_ids = client.top_stories().await.unwrap_or_default();
     let total = story_ids.len() as u64;
@@ -83,6 +84,10 @@ async fn poll_stories(
     progress.set_items_total(total);
 
     for id in story_ids {
+        if cancel.is_cancelled() {
+            break;
+        }
+
         let external_id = format!("hackernews_{connection_id}_{id}");
         if db.message_exists(connection_id, &external_id)? {
             progress.inc(1);
@@ -115,11 +120,13 @@ async fn poll_stories(
 
     progress.finish();
 
-    db.set_sync_state(
-        connection_id,
-        "hn_last_sync",
-        &chrono::Utc::now().timestamp().to_string(),
-    )?;
+    if !cancel.is_cancelled() {
+        db.set_sync_state(
+            connection_id,
+            "hn_last_sync",
+            &chrono::Utc::now().timestamp().to_string(),
+        )?;
+    }
 
     Ok(())
 }
