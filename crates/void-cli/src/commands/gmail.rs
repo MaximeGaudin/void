@@ -399,13 +399,15 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
         DraftAction::Create(a) => {
             let connector = build_gmail_connector(a.connection.as_deref())?;
             let file_path = a.file.as_deref().map(std::path::Path::new);
+            let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
+            let thread_id = a.thread_id.as_deref().map(strip_void_id_prefix);
             let draft = connector
                 .create_draft(
                     a.to.as_deref(),
                     &a.subject,
                     &a.body,
-                    a.reply_to.as_deref(),
-                    a.thread_id.as_deref(),
+                    reply_to,
+                    thread_id,
                     file_path,
                 )
                 .await?;
@@ -462,6 +464,58 @@ async fn run_attachment(args: &AttachmentArgs) -> anyhow::Result<()> {
     std::fs::write(&args.out, &data)?;
     eprintln!("Attachment saved to {} ({} bytes).", args.out, data.len());
     Ok(())
+}
+
+/// Strip the void internal ID prefix from a Gmail message or thread ID.
+///
+/// Void stores IDs as `{connection_id}-{external_id}`, e.g.
+/// `mgaudin@gladia.io-19c9ae5982d4b217`. Gmail IDs are pure hex and
+/// never contain `@`, so the presence of `@` is an unambiguous indicator
+/// that the void prefix must be stripped before passing the ID to the API.
+fn strip_void_id_prefix(id: &str) -> &str {
+    if let Some(at_pos) = id.find('@') {
+        if let Some(dash_offset) = id[at_pos..].find('-') {
+            return &id[at_pos + dash_offset + 1..];
+        }
+    }
+    id
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_void_id_prefix;
+
+    #[test]
+    fn strip_void_prefix_removes_connection_prefix() {
+        assert_eq!(
+            strip_void_id_prefix("mgaudin@gladia.io-19c9ae5982d4b217"),
+            "19c9ae5982d4b217"
+        );
+    }
+
+    #[test]
+    fn strip_void_prefix_handles_personal_email() {
+        assert_eq!(
+            strip_void_id_prefix("me@maxime.ly-abcdef1234567890"),
+            "abcdef1234567890"
+        );
+    }
+
+    #[test]
+    fn strip_void_prefix_passthrough_raw_gmail_id() {
+        assert_eq!(strip_void_id_prefix("19c9ae5982d4b217"), "19c9ae5982d4b217");
+    }
+
+    #[test]
+    fn strip_void_prefix_passthrough_when_no_dash_after_at() {
+        // Malformed input with @ but no dash — return as-is rather than panic.
+        assert_eq!(strip_void_id_prefix("weird@nodash"), "weird@nodash");
+    }
+
+    #[test]
+    fn strip_void_prefix_empty_string() {
+        assert_eq!(strip_void_id_prefix(""), "");
+    }
 }
 
 fn build_gmail_connector(
