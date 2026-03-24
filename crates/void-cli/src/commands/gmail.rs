@@ -135,12 +135,9 @@ pub struct DraftCreateArgs {
     /// File to attach
     #[arg(long)]
     pub file: Option<String>,
-    /// Message ID to reply to (creates a reply draft)
+    /// Message ID to reply to — associates the draft with the thread and sets In-Reply-To headers.
     #[arg(long)]
     pub reply_to: Option<String>,
-    /// Thread ID to associate with
-    #[arg(long)]
-    pub thread_id: Option<String>,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,
@@ -400,14 +397,12 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             let connector = build_gmail_connector(a.connection.as_deref())?;
             let file_path = a.file.as_deref().map(std::path::Path::new);
             let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
-            let thread_id = a.thread_id.as_deref().map(strip_void_id_prefix);
             let draft = connector
                 .create_draft(
                     a.to.as_deref(),
                     &a.subject,
                     &a.body,
                     reply_to,
-                    thread_id,
                     file_path,
                 )
                 .await?;

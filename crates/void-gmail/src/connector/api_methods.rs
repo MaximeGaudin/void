@@ -125,68 +125,22 @@ impl GmailConnector {
         Ok(drafts)
     }
 
+    /// Create a draft, optionally as a reply.
+    ///
+    /// When `reply_to_message_id` is provided the original message is fetched
+    /// once to derive both the Gmail `threadId` (for API association) and the
+    /// reply-all recipient list (when `to` is `None`).
     pub async fn create_draft(
         &self,
         to: Option<&str>,
         subject: &str,
         body: &str,
         reply_to_message_id: Option<&str>,
-        thread_id: Option<&str>,
         file: Option<&std::path::Path>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
-
-        // Resolve recipients: explicit --to takes priority; otherwise derive reply-all from the message.
-        let resolved_to: String;
-        let to_str: &str = match to {
-            Some(t) => t,
-            None => {
-                let msg_id = reply_to_message_id.ok_or_else(|| {
-                    anyhow::anyhow!("--to is required when --reply-to is not set")
-                })?;
-                let msg = api
-                    .get_message(msg_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("failed to fetch reply-to message: {e}"))?;
-                resolved_to = build_reply_all_recipients(&msg, &self.config_id);
-                if resolved_to.is_empty() {
-                    anyhow::bail!(
-                        "could not determine recipients from message {msg_id}; provide --to explicitly"
-                    );
-                }
-                debug!(to = %resolved_to, "auto-derived reply-all recipients");
-                &resolved_to
-            }
-        };
-
-        let raw = if let Some(file_path) = file {
-            super::compose::compose_rfc2822_with_attachment(
-                to_str,
-                subject,
-                body,
-                file_path,
-                None,
-                reply_to_message_id,
-                reply_to_message_id,
-            )?
-        } else {
-            let subject = encode_rfc2047(subject);
-            let mut headers = format!(
-                "To: {to_str}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
-            );
-            if let Some(ref_id) = reply_to_message_id {
-                headers.push_str(&format!(
-                    "In-Reply-To: {ref_id}\r\nReferences: {ref_id}\r\n"
-                ));
-            }
-            headers.push_str(&format!("\r\n{body}"));
-            headers
-        };
-
-        let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-        api.create_draft(&encoded, thread_id)
+        create_draft_with_api(&api, &self.config_id, to, subject, body, reply_to_message_id, file)
             .await
-            .map_err(Into::into)
     }
 
     pub async fn update_draft(
@@ -222,8 +176,91 @@ impl GmailConnector {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Free helpers — pub(super) so tests.rs can reach them directly.
+// ---------------------------------------------------------------------------
+
+/// Core draft-creation logic, decoupled from token acquisition so that tests
+/// can pass a pre-configured `GmailApiClient` (e.g. pointed at a wiremock server).
+pub(super) async fn create_draft_with_api(
+    api: &GmailApiClient,
+    own_email: &str,
+    to: Option<&str>,
+    subject: &str,
+    body: &str,
+    reply_to_message_id: Option<&str>,
+    file: Option<&std::path::Path>,
+) -> anyhow::Result<crate::api::GmailDraft> {
+    // When replying, fetch the original message once to derive both the
+    // thread ID (for Gmail API association) and reply-all recipients (when
+    // --to is omitted). A single fetch avoids two round-trips.
+    let (reply_all_recipients, thread_id) = if let Some(msg_id) = reply_to_message_id {
+        let msg = api
+            .get_message(msg_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to fetch reply-to message: {e}"))?;
+
+        let recipients = if to.is_none() {
+            let r = build_reply_all_recipients(&msg, own_email);
+            if r.is_empty() {
+                anyhow::bail!(
+                    "could not determine recipients from message {msg_id}; provide --to explicitly"
+                );
+            }
+            debug!(to = %r, "auto-derived reply-all recipients");
+            Some(r)
+        } else {
+            None
+        };
+
+        (recipients, msg.thread_id.clone())
+    } else {
+        (None, None)
+    };
+
+    let to_str: &str = if let Some(t) = to {
+        t
+    } else if let Some(ref r) = reply_all_recipients {
+        r.as_str()
+    } else {
+        anyhow::bail!("--to is required when --reply-to is not set");
+    };
+
+    let raw = if let Some(file_path) = file {
+        super::compose::compose_rfc2822_with_attachment(
+            to_str,
+            subject,
+            body,
+            file_path,
+            None,
+            reply_to_message_id,
+            reply_to_message_id,
+        )?
+    } else {
+        let subject = encode_rfc2047(subject);
+        let mut headers = format!(
+            "To: {to_str}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
+        );
+        if let Some(ref_id) = reply_to_message_id {
+            headers.push_str(&format!(
+                "In-Reply-To: {ref_id}\r\nReferences: {ref_id}\r\n"
+            ));
+        }
+        headers.push_str(&format!("\r\n{body}"));
+        headers
+    };
+
+    let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
+    api.create_draft(&encoded, thread_id.as_deref())
+        .await
+        .map_err(Into::into)
+}
+
 /// Build a reply-all recipient string from From + To + CC headers, excluding `own_email`.
-pub(super) fn build_reply_all_recipients(msg: &crate::api::GmailMessage, own_email: &str) -> String {
+pub(super) fn build_reply_all_recipients(
+    msg: &crate::api::GmailMessage,
+    own_email: &str,
+) -> String {
     let own = own_email.to_lowercase();
     let mut seen: Vec<String> = Vec::new();
     let mut recipients: Vec<String> = Vec::new();

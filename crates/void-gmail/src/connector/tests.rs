@@ -1,6 +1,6 @@
 use base64::Engine;
 use super::*;
-use super::api_methods::build_reply_all_recipients;
+use super::api_methods::{build_reply_all_recipients, create_draft_with_api};
 use crate::api::{GmailApiClient, GmailMessage};
 use void_core::db::Database;
 use void_core::models::{Conversation, ConversationKind, Message};
@@ -697,4 +697,129 @@ async fn api_create_draft_without_thread_id() {
 
     let draft = api.create_draft(&raw, None).await.unwrap();
     assert_eq!(draft.id.as_deref(), Some("draft2"));
+}
+
+// ---------------------------------------------------------------------------
+// create_draft_with_api — thread_id auto-derivation
+// ---------------------------------------------------------------------------
+
+/// When --reply-to is given, the draft must be associated with the original
+/// message's thread (threadId forwarded in the API request body).
+#[tokio::test]
+async fn create_draft_derives_thread_id_from_reply_to_message() {
+    let server = MockServer::start().await;
+
+    // Original message returned when fetching the reply-to ID.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/msg1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg1",
+            "threadId": "thread_abc",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "alice@example.com"},
+                    {"name": "To",   "value": "me@example.com"}
+                ]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    // Verify the draft creation request includes the derived threadId.
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "message": { "threadId": "thread_abc" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft99",
+            "message": { "id": "new_msg", "threadId": "thread_abc" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let draft = create_draft_with_api(
+        &api,
+        "me@example.com",
+        Some("alice@example.com"),
+        "Re: Hello",
+        "Thanks!",
+        Some("msg1"),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(draft.id.as_deref(), Some("draft99"));
+}
+
+/// When --to is omitted, recipients are auto-derived reply-all from the
+/// original message AND the thread_id is still forwarded correctly.
+#[tokio::test]
+async fn create_draft_derives_thread_id_and_recipients_together() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/msg2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg2",
+            "threadId": "thread_xyz",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "bob@example.com"},
+                    {"name": "To",   "value": "me@example.com, carol@example.com"}
+                ]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft88",
+            "message": { "id": "new2", "threadId": "thread_xyz" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    // to=None → should be auto-derived from msg headers
+    let draft = create_draft_with_api(
+        &api,
+        "me@example.com",
+        None,
+        "Re: Chat",
+        "Got it.",
+        Some("msg2"),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(draft.id.as_deref(), Some("draft88"));
+}
+
+/// Without --reply-to AND without --to, the call must return an error.
+#[tokio::test]
+async fn create_draft_errors_without_to_and_reply_to() {
+    let server = MockServer::start().await;
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+
+    let result = create_draft_with_api(
+        &api,
+        "me@example.com",
+        None,
+        "Subject",
+        "Body",
+        None,
+        None,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("--to is required"));
 }
