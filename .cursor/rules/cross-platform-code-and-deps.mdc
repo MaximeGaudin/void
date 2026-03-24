@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+
+All produced code and library choices must be cross-platform (Linux, macOS, Windows).
+
+- Prefer platform-neutral Rust APIs (`std::path`, `std::process`, `dirs`, etc.) over OS-specific syscalls.
+- Do not introduce Unix-only behavior unless it is gated with `#[cfg(unix)]` and has a Windows-safe equivalent.
+- Do not hardcode Unix paths or environment assumptions (`/tmp`, `~/.config`, `HOME`) without cross-platform handling.
+- New dependencies must be actively maintained and support Windows/macOS/Linux; avoid crates that are Unix-only unless strictly isolated behind cfg gates.
+- For scripts or build/release flows, provide a Windows path when functionality is required by users on Windows.
