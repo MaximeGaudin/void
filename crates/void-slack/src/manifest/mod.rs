@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use serde::Deserialize;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 const SLACK_API_BASE: &str = "https://slack.com/api";
 
@@ -185,6 +185,10 @@ pub(crate) async fn update_manifest_with_url(
 // ---------------------------------------------------------------------------
 
 /// Returns `true` if the manifest already has the expected user events.
+///
+/// **Note:** This only checks the manifest JSON. Slack can report events in
+/// the manifest while the "Enable Events" UI toggle is OFF. Use this for
+/// diagnostics, not as the sole gate for skipping updates.
 pub(crate) fn has_expected_events(manifest: &serde_json::Value) -> bool {
     let events = manifest
         .pointer("/settings/event_subscriptions/user_events")
@@ -224,10 +228,12 @@ pub(crate) fn patch_event_subscriptions(manifest: &mut serde_json::Value) {
 // High-level orchestrator
 // ---------------------------------------------------------------------------
 
-/// Check and repair event subscriptions if needed.
+/// Ensure event subscriptions are enabled by always writing the manifest.
 ///
-/// Rotates the config token, exports the current manifest, and patches
-/// event subscriptions back to the expected state if Slack disabled them.
+/// Slack can keep `user_events` listed in the exported manifest while the
+/// "Enable Events" toggle is actually OFF. Checking the manifest alone is
+/// not reliable, so we always patch and push an update. The operation is
+/// idempotent — if events are already enabled it's a no-op on Slack's side.
 ///
 /// This is designed to be **non-fatal**: callers should log errors and
 /// continue with sync even if this fails.
@@ -250,20 +256,17 @@ pub async fn ensure_event_subscriptions(
     debug!(connection_id, app_id, "exporting Slack app manifest");
     let mut manifest = export_manifest(&http, &rotated.token, app_id).await?;
 
-    if has_expected_events(&manifest) {
-        eprintln!("[slack:{connection_id}] Event subscriptions OK");
-        info!(connection_id, "event subscriptions are correctly configured");
-        return Ok(());
-    }
-
-    warn!(connection_id, "event subscriptions are missing or incomplete — restoring");
-    eprintln!("[slack:{connection_id}] Event subscriptions disabled by Slack — restoring...");
-
+    let events_present = has_expected_events(&manifest);
     patch_event_subscriptions(&mut manifest);
     update_manifest(&http, &rotated.token, app_id, &manifest).await?;
 
-    eprintln!("[slack:{connection_id}] Event subscriptions restored successfully");
-    info!(connection_id, "event subscriptions restored via manifest update");
+    if events_present {
+        eprintln!("[slack:{connection_id}] Event subscriptions enforced (were present in manifest)");
+        info!(connection_id, "event subscriptions enforced via manifest update");
+    } else {
+        eprintln!("[slack:{connection_id}] Event subscriptions restored (were missing from manifest)");
+        info!(connection_id, "event subscriptions restored via manifest update");
+    }
 
     Ok(())
 }
