@@ -196,7 +196,6 @@ async fn backfill_stores_conversations_and_messages() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec![],
         app_id: None,
         store_path: std::env::temp_dir(),
     };
@@ -256,7 +255,6 @@ async fn backfill_saves_done_state() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec![],
         app_id: None,
         store_path: std::env::temp_dir(),
     };
@@ -300,7 +298,6 @@ async fn start_sync_skips_backfill_when_already_done() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec![],
         app_id: None,
         store_path: std::env::temp_dir(),
     };
@@ -380,7 +377,6 @@ async fn backfill_paginates_conversations() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec![],
         app_id: None,
         store_path: std::env::temp_dir(),
     };
@@ -393,7 +389,7 @@ async fn backfill_paginates_conversations() {
 }
 
 #[tokio::test]
-async fn backfill_excludes_channels() {
+async fn backfill_syncs_all_channels() {
     let server = wiremock::MockServer::start().await;
 
     let users = serde_json::json!({"ok": true, "members": []});
@@ -443,7 +439,6 @@ async fn backfill_excludes_channels() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec!["random".to_string()],
         app_id: None,
         store_path: std::env::temp_dir(),
     };
@@ -452,7 +447,7 @@ async fn backfill_excludes_channels() {
     connector.backfill(&db).await.unwrap();
 
     assert!(db.get_conversation("test-slack-C1").unwrap().is_some());
-    assert!(db.get_conversation("test-slack-C2").unwrap().is_none());
+    assert!(db.get_conversation("test-slack-C2").unwrap().is_some());
 }
 
 #[tokio::test]
@@ -505,7 +500,6 @@ async fn upload_file_calls_three_step_flow() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec![],
         app_id: None,
         store_path: std::env::temp_dir(),
     };
@@ -622,7 +616,6 @@ async fn catch_up_fetches_messages_since_latest() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec![],
         app_id: None,
         store_path: std::env::temp_dir(),
     };
@@ -726,7 +719,6 @@ async fn start_sync_runs_catch_up_when_backfill_done() {
         connection_id: "test-slack".to_string(),
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
-        exclude_channels: vec![],
         app_id: None,
         store_path: std::env::temp_dir(),
     };

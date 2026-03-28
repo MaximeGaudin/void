@@ -181,25 +181,70 @@ impl SlackConnector {
             .unwrap_or("unknown");
         let text = event.get("text").and_then(|v| v.as_str()).unwrap_or("");
 
-        let file_summary = if subtype == Some("file_share") {
-            event
+        let (file_summary, file_metadata, media_type) = if subtype == Some("file_share") {
+            let raw_files = event
                 .get("files")
                 .and_then(|f| f.as_array())
-                .map(|files| {
-                    files
-                        .iter()
-                        .filter_map(|f| {
-                            f.get("name")
-                                .or_else(|| f.get("title"))
-                                .and_then(|v| v.as_str())
-                                .map(|name| format!("📎 {name}"))
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                .cloned()
+                .unwrap_or_default();
+
+            let summary: Option<String> = if raw_files.is_empty() {
+                None
+            } else {
+                let descs: Vec<String> = raw_files
+                    .iter()
+                    .filter_map(|f| {
+                        let name = f
+                            .get("name")
+                            .or_else(|| f.get("title"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("file");
+                        let icon = match f.get("mimetype").and_then(|v| v.as_str()) {
+                            Some(m) if m.starts_with("image/") => "🖼️",
+                            Some(m) if m.starts_with("video/") => "🎬",
+                            Some(m) if m.starts_with("audio/") => "🎵",
+                            _ => "📎",
+                        };
+                        Some(format!("{icon} {name}"))
+                    })
+                    .collect();
+                Some(descs.join(", ")).filter(|s| !s.is_empty())
+            };
+
+            let mtype = raw_files.first().and_then(|f| {
+                f.get("mimetype").and_then(|v| v.as_str()).map(|m| {
+                    if m.starts_with("image/") {
+                        "image"
+                    } else if m.starts_with("video/") {
+                        "video"
+                    } else if m.starts_with("audio/") {
+                        "audio"
+                    } else {
+                        "file"
+                    }
+                    .to_string()
                 })
-                .filter(|s| !s.is_empty())
+            });
+
+            let files_json: Vec<serde_json::Value> = raw_files
+                .iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "id": f.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                        "name": f.get("name").and_then(|v| v.as_str()),
+                        "title": f.get("title").and_then(|v| v.as_str()),
+                        "mimetype": f.get("mimetype").and_then(|v| v.as_str()),
+                        "filetype": f.get("filetype").and_then(|v| v.as_str()),
+                        "size": f.get("size").and_then(|v| v.as_u64()),
+                        "url_private": f.get("url_private").and_then(|v| v.as_str()),
+                        "permalink": f.get("permalink").and_then(|v| v.as_str()),
+                    })
+                })
+                .collect();
+
+            (summary, Some(files_json), mtype)
         } else {
-            None
+            (None, None, None)
         };
 
         if text.is_empty() && file_summary.is_none() {
@@ -231,7 +276,15 @@ impl SlackConnector {
         };
 
         let timestamp = parse_ts(ts).unwrap_or(0);
-        let message = Message {
+
+        let metadata = file_metadata.map(|files| {
+            serde_json::json!({
+                "channel_id": channel_id,
+                "files": files,
+            })
+        });
+
+        let mut message = Message {
             id: format!("{}-{}", self.connection_id, ts),
             conversation_id: conv_id.clone(),
             connection_id: self.connection_id.clone(),
@@ -244,11 +297,14 @@ impl SlackConnector {
             synced_at: None,
             is_archived: false,
             reply_to_id: thread_ts.map(|tts| format!("{}-{tts}", self.connection_id)),
-            media_type: None,
-            metadata: None,
+            media_type,
+            metadata,
             context_id,
             context: None,
         };
+
+        self.download_message_files(std::slice::from_mut(&mut message))
+            .await;
 
         match db.upsert_message(&message) {
             Ok(_) => {

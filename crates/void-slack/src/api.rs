@@ -465,6 +465,21 @@ impl SlackApiClient {
         Ok(())
     }
 
+    /// Download a file from a Slack `url_private` URL using bearer-token auth.
+    pub async fn download_file(&self, url: &str) -> anyhow::Result<Vec<u8>> {
+        let resp = self
+            .http
+            .get(url)
+            .bearer_auth(&self.user_token)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            anyhow::bail!("Slack file download failed (HTTP {status}): {url}");
+        }
+        Ok(resp.bytes().await?.to_vec())
+    }
+
     pub async fn files_complete_upload_external(
         &self,
         file_id: &str,

@@ -61,26 +61,6 @@ impl SlackConnector {
             }
         }
 
-        if !self.exclude_channels.is_empty() {
-            let before = all.len();
-            all.retain(|conv| {
-                let dominated_by_id = self.exclude_channels.iter().any(|exc| exc == &conv.id);
-                let dominated_by_name = conv
-                    .name
-                    .as_ref()
-                    .is_some_and(|n| self.exclude_channels.iter().any(|exc| exc == n));
-                !(dominated_by_id || dominated_by_name)
-            });
-            let excluded = before - all.len();
-            if excluded > 0 {
-                info!(
-                    connection_id = %self.connection_id,
-                    excluded,
-                    "excluded channels from sync"
-                );
-            }
-        }
-
         Ok(all)
     }
 
@@ -195,6 +175,7 @@ impl SlackConnector {
                     .collect();
                 mapped.sort_by_key(|m| m.timestamp);
                 assign_time_window_context(&mut mapped, &self.connection_id, &conv.id);
+                self.download_message_files(&mut mapped).await;
                 for message in &mapped {
                     db.upsert_message(message)?;
                     progress.inc_secondary(1);

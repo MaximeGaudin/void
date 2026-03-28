@@ -22,7 +22,6 @@ pub struct SlackConnector {
     pub(crate) connection_id: String,
     pub(crate) api: SlackApiClient,
     pub(crate) app_token: String,
-    pub(crate) exclude_channels: Vec<String>,
     pub(crate) app_id: Option<String>,
     pub(crate) store_path: PathBuf,
 }
@@ -32,7 +31,6 @@ impl SlackConnector {
         connection_id: &str,
         user_token: &str,
         app_token: &str,
-        exclude_channels: Vec<String>,
         app_id: Option<&str>,
         store_path: &Path,
     ) -> Result<Self, SlackError> {
@@ -40,7 +38,6 @@ impl SlackConnector {
             connection_id: connection_id.to_string(),
             api: SlackApiClient::new(user_token)?,
             app_token: app_token.to_string(),
-            exclude_channels,
             app_id: app_id.map(|s| s.to_string()),
             store_path: store_path.to_path_buf(),
         })
@@ -96,6 +93,68 @@ impl SlackConnector {
             self.api.resolve_channel_id_by_name(channel_name).await
         } else {
             Ok(to.to_string())
+        }
+    }
+
+    pub(crate) fn files_dir(&self) -> PathBuf {
+        self.store_path
+            .join(format!("files/slack-{}", self.connection_id))
+    }
+
+    /// Download all Slack files referenced in `metadata.files` for each message
+    /// and add a `local_path` field pointing to the cached copy on disk.
+    pub(crate) async fn download_message_files(&self, messages: &mut [void_core::models::Message]) {
+        let dir = self.files_dir();
+        for msg in messages.iter_mut() {
+            let files = match msg
+                .metadata
+                .as_mut()
+                .and_then(|m| m.get_mut("files"))
+                .and_then(|f| f.as_array_mut())
+            {
+                Some(f) => f,
+                None => continue,
+            };
+            for file in files.iter_mut() {
+                let url = match file.get("url_private").and_then(|v| v.as_str()) {
+                    Some(u) => u.to_string(),
+                    None => continue,
+                };
+                let file_id = file
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let file_name = file
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("file");
+                let local_name = format!("{file_id}_{file_name}");
+                let dest = dir.join(&local_name);
+
+                if dest.exists() {
+                    file["local_path"] =
+                        serde_json::Value::String(dest.to_string_lossy().into_owned());
+                    continue;
+                }
+
+                match self.api.download_file(&url).await {
+                    Ok(data) => {
+                        if let Err(e) = std::fs::create_dir_all(&dir) {
+                            tracing::warn!(error = %e, "failed to create files cache dir");
+                            continue;
+                        }
+                        if let Err(e) = std::fs::write(&dest, &data) {
+                            tracing::warn!(file_id, error = %e, "failed to write cached file");
+                            continue;
+                        }
+                        file["local_path"] =
+                            serde_json::Value::String(dest.to_string_lossy().into_owned());
+                    }
+                    Err(e) => {
+                        tracing::warn!(file_id, error = %e, "failed to download Slack file");
+                    }
+                }
+            }
         }
     }
 
