@@ -13,6 +13,7 @@ pub mod hook;
 pub mod inbox;
 pub mod messages;
 pub mod mute;
+pub mod pagination;
 pub mod reply;
 pub mod resolve;
 pub mod search;

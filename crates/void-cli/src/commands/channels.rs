@@ -3,6 +3,7 @@ use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 
+use super::pagination::{build_meta, parse_page};
 use crate::output::{resolve_connector_filter, OutputFormatter};
 
 #[derive(Debug, Args)]
@@ -19,24 +20,30 @@ pub struct ChannelsArgs {
     /// Maximum number of results to return
     #[arg(short = 'n', long, default_value = "100")]
     pub size: i64,
+    /// Page number (1-based)
+    #[arg(long, default_value = "1")]
+    pub page: i64,
     /// Include muted channels/groups
     #[arg(long)]
     pub include_muted: bool,
 }
 
 pub fn run(args: &ChannelsArgs) -> anyhow::Result<()> {
-    debug!(search = ?args.search, connection = ?args.connection, connector = ?args.connector, size = args.size, "channels");
+    debug!(search = ?args.search, connection = ?args.connection, connector = ?args.connector, size = args.size, page = args.page, "channels");
     let connector = resolve_connector_filter(args.connector.as_deref())?;
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new();
+    let offset = parse_page(args.size, args.page)?;
 
-    let channels = db.list_channels(
+    let (channels, total_elements) = db.list_channels_paginated(
         args.connection.as_deref(),
         connector.as_deref(),
         args.search.as_deref(),
         args.size,
+        offset,
         args.include_muted,
     )?;
-    formatter.print_conversations(&channels)
+    let meta = build_meta(args.page, args.size, total_elements);
+    formatter.print_paginated(&channels, meta)
 }

@@ -214,8 +214,8 @@ pub(crate) async fn setup_slack(
         if !input_app_id.is_empty() {
             let refresh_token = prompt("Config Refresh Token (xoxe-...): ");
             if !refresh_token.is_empty() {
-                let token_path = store_path
-                    .join(format!("slack-config-token-{connection_id}.json"));
+                let token_path =
+                    store_path.join(format!("slack-config-token-{connection_id}.json"));
                 if let Err(e) =
                     void_slack::manifest::save_refresh_token(&token_path, &refresh_token)
                 {

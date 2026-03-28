@@ -64,6 +64,7 @@ pub(super) fn list_for_conversation(
     conn: &Connection,
     conversation_id: &str,
     limit: i64,
+    offset: i64,
     since: Option<i64>,
     until: Option<i64>,
 ) -> Result<Vec<Message>, DbError> {
@@ -87,16 +88,49 @@ pub(super) fn list_for_conversation(
     }
 
     sql.push_str(&format!(
-        " ORDER BY timestamp ASC LIMIT ?{}",
-        param_values.len() + 1
+        " ORDER BY timestamp ASC LIMIT ?{} OFFSET ?{}",
+        param_values.len() + 1,
+        param_values.len() + 2
     ));
     param_values.push(Box::new(limit));
+    param_values.push(Box::new(offset));
 
     let mut stmt = conn.prepare(&sql)?;
     let params_ref: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
     let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+pub(super) fn count_for_conversation(
+    conn: &Connection,
+    conversation_id: &str,
+    since: Option<i64>,
+    until: Option<i64>,
+) -> Result<i64, DbError> {
+    let suffix_pattern = format!("%-{conversation_id}");
+    let mut sql = String::from(
+        "SELECT COUNT(*) FROM messages WHERE (conversation_id = ?1 OR conversation_id LIKE ?2)",
+    );
+    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+        Box::new(conversation_id.to_string()),
+        Box::new(suffix_pattern),
+    ];
+
+    if let Some(s) = since {
+        sql.push_str(&format!(" AND timestamp >= ?{}", param_values.len() + 1));
+        param_values.push(Box::new(s));
+    }
+    if let Some(u) = until {
+        sql.push_str(&format!(" AND timestamp <= ?{}", param_values.len() + 1));
+        param_values.push(Box::new(u));
+    }
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
+    let count = stmt.query_row(params_ref.as_slice(), |row| row.get(0))?;
+    Ok(count)
 }
 
 pub(super) fn get(conn: &Connection, id: &str) -> Result<Option<Message>, DbError> {
@@ -129,6 +163,7 @@ pub(super) fn list_recent(
     connection_filter: Option<&str>,
     connector_filter: Option<&str>,
     limit: i64,
+    offset: i64,
     include_archived: bool,
     include_muted: bool,
 ) -> Result<Vec<Message>, DbError> {
@@ -160,16 +195,56 @@ pub(super) fn list_recent(
     }
 
     sql.push_str(&format!(
-        " ORDER BY timestamp DESC LIMIT ?{}",
-        param_values.len() + 1
+        " ORDER BY timestamp DESC LIMIT ?{} OFFSET ?{}",
+        param_values.len() + 1,
+        param_values.len() + 2
     ));
     param_values.push(Box::new(limit));
+    param_values.push(Box::new(offset));
 
     let mut stmt = conn.prepare(&sql)?;
     let params_ref: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
     let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+pub(super) fn count_recent(
+    conn: &Connection,
+    connection_filter: Option<&str>,
+    connector_filter: Option<&str>,
+    include_archived: bool,
+    include_muted: bool,
+) -> Result<i64, DbError> {
+    let mut sql = String::from("SELECT COUNT(*) FROM messages WHERE 1=1");
+    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if !include_archived {
+        sql.push_str(" AND is_archived = 0");
+    }
+    if !include_muted {
+        sql.push_str(
+            " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = messages.conversation_id AND c.is_muted = 1)",
+        );
+    }
+    if let Some(acct) = connection_filter {
+        let pattern = format!("%{acct}%");
+        sql.push_str(&format!(
+            " AND connection_id LIKE ?{}",
+            param_values.len() + 1
+        ));
+        param_values.push(Box::new(pattern));
+    }
+    if let Some(conn_type) = connector_filter {
+        sql.push_str(&format!(" AND connector = ?{}", param_values.len() + 1));
+        param_values.push(Box::new(conn_type.to_string()));
+    }
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
+    let count = stmt.query_row(params_ref.as_slice(), |row| row.get(0))?;
+    Ok(count)
 }
 
 pub(super) fn mark_archived(conn: &Connection, id: &str) -> Result<bool, DbError> {

@@ -205,9 +205,11 @@ pub(crate) fn has_expected_events(manifest: &serde_json::Value) -> bool {
 
 /// Patch the manifest in-place to include the expected user events.
 pub(crate) fn patch_event_subscriptions(manifest: &mut serde_json::Value) {
-    let settings = manifest
-        .as_object_mut()
-        .and_then(|m| m.entry("settings").or_insert_with(|| serde_json::json!({})).as_object_mut());
+    let settings = manifest.as_object_mut().and_then(|m| {
+        m.entry("settings")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+    });
 
     let Some(settings) = settings else { return };
 
@@ -242,8 +244,9 @@ pub async fn ensure_event_subscriptions(
     app_id: &str,
     connection_id: &str,
 ) -> anyhow::Result<()> {
-    let refresh_token = load_refresh_token(token_path)?
-        .ok_or_else(|| anyhow::anyhow!("no config refresh token found; run `void setup` to configure auto-repair"))?;
+    let refresh_token = load_refresh_token(token_path)?.ok_or_else(|| {
+        anyhow::anyhow!("no config refresh token found; run `void setup` to configure auto-repair")
+    })?;
 
     let http = reqwest::Client::new();
 
@@ -261,11 +264,21 @@ pub async fn ensure_event_subscriptions(
     update_manifest(&http, &rotated.token, app_id, &manifest).await?;
 
     if events_present {
-        eprintln!("[slack:{connection_id}] Event subscriptions enforced (were present in manifest)");
-        info!(connection_id, "event subscriptions enforced via manifest update");
+        eprintln!(
+            "[slack:{connection_id}] Event subscriptions enforced (were present in manifest)"
+        );
+        info!(
+            connection_id,
+            "event subscriptions enforced via manifest update"
+        );
     } else {
-        eprintln!("[slack:{connection_id}] Event subscriptions restored (were missing from manifest)");
-        info!(connection_id, "event subscriptions restored via manifest update");
+        eprintln!(
+            "[slack:{connection_id}] Event subscriptions restored (were missing from manifest)"
+        );
+        info!(
+            connection_id,
+            "event subscriptions restored via manifest update"
+        );
     }
 
     Ok(())

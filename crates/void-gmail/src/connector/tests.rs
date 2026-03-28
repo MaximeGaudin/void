@@ -1,7 +1,7 @@
-use base64::Engine;
-use super::*;
 use super::api_methods::{build_reply_all_recipients, create_draft_with_api};
+use super::*;
 use crate::api::{GmailApiClient, GmailMessage};
+use base64::Engine;
 use void_core::db::Database;
 use void_core::models::{Conversation, ConversationKind, Message};
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
@@ -587,15 +587,17 @@ fn reply_all_includes_sender_excludes_own() {
 
 #[test]
 fn reply_all_includes_all_to_recipients() {
-    let msg = make_message(
-        "alice@example.com",
-        "me@example.com, bob@example.com",
-        None,
-    );
+    let msg = make_message("alice@example.com", "me@example.com, bob@example.com", None);
     let result = build_reply_all_recipients(&msg, "me@example.com");
     assert!(result.contains("alice@example.com"), "should include From");
-    assert!(result.contains("bob@example.com"), "should include other To");
-    assert!(!result.contains("me@example.com"), "should exclude own address");
+    assert!(
+        result.contains("bob@example.com"),
+        "should include other To"
+    );
+    assert!(
+        !result.contains("me@example.com"),
+        "should exclude own address"
+    );
 }
 
 #[test]
@@ -627,11 +629,7 @@ fn reply_all_deduplicates_addresses() {
 
 #[test]
 fn reply_all_preserves_display_names() {
-    let msg = make_message(
-        "Alice Smith <alice@example.com>",
-        "me@example.com",
-        None,
-    );
+    let msg = make_message("Alice Smith <alice@example.com>", "me@example.com", None);
     let result = build_reply_all_recipients(&msg, "me@example.com");
     assert_eq!(result, "Alice Smith <alice@example.com>");
 }
@@ -640,7 +638,10 @@ fn reply_all_preserves_display_names() {
 fn reply_all_own_exclusion_is_case_insensitive() {
     let msg = make_message("alice@example.com", "ME@EXAMPLE.COM", None);
     let result = build_reply_all_recipients(&msg, "me@example.com");
-    assert!(!result.contains("ME@EXAMPLE.COM"), "own address excluded regardless of case");
+    assert!(
+        !result.contains("ME@EXAMPLE.COM"),
+        "own address excluded regardless of case"
+    );
     assert!(result.contains("alice@example.com"));
 }
 
@@ -648,7 +649,10 @@ fn reply_all_own_exclusion_is_case_insensitive() {
 fn reply_all_empty_when_only_own_address() {
     let msg = make_message("me@example.com", "me@example.com", None);
     let result = build_reply_all_recipients(&msg, "me@example.com");
-    assert!(result.is_empty(), "no recipients left when own address is the only one");
+    assert!(
+        result.is_empty(),
+        "no recipients left when own address is the only one"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -809,16 +813,8 @@ async fn create_draft_errors_without_to_and_reply_to() {
     let server = MockServer::start().await;
     let api = GmailApiClient::with_base_url("test-token", &server.uri());
 
-    let result = create_draft_with_api(
-        &api,
-        "me@example.com",
-        None,
-        "Subject",
-        "Body",
-        None,
-        None,
-    )
-    .await;
+    let result =
+        create_draft_with_api(&api, "me@example.com", None, "Subject", "Body", None, None).await;
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("--to is required"));

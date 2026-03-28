@@ -7,10 +7,7 @@ use super::*;
 
 #[test]
 fn save_and_load_refresh_token_roundtrip() {
-    let dir = std::env::temp_dir().join(format!(
-        "void-test-manifest-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("void-test-manifest-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("token.json");
 
@@ -136,8 +133,7 @@ async fn rotate_config_token_parses_response() {
         .await;
 
     let http = reqwest::Client::new();
-    let result =
-        rotate_config_token_with_url(&http, &mock_server.uri(), "xoxe-old-refresh").await;
+    let result = rotate_config_token_with_url(&http, &mock_server.uri(), "xoxe-old-refresh").await;
 
     let rotation = result.unwrap();
     assert_eq!(rotation.token, "xoxe.xoxp-new-access-token");
@@ -159,8 +155,7 @@ async fn rotate_config_token_handles_error() {
         .await;
 
     let http = reqwest::Client::new();
-    let result =
-        rotate_config_token_with_url(&http, &mock_server.uri(), "xoxe-bad-token").await;
+    let result = rotate_config_token_with_url(&http, &mock_server.uri(), "xoxe-bad-token").await;
 
     let err = result.unwrap_err();
     assert!(err.to_string().contains("invalid_refresh_token"));
@@ -189,13 +184,8 @@ async fn export_manifest_parses_response() {
         .await;
 
     let http = reqwest::Client::new();
-    let result = export_manifest_with_url(
-        &http,
-        &mock_server.uri(),
-        "xoxe.xoxp-token",
-        "A0123456",
-    )
-    .await;
+    let result =
+        export_manifest_with_url(&http, &mock_server.uri(), "xoxe.xoxp-token", "A0123456").await;
 
     assert_eq!(result.unwrap(), manifest);
 }

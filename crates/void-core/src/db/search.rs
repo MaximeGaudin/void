@@ -33,6 +33,26 @@ impl Database {
         limit: i64,
         include_muted: bool,
     ) -> Result<Vec<Message>, crate::error::DbError> {
+        let (results, _) = self.search_messages_paginated(
+            query,
+            connection_filter,
+            connector_filter,
+            limit,
+            0,
+            include_muted,
+        )?;
+        Ok(results)
+    }
+
+    pub fn search_messages_paginated(
+        &self,
+        query: &str,
+        connection_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+        include_muted: bool,
+    ) -> Result<(Vec<Message>, i64), crate::error::DbError> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
             "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
@@ -40,40 +60,57 @@ impl Database {
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1",
         );
+        let mut count_sql = String::from(
+            "SELECT COUNT(*)
+             FROM messages_fts fts
+             JOIN messages m ON m.rowid = fts.rowid
+             WHERE messages_fts MATCH ?1",
+        );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(escaped)];
 
         if !include_muted {
-            sql.push_str(
-                " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.is_muted = 1)",
-            );
+            let muted_clause = " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.is_muted = 1)";
+            sql.push_str(muted_clause);
+            count_sql.push_str(muted_clause);
         }
         if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");
-            sql.push_str(&format!(
-                " AND m.connection_id LIKE ?{}",
-                param_values.len() + 1
-            ));
+            let clause = format!(" AND m.connection_id LIKE ?{}", param_values.len() + 1);
+            sql.push_str(&clause);
+            count_sql.push_str(&clause);
             param_values.push(Box::new(pattern));
         }
         if let Some(conn_type) = connector_filter {
-            sql.push_str(&format!(" AND m.connector = ?{}", param_values.len() + 1));
+            let clause = format!(" AND m.connector = ?{}", param_values.len() + 1);
+            sql.push_str(&clause);
+            count_sql.push_str(&clause);
             param_values.push(Box::new(conn_type.to_string()));
         }
 
         sql.push_str(&format!(
-            " ORDER BY bm25(messages_fts) LIMIT ?{}",
-            param_values.len() + 1
+            " ORDER BY bm25(messages_fts) LIMIT ?{} OFFSET ?{}",
+            param_values.len() + 1,
+            param_values.len() + 2
         ));
-        param_values.push(Box::new(limit));
 
         let conn = self.conn()?;
+
+        let count_params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let mut count_stmt = conn.prepare(&count_sql)?;
+        let total: i64 = count_stmt.query_row(count_params_ref.as_slice(), |row| row.get(0))?;
+        drop(count_stmt);
+
+        param_values.push(Box::new(limit));
+        param_values.push(Box::new(offset));
+
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
         let results: Vec<Message> = rows.collect::<Result<_, _>>()?;
         debug!(query, result_count = results.len(), "search messages");
-        Ok(results)
+        Ok((results, total))
     }
 }
 

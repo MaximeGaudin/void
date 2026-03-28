@@ -32,8 +32,31 @@ impl Database {
             connection_filter,
             connector_filter,
             limit,
+            0,
             include_muted,
         )
+    }
+
+    pub fn list_conversations_paginated(
+        &self,
+        connection_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+        include_muted: bool,
+    ) -> Result<(Vec<Conversation>, i64), DbError> {
+        let conn = self.conn()?;
+        let rows = conversations::list(
+            &conn,
+            connection_filter,
+            connector_filter,
+            limit,
+            offset,
+            include_muted,
+        )?;
+        let total =
+            conversations::count(&conn, connection_filter, connector_filter, include_muted)?;
+        Ok((rows, total))
     }
 
     pub fn find_conversation_by_name(
@@ -77,7 +100,22 @@ impl Database {
         since: Option<i64>,
         until: Option<i64>,
     ) -> Result<Vec<Message>, DbError> {
-        messages::list_for_conversation(&*self.conn()?, conversation_id, limit, since, until)
+        messages::list_for_conversation(&*self.conn()?, conversation_id, limit, 0, since, until)
+    }
+
+    pub fn list_messages_paginated(
+        &self,
+        conversation_id: &str,
+        limit: i64,
+        offset: i64,
+        since: Option<i64>,
+        until: Option<i64>,
+    ) -> Result<(Vec<Message>, i64), DbError> {
+        let conn = self.conn()?;
+        let rows =
+            messages::list_for_conversation(&conn, conversation_id, limit, offset, since, until)?;
+        let total = messages::count_for_conversation(&conn, conversation_id, since, until)?;
+        Ok((rows, total))
     }
 
     pub fn get_message(&self, id: &str) -> Result<Option<Message>, DbError> {
@@ -105,9 +143,39 @@ impl Database {
             connection_filter,
             connector_filter,
             limit,
+            0,
             include_archived,
             include_muted,
         )
+    }
+
+    pub fn recent_messages_paginated(
+        &self,
+        connection_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+        include_archived: bool,
+        include_muted: bool,
+    ) -> Result<(Vec<Message>, i64), DbError> {
+        let conn = self.conn()?;
+        let rows = messages::list_recent(
+            &conn,
+            connection_filter,
+            connector_filter,
+            limit,
+            offset,
+            include_archived,
+            include_muted,
+        )?;
+        let total = messages::count_recent(
+            &conn,
+            connection_filter,
+            connector_filter,
+            include_archived,
+            include_muted,
+        )?;
+        Ok((rows, total))
     }
 
     pub fn mark_message_archived(&self, id: &str) -> Result<bool, DbError> {
@@ -206,7 +274,29 @@ impl Database {
             connector_filter,
             search,
             limit,
+            0,
         )
+    }
+
+    pub fn list_contacts_paginated(
+        &self,
+        connection_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        search: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<(Vec<Contact>, i64), DbError> {
+        let conn = self.conn()?;
+        let rows = directory::list_contacts(
+            &conn,
+            connection_filter,
+            connector_filter,
+            search,
+            limit,
+            offset,
+        )?;
+        let total = directory::count_contacts(&conn, connection_filter, connector_filter, search)?;
+        Ok((rows, total))
     }
 
     // -- Channels --
@@ -225,8 +315,38 @@ impl Database {
             connector_filter,
             search,
             limit,
+            0,
             include_muted,
         )
+    }
+
+    pub fn list_channels_paginated(
+        &self,
+        connection_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        search: Option<&str>,
+        limit: i64,
+        offset: i64,
+        include_muted: bool,
+    ) -> Result<(Vec<Conversation>, i64), DbError> {
+        let conn = self.conn()?;
+        let rows = directory::list_channels(
+            &conn,
+            connection_filter,
+            connector_filter,
+            search,
+            limit,
+            offset,
+            include_muted,
+        )?;
+        let total = directory::count_channels(
+            &conn,
+            connection_filter,
+            connector_filter,
+            search,
+            include_muted,
+        )?;
+        Ok((rows, total))
     }
 
     // -- Mute state --

@@ -4,6 +4,14 @@ use void_core::models::{
 
 pub struct OutputFormatter;
 
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct PaginationMeta {
+    pub current_page: i64,
+    pub page_size: i64,
+    pub total_elements: i64,
+    pub total_pages: i64,
+}
+
 impl Default for OutputFormatter {
     fn default() -> Self {
         Self::new()
@@ -42,10 +50,29 @@ impl OutputFormatter {
         println!("{}", serde_json::to_string_pretty(&json_wrap(statuses))?);
         Ok(())
     }
+
+    pub fn print_paginated<T: serde::Serialize>(
+        &self,
+        data: T,
+        pagination: PaginationMeta,
+    ) -> anyhow::Result<()> {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_wrap_paginated(data, pagination))?
+        );
+        Ok(())
+    }
 }
 
 fn json_wrap<T: serde::Serialize>(data: T) -> serde_json::Value {
     serde_json::json!({ "data": data, "error": null })
+}
+
+fn json_wrap_paginated<T: serde::Serialize>(
+    data: T,
+    pagination: PaginationMeta,
+) -> serde_json::Value {
+    serde_json::json!({ "data": data, "pagination": pagination, "error": null })
 }
 
 pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {

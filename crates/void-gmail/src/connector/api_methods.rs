@@ -139,8 +139,16 @@ impl GmailConnector {
         file: Option<&std::path::Path>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
-        create_draft_with_api(&api, &self.config_id, to, subject, body, reply_to_message_id, file)
-            .await
+        create_draft_with_api(
+            &api,
+            &self.config_id,
+            to,
+            subject,
+            body,
+            reply_to_message_id,
+            file,
+        )
+        .await
     }
 
     pub async fn update_draft(

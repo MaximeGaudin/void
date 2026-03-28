@@ -398,13 +398,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             let file_path = a.file.as_deref().map(std::path::Path::new);
             let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
             let draft = connector
-                .create_draft(
-                    a.to.as_deref(),
-                    &a.subject,
-                    &a.body,
-                    reply_to,
-                    file_path,
-                )
+                .create_draft(a.to.as_deref(), &a.subject, &a.body, reply_to, file_path)
                 .await?;
 
             let draft_id = draft.id.as_deref().unwrap_or("?");
