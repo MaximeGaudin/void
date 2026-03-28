@@ -85,6 +85,7 @@ pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
         };
 
         db.mark_message_archived(message_id)?;
+        cleanup_cached_files(&msg);
         info!(message_id, remote_synced, "archived");
 
         results.push(serde_json::json!({
@@ -97,4 +98,26 @@ pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
     let output = serde_json::json!({ "data": results, "error": null });
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
+}
+
+/// Delete locally cached files referenced in `metadata.files[].local_path`.
+fn cleanup_cached_files(msg: &void_core::models::Message) {
+    let files = match msg
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("files"))
+        .and_then(|f| f.as_array())
+    {
+        Some(f) => f,
+        None => return,
+    };
+    for file in files {
+        if let Some(path) = file.get("local_path").and_then(|v| v.as_str()) {
+            match std::fs::remove_file(path) {
+                Ok(()) => debug!(path, "deleted cached file"),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => warn!(path, error = %e, "failed to delete cached file"),
+            }
+        }
+    }
 }
