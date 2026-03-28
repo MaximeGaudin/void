@@ -195,6 +195,40 @@ impl SlackConnector {
             messages = progress.secondary,
             "{label} complete"
         );
+
+        self.download_pending_files(db).await;
+
         Ok(())
+    }
+
+    /// Download files for previously synced messages that are missing a local copy.
+    async fn download_pending_files(&self, db: &Database) {
+        let mut pending = match db.messages_pending_file_download(&self.connection_id, "slack", 500)
+        {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                warn!(error = %e, "failed to query messages pending file download");
+                return;
+            }
+        };
+        if pending.is_empty() {
+            return;
+        }
+
+        info!(
+            connection_id = %self.connection_id,
+            count = pending.len(),
+            "downloading files for previously synced messages"
+        );
+
+        self.download_message_files(&mut pending).await;
+
+        for msg in &pending {
+            if let Some(ref meta) = msg.metadata {
+                if let Err(e) = db.update_message_metadata(&msg.id, meta) {
+                    warn!(message_id = %msg.id, error = %e, "failed to update metadata after file download");
+                }
+            }
+        }
     }
 }

@@ -363,6 +363,26 @@ pub(super) fn reconcile_inbox(
     Ok((unarchived, archived))
 }
 
+/// Find messages that have files with `url_private` but no `local_path` yet.
+pub(super) fn messages_pending_file_download(
+    conn: &Connection,
+    connection_id: &str,
+    connector: &str,
+    limit: i64,
+) -> Result<Vec<Message>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+         FROM messages
+         WHERE connection_id = ?1 AND connector = ?2
+           AND metadata LIKE '%url_private%'
+           AND metadata NOT LIKE '%local_path%'
+         ORDER BY timestamp DESC
+         LIMIT ?3",
+    )?;
+    let rows = stmt.query_map(params![connection_id, connector, limit], row::row_to_message)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 pub(super) fn last_in_conversation(
     conn: &Connection,
     conversation_id: &str,

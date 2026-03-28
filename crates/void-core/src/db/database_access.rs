@@ -214,6 +214,16 @@ impl Database {
         messages::enrich_with_context(&*self.conn()?, messages)
     }
 
+    /// Find messages that have files with `url_private` but no cached `local_path`.
+    pub fn messages_pending_file_download(
+        &self,
+        connection_id: &str,
+        connector: &str,
+        limit: i64,
+    ) -> Result<Vec<Message>, DbError> {
+        messages::messages_pending_file_download(&*self.conn()?, connection_id, connector, limit)
+    }
+
     /// Get the most recent message in a conversation (used for time-window context grouping).
     pub fn last_message_in_conversation(
         &self,
