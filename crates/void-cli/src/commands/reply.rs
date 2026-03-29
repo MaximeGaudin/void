@@ -105,17 +105,12 @@ async fn run_slack_scheduled_reply(
         anyhow::bail!("Scheduled time must be in the future.");
     }
 
-    let (user_token, app_token, exclude_channels) = match &connection.settings {
+    let (user_token, app_token) = match &connection.settings {
         void_core::config::ConnectionSettings::Slack {
             user_token,
             app_token,
-            exclude_channels,
             ..
-        } => (
-            user_token.clone(),
-            app_token.clone(),
-            exclude_channels.clone(),
-        ),
+        } => (user_token.clone(), app_token.clone()),
         _ => anyhow::bail!("Mismatched settings for Slack connection"),
     };
 
@@ -123,7 +118,6 @@ async fn run_slack_scheduled_reply(
         &connection.id,
         &user_token,
         &app_token,
-        exclude_channels,
         None,
         std::env::temp_dir().as_path(),
     )?;

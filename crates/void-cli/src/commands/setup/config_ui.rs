@@ -32,14 +32,10 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                 config::ConnectionSettings::Slack {
                     app_token,
                     user_token,
-                    exclude_channels,
                     ..
                 } => {
                     eprintln!("    app_token:  {}", config::redact_token(app_token));
                     eprintln!("    user_token: {}", config::redact_token(user_token));
-                    if !exclude_channels.is_empty() {
-                        eprintln!("    exclude:    {}", exclude_channels.join(", "));
-                    }
                 }
                 config::ConnectionSettings::Gmail { credentials_file } => {
                     let label = credentials_file.as_deref().unwrap_or("(built-in)");

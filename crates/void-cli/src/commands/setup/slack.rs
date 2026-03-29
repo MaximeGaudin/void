@@ -175,7 +175,6 @@ pub(crate) async fn setup_slack(
         settings: ConnectionSettings::Slack {
             app_token,
             user_token,
-            exclude_channels: vec![],
             app_id: None,
         },
     };

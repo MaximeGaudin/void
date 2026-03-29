@@ -252,17 +252,12 @@ fn build_slack_connector(
             anyhow::anyhow!("No Slack connection found in config. Run `void setup` to add one.")
         })?;
 
-    let (user_token, app_token, exclude_channels) = match &connection.settings {
+    let (user_token, app_token) = match &connection.settings {
         void_core::config::ConnectionSettings::Slack {
             user_token,
             app_token,
-            exclude_channels,
             ..
-        } => (
-            user_token.clone(),
-            app_token.clone(),
-            exclude_channels.clone(),
-        ),
+        } => (user_token.clone(), app_token.clone()),
         _ => anyhow::bail!(
             "Mismatched connection settings for Slack connection '{}'",
             connection.id
@@ -274,7 +269,6 @@ fn build_slack_connector(
         &connection.id,
         &user_token,
         &app_token,
-        exclude_channels,
         None,
         std::env::temp_dir().as_path(),
     )?)

@@ -100,7 +100,6 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
                 user_token: raw
                     .user_token
                     .ok_or_else(|| serde::de::Error::missing_field("user_token"))?,
-                exclude_channels: raw.exclude_channels.unwrap_or_default(),
                 app_id: raw.slack_app_id,
             },
             ConnectorType::Gmail => ConnectionSettings::Gmail {
@@ -138,8 +137,6 @@ struct RawConnectionConfig {
     #[serde(default)]
     user_token: Option<String>,
     #[serde(default)]
-    exclude_channels: Option<Vec<String>>,
-    #[serde(default)]
     credentials_file: Option<String>,
     #[serde(default)]
     calendar_ids: Option<Vec<String>>,
@@ -161,8 +158,6 @@ pub enum ConnectionSettings {
     Slack {
         app_token: String,
         user_token: String,
-        #[serde(default)]
-        exclude_channels: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app_id: Option<String>,
     },
@@ -269,7 +264,6 @@ hackernews_poll_interval_secs = 3600
 # type = "slack"
 # app_token = "xapp-1-..."
 # user_token = "xoxp-..."
-# exclude_channels = ["random", "social"]
 # # app_id = "A012ABCD0A0"  # optional — enables auto-repair of event subscriptions
 #
 # [[connections]]
@@ -478,7 +472,6 @@ calendar_ids = ["primary", "holidays"]
                     settings: ConnectionSettings::Slack {
                         app_token: "xapp".into(),
                         user_token: "xoxp".into(),
-                        exclude_channels: vec![],
                         app_id: None,
                     },
                 },
@@ -613,7 +606,24 @@ credentials_file = "creds.json"
     }
 
     #[test]
-    fn parse_slack_exclude_channels() {
+    fn parse_slack_config() {
+        let toml = r#"
+[[connections]]
+id = "work-slack"
+type = "slack"
+app_token = "xapp-1-test"
+user_token = "xoxp-test"
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.connections.len(), 1);
+        match &config.connections[0].settings {
+            ConnectionSettings::Slack { .. } => {}
+            _ => panic!("expected Slack settings"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_with_legacy_exclude_channels_is_accepted() {
         let toml = r#"
 [[connections]]
 id = "work-slack"
@@ -623,35 +633,8 @@ user_token = "xoxp-test"
 exclude_channels = ["random", "social", "C07ABC123"]
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.connections.len(), 1);
         match &config.connections[0].settings {
-            ConnectionSettings::Slack {
-                exclude_channels, ..
-            } => {
-                assert_eq!(exclude_channels.len(), 3);
-                assert_eq!(exclude_channels[0], "random");
-                assert_eq!(exclude_channels[2], "C07ABC123");
-            }
-            _ => panic!("expected Slack settings"),
-        }
-    }
-
-    #[test]
-    fn parse_slack_without_exclude_channels_defaults_empty() {
-        let toml = r#"
-[[connections]]
-id = "work-slack"
-type = "slack"
-app_token = "xapp-1-test"
-user_token = "xoxp-test"
-"#;
-        let config: VoidConfig = toml::from_str(toml).unwrap();
-        match &config.connections[0].settings {
-            ConnectionSettings::Slack {
-                exclude_channels, ..
-            } => {
-                assert!(exclude_channels.is_empty());
-            }
+            ConnectionSettings::Slack { .. } => {}
             _ => panic!("expected Slack settings"),
         }
     }
