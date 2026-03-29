@@ -69,6 +69,7 @@ sqlite-vec = "0.1.7-alpha.10"
 zerocopy = { version = "0.8", features = ["derive"] }
 unicode-normalization = "0.1"
 sha2 = "0.10"
+ignore = "0.4"
 
 # Testing
 wiremock = "0.6"

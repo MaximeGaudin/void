@@ -262,47 +262,55 @@ fn ingest_file(
 }
 
 /// Recursively scan a folder and return file paths with their content hashes.
+/// Respects `.gitignore` rules (including nested and global gitignore) when a
+/// `.git` directory or `.gitignore` file is present.
 pub fn scan_folder(root: &Path) -> anyhow::Result<HashMap<String, String>> {
+    use ignore::WalkBuilder;
+
     let mut files = HashMap::new();
-    scan_recursive(root, &mut files);
-    Ok(files)
-}
 
-fn scan_recursive(dir: &Path, files: &mut HashMap<String, String>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(e) => {
-            warn!(path = %dir.display(), error = %e, "cannot read directory");
-            return;
-        }
-    };
+    let walker = WalkBuilder::new(root)
+        .hidden(true) // skip dotfiles/dotdirs
+        .git_ignore(true) // respect .gitignore
+        .git_global(true) // respect global gitignore
+        .git_exclude(true) // respect .git/info/exclude
+        .require_git(false) // still walk even without a .git dir
+        .build();
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.') {
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                warn!(error = %e, "error walking directory");
                 continue;
             }
+        };
+
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
         }
 
-        if path.is_dir() {
-            scan_recursive(&path, files);
-        } else if path.is_file() {
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if SUPPORTED_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
-                    match hash_file(&path) {
-                        Ok(hash) => {
-                            files.insert(path.to_string_lossy().to_string(), hash);
-                        }
-                        Err(e) => {
-                            debug!(path = %path.display(), error = %e, "cannot hash file");
-                        }
-                    }
-                }
+        let ext = match path.extension().and_then(|e| e.to_str()) {
+            Some(e) => e,
+            None => continue,
+        };
+
+        if !SUPPORTED_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
+            continue;
+        }
+
+        match hash_file(path) {
+            Ok(hash) => {
+                files.insert(path.to_string_lossy().to_string(), hash);
+            }
+            Err(e) => {
+                debug!(path = %path.display(), error = %e, "cannot hash file");
             }
         }
     }
+
+    Ok(files)
 }
 
 fn hash_file(path: &Path) -> anyhow::Result<String> {
@@ -397,6 +405,29 @@ mod tests {
 
         let files = scan_folder(dir.path()).unwrap();
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn scan_respects_gitignore() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("keep.txt"), "keep me").unwrap();
+        std::fs::write(dir.path().join("skip.txt"), "ignore me").unwrap();
+
+        let build_dir = dir.path().join("build");
+        std::fs::create_dir(&build_dir).unwrap();
+        std::fs::write(build_dir.join("output.txt"), "build artifact").unwrap();
+
+        std::fs::write(dir.path().join(".gitignore"), "skip.txt\nbuild/\n").unwrap();
+
+        let files = scan_folder(dir.path()).unwrap();
+        let names: Vec<&str> = files
+            .keys()
+            .filter_map(|p| Path::new(p).file_name()?.to_str())
+            .collect();
+
+        assert!(names.contains(&"keep.txt"), "keep.txt should be included");
+        assert!(!names.contains(&"skip.txt"), "skip.txt should be gitignored");
+        assert!(!names.contains(&"output.txt"), "build/ should be gitignored");
     }
 
     #[test]
