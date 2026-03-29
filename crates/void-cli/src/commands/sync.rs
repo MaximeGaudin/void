@@ -44,7 +44,7 @@ pub struct SyncArgs {
     pub daemon_inner: bool,
 }
 
-/// Display sync daemon status and per-connector sync info.
+/// Output sync daemon status and per-connector sync info as JSON to stdout.
 pub fn show_status() -> anyhow::Result<()> {
     let config_path = config::default_config_path();
     let cfg = VoidConfig::load(&config_path).map_err(|e| {
@@ -58,103 +58,76 @@ pub fn show_status() -> anyhow::Result<()> {
     let lock_path = store_path.join("LOCK");
     let log_path = store_path.join("void-sync.log");
 
-    // --- Daemon status ---
+    let mut daemon = serde_json::json!({ "running": false });
     if lock_path.exists() {
         let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
-        match parse_lock_pid(&content) {
-            Ok(pid) => {
-                let sys_pid = Pid::from_u32(pid);
-                let mut system = System::new_all();
-                if refresh_process_exists(&mut system, sys_pid) {
-                    eprintln!("Sync daemon: running (pid {})", pid);
-                } else {
-                    eprintln!("Sync daemon: stale lock (pid {} no longer running)", pid);
-                }
-            }
-            Err(_) => {
-                eprintln!("Sync daemon: unknown (malformed lock file)");
-            }
+        if let Ok(pid) = parse_lock_pid(&content) {
+            let sys_pid = Pid::from_u32(pid);
+            let mut system = System::new_all();
+            let alive = refresh_process_exists(&mut system, sys_pid);
+            daemon = serde_json::json!({ "running": alive, "pid": pid });
         }
-    } else {
-        eprintln!("Sync daemon: stopped");
     }
 
-    // --- Configured connections ---
-    if cfg.connections.is_empty() {
-        eprintln!("\nNo connections configured.");
-        return Ok(());
-    }
+    let mut connections = Vec::new();
 
-    eprintln!(
-        "\n{} configured connection(s):\n",
-        cfg.connections.len()
-    );
+    let db = Database::open(&cfg.db_path()).ok();
 
-    // --- Per-connection sync state from DB ---
-    let db = match Database::open(&cfg.db_path()) {
-        Ok(db) => db,
-        Err(e) => {
-            eprintln!("Cannot open database: {e}");
-            return Ok(());
-        }
-    };
-
-    let sync_states = db.list_sync_states().unwrap_or_default();
-    let mut state_map: std::collections::HashMap<String, Vec<(String, String)>> =
-        std::collections::HashMap::new();
-    for (conn_id, key, value) in &sync_states {
-        state_map
-            .entry(conn_id.clone())
-            .or_default()
-            .push((key.clone(), value.clone()));
-    }
+    let state_map = db
+        .as_ref()
+        .and_then(|db| db.list_sync_states().ok())
+        .unwrap_or_default()
+        .into_iter()
+        .fold(
+            std::collections::HashMap::<String, serde_json::Map<String, serde_json::Value>>::new(),
+            |mut map, (conn_id, key, value)| {
+                map.entry(conn_id)
+                    .or_default()
+                    .insert(key, serde_json::Value::String(value));
+                map
+            },
+        );
 
     for connection in &cfg.connections {
-        let connector_type = &connection.connector_type;
         let conn_id = &connection.id;
-        eprintln!("  {} ({})", conn_id, connector_type);
+        let connector_type = connection.connector_type.to_string();
 
-        let latest = db
-            .latest_message_timestamp(conn_id, &connector_type.to_string())
-            .ok()
+        let last_message_at = db
+            .as_ref()
+            .and_then(|db| db.latest_message_timestamp(conn_id, &connector_type).ok())
             .flatten();
-        if let Some(ts) = latest {
-            let formatted = chrono::DateTime::from_timestamp(ts, 0)
-                .map(|utc| utc.with_timezone(&chrono::Local))
-                .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
-                .unwrap_or_else(|| ts.to_string());
-            eprintln!("    last message: {}", formatted);
-        }
 
-        if let Some(states) = state_map.get(conn_id) {
-            for (key, value) in states {
-                let display_value = if value.len() > 60 {
-                    format!("{}...", &value[..57])
-                } else {
-                    value.clone()
-                };
-                eprintln!("    {}: {}", key, display_value);
-            }
+        let sync_state = state_map
+            .get(conn_id)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut entry = serde_json::json!({
+            "id": conn_id,
+            "connector": connector_type,
+        });
+        if let Some(ts) = last_message_at {
+            entry["last_message_at"] = serde_json::json!(ts);
         }
+        if !sync_state.is_empty() {
+            entry["sync_state"] = serde_json::Value::Object(sync_state);
+        }
+        connections.push(entry);
     }
 
-    // --- Log file ---
+    let mut output = serde_json::json!({
+        "daemon": daemon,
+        "connections": connections,
+    });
+
     if log_path.exists() {
+        output["log_file"] = serde_json::json!(log_path.to_string_lossy());
         if let Ok(meta) = std::fs::metadata(&log_path) {
-            let size = meta.len();
-            let size_display = if size >= 1_048_576 {
-                format!("{:.1} MB", size as f64 / 1_048_576.0)
-            } else if size >= 1024 {
-                format!("{:.1} KB", size as f64 / 1024.0)
-            } else {
-                format!("{} B", size)
-            };
-            eprintln!("\nLog file: {} ({})", log_path.display(), size_display);
-        } else {
-            eprintln!("\nLog file: {}", log_path.display());
+            output["log_file_bytes"] = serde_json::json!(meta.len());
         }
     }
 
+    println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
 }
 
