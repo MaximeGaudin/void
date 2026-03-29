@@ -1,16 +1,16 @@
-use std::path::PathBuf;
-use std::sync::Mutex;
-use std::time::Instant;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 use void_core::config::{self, VoidConfig};
 use void_kb::chunking::{chunk_text, ChunkConfig};
 use void_kb::db::KbDatabase;
 use void_kb::embedding::{Embedder, MockEmbedder};
-use void_kb::models::{Document, MetadataEntry, SourceType};
+use void_kb::models::{Document, MetadataEntry, SourceType, SyncFolder};
 use void_kb::search::hybrid_search;
-use void_kb::sync::{hash_content, sync_folder_with_progress, SyncEvent};
+use void_kb::sync::{diff_and_apply, hash_content, SyncEvent};
 
 #[derive(Debug, Args)]
 pub struct KbArgs {
@@ -234,64 +234,39 @@ fn run_search(args: &SearchArgs) -> anyhow::Result<()> {
 }
 
 fn run_sync(args: &SyncArgs) -> anyhow::Result<()> {
-    let db = open_kb_db()?;
-    let embedder = build_embedder()?;
+    let path = Path::new(&args.folder_path);
+    anyhow::ensure!(path.exists(), "Folder not found: {}", args.folder_path);
+    anyhow::ensure!(path.is_dir(), "Not a directory: {}", args.folder_path);
 
-    let start = Instant::now();
-    let file_start_time: Mutex<Option<Instant>> = Mutex::new(None);
-    let cumulative_ms: Mutex<u128> = Mutex::new(0);
-
-    let progress: Box<dyn Fn(SyncEvent) + Send> = Box::new(move |event| {
-        match event {
-            SyncEvent::Scanning => {
-                eprint!("\r\x1b[2KScanning folder...");
-            }
-            SyncEvent::ScanComplete { total_files } => {
-                eprintln!("\r\x1b[2KFound {total_files} file(s) on disk. Computing diff...");
-            }
-            SyncEvent::DiffComputed { to_add, to_update, to_delete, unchanged } => {
-                let total = to_add + to_update;
-                if total == 0 && to_delete == 0 {
-                    eprintln!("Nothing to do ({unchanged} file(s) unchanged).");
-                } else {
-                    let mut parts = Vec::new();
-                    if to_add > 0 { parts.push(format!("{to_add} new")); }
-                    if to_update > 0 { parts.push(format!("{to_update} modified")); }
-                    if to_delete > 0 { parts.push(format!("{to_delete} deleted")); }
-                    if unchanged > 0 { parts.push(format!("{unchanged} unchanged")); }
-                    eprintln!("Sync plan: {}. Indexing {total} file(s)...", parts.join(", "));
-                }
-            }
-            SyncEvent::FileStart { path, index, total } => {
-                *file_start_time.lock().unwrap() = Some(Instant::now());
-                let short = short_path(&path);
-                let pct = if total > 0 { index * 100 / total } else { 0 };
-                let eta = eta_string(index - 1, total, &cumulative_ms);
-                eprint!("\r\x1b[2K[{index}/{total}] {pct}% {short}{eta}");
-            }
-            SyncEvent::FileDone { index, total, .. } => {
-                if let Some(t) = file_start_time.lock().unwrap().take() {
-                    *cumulative_ms.lock().unwrap() += t.elapsed().as_millis();
-                }
-                if index == total {
-                    eprintln!();
-                }
-            }
-            SyncEvent::Done => {
-                let elapsed = start.elapsed();
-                eprintln!("Sync completed in {}", format_duration(elapsed));
-            }
+    let canonical = std::fs::canonicalize(path)?;
+    #[cfg(windows)]
+    let canonical = {
+        let s = canonical.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            std::path::PathBuf::from(stripped)
+        } else {
+            canonical
         }
-    });
+    };
+    let canonical_str = canonical.to_string_lossy().to_string();
 
-    let report = sync_folder_with_progress(&db, embedder.as_ref(), &args.folder_path, progress)?;
+    let db = open_kb_db()?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let folder = SyncFolder {
+        id: uuid::Uuid::new_v4().to_string(),
+        folder_path: canonical_str.clone(),
+        interval_secs: 60,
+        last_scan_at: None,
+        created_at: now,
+    };
+    db.upsert_sync_folder(&folder)?;
 
     let output = serde_json::json!({
         "data": {
-            "added": report.added,
-            "updated": report.updated,
-            "deleted": report.deleted,
-            "errors": report.errors,
+            "folder_path": canonical_str,
+            "registered": true,
+            "message": "Folder registered for KB sync. Indexing will happen during `void sync`.",
         },
         "error": null
     });
@@ -299,35 +274,121 @@ fn run_sync(args: &SyncArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn short_path(path: &str) -> &str {
-    path.rsplit_once('/')
-        .map(|(_, name)| name)
-        .or_else(|| path.rsplit_once('\\').map(|(_, name)| name))
-        .unwrap_or(path)
+// ── Daemon integration ─────────────────────────────────────────
+
+/// Spawn the KB sync background loop. Called from the `void sync` daemon.
+/// Periodically scans all registered KB folders and indexes changes.
+pub async fn spawn_kb_sync_loop(store_path: &Path, cancel: CancellationToken) {
+    let kb_path = store_path.join("kb.db");
+    let store = store_path.to_path_buf();
+
+    tokio::spawn(async move {
+        info!("KB sync loop started");
+
+        loop {
+            run_kb_sync_cycle(&kb_path, &store);
+
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    info!("KB sync loop shutting down");
+                    return;
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+            }
+        }
+    });
 }
 
-fn eta_string(completed: usize, total: usize, cumulative_ms: &Mutex<u128>) -> String {
-    if completed == 0 {
-        return String::new();
+fn run_kb_sync_cycle(kb_path: &Path, _store_path: &Path) {
+    let db = match KbDatabase::open(kb_path) {
+        Ok(db) => db,
+        Err(e) => {
+            // No KB database yet — nothing to do
+            tracing::debug!(error = %e, "KB database not available, skipping cycle");
+            return;
+        }
+    };
+
+    let folders = match db.list_sync_folders() {
+        Ok(f) => f,
+        Err(e) => {
+            error!(error = %e, "failed to list KB sync folders");
+            return;
+        }
+    };
+
+    if folders.is_empty() {
+        return;
     }
-    let elapsed_ms = *cumulative_ms.lock().unwrap();
-    let avg_ms = elapsed_ms / completed as u128;
-    let remaining = (total - completed) as u128;
-    let eta_ms = avg_ms * remaining;
-    let eta_dur = std::time::Duration::from_millis(eta_ms as u64);
-    format!("  ETA {}", format_duration(eta_dur))
+
+    let embedder = match build_embedder() {
+        Ok(e) => e,
+        Err(e) => {
+            error!(error = %e, "failed to initialize embedder for KB sync");
+            return;
+        }
+    };
+
+    if let Ok(n) = db.cleanup_expired() {
+        if n > 0 {
+            info!(count = n, "cleaned up expired KB documents");
+        }
+    }
+
+    for folder in &folders {
+        if !Path::new(&folder.folder_path).is_dir() {
+            tracing::warn!(path = %folder.folder_path, "KB sync folder no longer exists, skipping");
+            continue;
+        }
+
+        let progress = |event: SyncEvent| {
+            match &event {
+                SyncEvent::DiffComputed { to_add, to_update, to_delete, .. } => {
+                    if *to_add + *to_update + *to_delete > 0 {
+                        info!(
+                            folder = %folder.folder_path,
+                            to_add, to_update, to_delete,
+                            "KB sync found changes"
+                        );
+                    }
+                }
+                SyncEvent::FileDone { path, ok, .. } => {
+                    if !ok {
+                        tracing::warn!(path, "KB sync failed to index file");
+                    }
+                }
+                _ => {}
+            }
+        };
+
+        match diff_and_apply(&db, embedder.as_ref(), &folder.folder_path, &progress) {
+            Ok(report) => {
+                let total = report.added + report.updated + report.deleted;
+                if total > 0 || report.errors > 0 {
+                    info!(
+                        folder = %folder.folder_path,
+                        added = report.added,
+                        updated = report.updated,
+                        deleted = report.deleted,
+                        errors = report.errors,
+                        "KB sync cycle complete"
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    folder = %folder.folder_path,
+                    error = %e,
+                    "KB sync cycle failed"
+                );
+            }
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        db.update_sync_folder_scan_time(&folder.folder_path, &now).ok();
+    }
 }
 
-fn format_duration(d: std::time::Duration) -> String {
-    let secs = d.as_secs();
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{}m {:02}s", secs / 60, secs % 60)
-    } else {
-        format!("{}h {:02}m {:02}s", secs / 3600, (secs % 3600) / 60, secs % 60)
-    }
-}
 
 fn run_list(args: &ListArgs) -> anyhow::Result<()> {
     let db = open_kb_db()?;
