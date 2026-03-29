@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use clap::{Args, Subcommand};
 
@@ -8,7 +10,7 @@ use void_kb::db::KbDatabase;
 use void_kb::embedding::{Embedder, MockEmbedder};
 use void_kb::models::{Document, MetadataEntry, SourceType};
 use void_kb::search::hybrid_search;
-use void_kb::sync::{hash_content, sync_folder};
+use void_kb::sync::{hash_content, sync_folder_with_progress, SyncEvent};
 
 #[derive(Debug, Args)]
 pub struct KbArgs {
@@ -235,7 +237,54 @@ fn run_sync(args: &SyncArgs) -> anyhow::Result<()> {
     let db = open_kb_db()?;
     let embedder = build_embedder()?;
 
-    let report = sync_folder(&db, embedder.as_ref(), &args.folder_path)?;
+    let start = Instant::now();
+    let file_start_time: Mutex<Option<Instant>> = Mutex::new(None);
+    let cumulative_ms: Mutex<u128> = Mutex::new(0);
+
+    let progress: Box<dyn Fn(SyncEvent) + Send> = Box::new(move |event| {
+        match event {
+            SyncEvent::Scanning => {
+                eprint!("\r\x1b[2KScanning folder...");
+            }
+            SyncEvent::ScanComplete { total_files } => {
+                eprintln!("\r\x1b[2KFound {total_files} file(s) on disk. Computing diff...");
+            }
+            SyncEvent::DiffComputed { to_add, to_update, to_delete, unchanged } => {
+                let total = to_add + to_update;
+                if total == 0 && to_delete == 0 {
+                    eprintln!("Nothing to do ({unchanged} file(s) unchanged).");
+                } else {
+                    let mut parts = Vec::new();
+                    if to_add > 0 { parts.push(format!("{to_add} new")); }
+                    if to_update > 0 { parts.push(format!("{to_update} modified")); }
+                    if to_delete > 0 { parts.push(format!("{to_delete} deleted")); }
+                    if unchanged > 0 { parts.push(format!("{unchanged} unchanged")); }
+                    eprintln!("Sync plan: {}. Indexing {total} file(s)...", parts.join(", "));
+                }
+            }
+            SyncEvent::FileStart { path, index, total } => {
+                *file_start_time.lock().unwrap() = Some(Instant::now());
+                let short = short_path(&path);
+                let pct = if total > 0 { index * 100 / total } else { 0 };
+                let eta = eta_string(index - 1, total, &cumulative_ms);
+                eprint!("\r\x1b[2K[{index}/{total}] {pct}% {short}{eta}");
+            }
+            SyncEvent::FileDone { index, total, .. } => {
+                if let Some(t) = file_start_time.lock().unwrap().take() {
+                    *cumulative_ms.lock().unwrap() += t.elapsed().as_millis();
+                }
+                if index == total {
+                    eprintln!();
+                }
+            }
+            SyncEvent::Done => {
+                let elapsed = start.elapsed();
+                eprintln!("Sync completed in {}", format_duration(elapsed));
+            }
+        }
+    });
+
+    let report = sync_folder_with_progress(&db, embedder.as_ref(), &args.folder_path, progress)?;
 
     let output = serde_json::json!({
         "data": {
@@ -248,6 +297,36 @@ fn run_sync(args: &SyncArgs) -> anyhow::Result<()> {
     });
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
+}
+
+fn short_path(path: &str) -> &str {
+    path.rsplit_once('/')
+        .map(|(_, name)| name)
+        .or_else(|| path.rsplit_once('\\').map(|(_, name)| name))
+        .unwrap_or(path)
+}
+
+fn eta_string(completed: usize, total: usize, cumulative_ms: &Mutex<u128>) -> String {
+    if completed == 0 {
+        return String::new();
+    }
+    let elapsed_ms = *cumulative_ms.lock().unwrap();
+    let avg_ms = elapsed_ms / completed as u128;
+    let remaining = (total - completed) as u128;
+    let eta_ms = avg_ms * remaining;
+    let eta_dur = std::time::Duration::from_millis(eta_ms as u64);
+    format!("  ETA {}", format_duration(eta_dur))
+}
+
+fn format_duration(d: std::time::Duration) -> String {
+    let secs = d.as_secs();
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m {:02}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h {:02}m {:02}s", secs / 3600, (secs % 3600) / 60, secs % 60)
+    }
 }
 
 fn run_list(args: &ListArgs) -> anyhow::Result<()> {

@@ -17,11 +17,58 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
 
 const BATCH_EMBED_SIZE: usize = 16;
 
+/// Progress events emitted during sync.
+#[derive(Debug, Clone)]
+pub enum SyncEvent {
+    /// Scanning folder for files.
+    Scanning,
+    /// Scan complete: total files found on disk.
+    ScanComplete { total_files: usize },
+    /// Diff computed: how many files to add, update, delete, and skip.
+    DiffComputed {
+        to_add: usize,
+        to_update: usize,
+        to_delete: usize,
+        unchanged: usize,
+    },
+    /// Starting to process a file (add or update).
+    FileStart {
+        path: String,
+        index: usize,
+        total: usize,
+    },
+    /// Finished processing a file.
+    FileDone {
+        path: String,
+        index: usize,
+        total: usize,
+        ok: bool,
+    },
+    /// All processing complete.
+    Done,
+}
+
+pub type ProgressCallback = Box<dyn Fn(SyncEvent) + Send>;
+
+fn noop_progress() -> ProgressCallback {
+    Box::new(|_| {})
+}
+
 /// Scan a folder, detect changes, and update the KB accordingly.
 pub fn sync_folder(
     db: &KbDatabase,
     embedder: &dyn Embedder,
     folder_path: &str,
+) -> anyhow::Result<SyncReport> {
+    sync_folder_with_progress(db, embedder, folder_path, noop_progress())
+}
+
+/// Like `sync_folder` but accepts a progress callback.
+pub fn sync_folder_with_progress(
+    db: &KbDatabase,
+    embedder: &dyn Embedder,
+    folder_path: &str,
+    progress: ProgressCallback,
 ) -> anyhow::Result<SyncReport> {
     let path = Path::new(folder_path);
     anyhow::ensure!(path.exists(), "folder does not exist: {folder_path}");
@@ -39,10 +86,11 @@ pub fn sync_folder(
     };
     db.upsert_sync_folder(&folder)?;
 
-    let report = diff_and_apply(db, embedder, &canonical_str)?;
+    let report = diff_and_apply(db, embedder, &canonical_str, &progress)?;
 
     db.update_sync_folder_scan_time(&canonical_str, &chrono::Utc::now().to_rfc3339())?;
 
+    progress(SyncEvent::Done);
     Ok(report)
 }
 
@@ -51,11 +99,14 @@ pub fn diff_and_apply(
     db: &KbDatabase,
     embedder: &dyn Embedder,
     folder_path: &str,
+    progress: &dyn Fn(SyncEvent),
 ) -> anyhow::Result<SyncReport> {
+    progress(SyncEvent::Scanning);
     let disk_files = scan_folder(Path::new(folder_path))?;
     let db_entries = db.list_synced_paths_for_folder(folder_path)?;
 
     debug!(folder = folder_path, disk_count = disk_files.len(), db_count = db_entries.len(), "diff_and_apply");
+    progress(SyncEvent::ScanComplete { total_files: disk_files.len() });
 
     let db_map: HashMap<String, (String, String)> = db_entries
         .into_iter()
@@ -81,7 +132,6 @@ pub fn diff_and_apply(
         }
     }
 
-
     let disk_paths: std::collections::HashSet<&String> = disk_files.keys().collect();
     let to_delete: Vec<(String, String)> = db_map
         .iter()
@@ -89,33 +139,70 @@ pub fn diff_and_apply(
         .map(|(path, (id, _))| (id.clone(), path.clone()))
         .collect();
 
+    let unchanged = disk_files.len() - to_add.len() - to_update.len();
+    progress(SyncEvent::DiffComputed {
+        to_add: to_add.len(),
+        to_update: to_update.len(),
+        to_delete: to_delete.len(),
+        unchanged,
+    });
+
     for (doc_id, path) in &to_delete {
         info!(doc_id, path, "deleting removed file from KB");
         db.delete_document(doc_id)?;
         report.deleted += 1;
     }
 
+    let total_to_process = to_update.len() + to_add.len();
+    let mut processed: usize = 0;
+
     for (doc_id, file_path, new_hash) in &to_update {
+        processed += 1;
+        progress(SyncEvent::FileStart {
+            path: file_path.clone(),
+            index: processed,
+            total: total_to_process,
+        });
         info!(file_path, "re-indexing modified file");
         db.delete_document(doc_id)?;
-        match ingest_file(db, embedder, file_path, new_hash) {
-            Ok(_) => report.updated += 1,
+        let ok = match ingest_file(db, embedder, file_path, new_hash) {
+            Ok(_) => { report.updated += 1; true }
             Err(e) => {
                 warn!(file_path, error = %e, "failed to re-index file");
                 report.errors += 1;
+                false
             }
-        }
+        };
+        progress(SyncEvent::FileDone {
+            path: file_path.clone(),
+            index: processed,
+            total: total_to_process,
+            ok,
+        });
     }
 
     for (file_path, file_hash) in &to_add {
+        processed += 1;
+        progress(SyncEvent::FileStart {
+            path: file_path.clone(),
+            index: processed,
+            total: total_to_process,
+        });
         info!(file_path, "indexing new file");
-        match ingest_file(db, embedder, file_path, file_hash) {
-            Ok(_) => report.added += 1,
+        let ok = match ingest_file(db, embedder, file_path, file_hash) {
+            Ok(_) => { report.added += 1; true }
             Err(e) => {
                 warn!(file_path, error = %e, "failed to index file");
                 report.errors += 1;
+                false
             }
-        }
+        };
+        progress(SyncEvent::FileDone {
+            path: file_path.clone(),
+            index: processed,
+            total: total_to_process,
+            ok,
+        });
     }
 
     Ok(report)
