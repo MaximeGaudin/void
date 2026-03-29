@@ -77,6 +77,9 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     if let Some(Command::Sync(ref args)) = cli.command {
+        if args.status {
+            return commands::sync::show_status();
+        }
         if args.stop {
             return commands::sync::stop_daemon();
         }

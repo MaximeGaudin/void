@@ -393,6 +393,10 @@ impl Database {
 
     // -- Sync state --
 
+    pub fn list_sync_states(&self) -> Result<Vec<(String, String, String)>, DbError> {
+        mute_sync::list_sync_states(&*self.conn()?)
+    }
+
     pub fn get_sync_state(
         &self,
         connection_id: &str,

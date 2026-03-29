@@ -36,9 +36,126 @@ pub struct SyncArgs {
     /// Stop the running sync daemon
     #[arg(long)]
     pub stop: bool,
+    /// Show sync daemon status and per-connector sync info
+    #[arg(long)]
+    pub status: bool,
     /// Internal: run sync process as detached child.
     #[arg(long, hide = true)]
     pub daemon_inner: bool,
+}
+
+/// Display sync daemon status and per-connector sync info.
+pub fn show_status() -> anyhow::Result<()> {
+    let config_path = config::default_config_path();
+    let cfg = VoidConfig::load(&config_path).map_err(|e| {
+        anyhow::anyhow!(
+            "Cannot load config from {}: {e}\nRun `void setup` first.",
+            config_path.display()
+        )
+    })?;
+
+    let store_path = cfg.store_path();
+    let lock_path = store_path.join("LOCK");
+    let log_path = store_path.join("void-sync.log");
+
+    // --- Daemon status ---
+    if lock_path.exists() {
+        let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
+        match parse_lock_pid(&content) {
+            Ok(pid) => {
+                let sys_pid = Pid::from_u32(pid);
+                let mut system = System::new_all();
+                if refresh_process_exists(&mut system, sys_pid) {
+                    eprintln!("Sync daemon: running (pid {})", pid);
+                } else {
+                    eprintln!("Sync daemon: stale lock (pid {} no longer running)", pid);
+                }
+            }
+            Err(_) => {
+                eprintln!("Sync daemon: unknown (malformed lock file)");
+            }
+        }
+    } else {
+        eprintln!("Sync daemon: stopped");
+    }
+
+    // --- Configured connections ---
+    if cfg.connections.is_empty() {
+        eprintln!("\nNo connections configured.");
+        return Ok(());
+    }
+
+    eprintln!(
+        "\n{} configured connection(s):\n",
+        cfg.connections.len()
+    );
+
+    // --- Per-connection sync state from DB ---
+    let db = match Database::open(&cfg.db_path()) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("Cannot open database: {e}");
+            return Ok(());
+        }
+    };
+
+    let sync_states = db.list_sync_states().unwrap_or_default();
+    let mut state_map: std::collections::HashMap<String, Vec<(String, String)>> =
+        std::collections::HashMap::new();
+    for (conn_id, key, value) in &sync_states {
+        state_map
+            .entry(conn_id.clone())
+            .or_default()
+            .push((key.clone(), value.clone()));
+    }
+
+    for connection in &cfg.connections {
+        let connector_type = &connection.connector_type;
+        let conn_id = &connection.id;
+        eprintln!("  {} ({})", conn_id, connector_type);
+
+        let latest = db
+            .latest_message_timestamp(conn_id, &connector_type.to_string())
+            .ok()
+            .flatten();
+        if let Some(ts) = latest {
+            let formatted = chrono::DateTime::from_timestamp(ts, 0)
+                .map(|utc| utc.with_timezone(&chrono::Local))
+                .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
+                .unwrap_or_else(|| ts.to_string());
+            eprintln!("    last message: {}", formatted);
+        }
+
+        if let Some(states) = state_map.get(conn_id) {
+            for (key, value) in states {
+                let display_value = if value.len() > 60 {
+                    format!("{}...", &value[..57])
+                } else {
+                    value.clone()
+                };
+                eprintln!("    {}: {}", key, display_value);
+            }
+        }
+    }
+
+    // --- Log file ---
+    if log_path.exists() {
+        if let Ok(meta) = std::fs::metadata(&log_path) {
+            let size = meta.len();
+            let size_display = if size >= 1_048_576 {
+                format!("{:.1} MB", size as f64 / 1_048_576.0)
+            } else if size >= 1024 {
+                format!("{:.1} KB", size as f64 / 1024.0)
+            } else {
+                format!("{} B", size)
+            };
+            eprintln!("\nLog file: {} ({})", log_path.display(), size_display);
+        } else {
+            eprintln!("\nLog file: {}", log_path.display());
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_lock_pid(content: &str) -> anyhow::Result<u32> {
@@ -248,6 +365,7 @@ pub fn run_daemon_inner(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
             clear,
             clear_connector,
             stop: false,
+            status: false,
             daemon_inner: false,
         };
         info!("daemon child started");

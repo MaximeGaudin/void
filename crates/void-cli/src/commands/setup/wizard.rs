@@ -59,6 +59,7 @@ pub(crate) async fn exit_setup(cfg: &VoidConfig) -> anyhow::Result<()> {
                 clear: false,
                 clear_connector: None,
                 stop: false,
+                status: false,
                 daemon_inner: false,
             };
             sync::daemonize(&args, false)?;

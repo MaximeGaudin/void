@@ -38,6 +38,17 @@ pub(super) fn set_mute_by_external_id(
     Ok(updated > 0)
 }
 
+pub(super) fn list_sync_states(
+    conn: &Connection,
+) -> Result<Vec<(String, String, String)>, DbError> {
+    let mut stmt =
+        conn.prepare("SELECT connection_id, key, value FROM sync_state ORDER BY connection_id, key")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 pub(super) fn get_sync_state(
     conn: &Connection,
     connection_id: &str,
