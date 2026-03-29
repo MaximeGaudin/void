@@ -234,7 +234,7 @@ fn split_sentences(text: &str) -> Vec<(String, usize)> {
             }
         }
         if !found {
-            pos += 1;
+            pos += next_char_len(text, pos);
         }
     }
 
@@ -246,6 +246,14 @@ fn split_sentences(text: &str) -> Vec<(String, usize)> {
     }
 
     result
+}
+
+/// Returns the byte length of the UTF-8 character starting at `byte_pos`.
+fn next_char_len(text: &str, byte_pos: usize) -> usize {
+    text[byte_pos..]
+        .chars()
+        .next()
+        .map_or(1, |c| c.len_utf8())
 }
 
 fn split_by_words(
@@ -280,11 +288,14 @@ fn split_by_words(
     result
 }
 
-fn extract_overlap(text: &str, max_chars: usize) -> String {
-    if text.len() <= max_chars {
+fn extract_overlap(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
         return text.to_string();
     }
-    let start = text.len() - max_chars;
+    let mut start = text.len() - max_bytes;
+    while !text.is_char_boundary(start) && start < text.len() {
+        start += 1;
+    }
     if let Some(ws) = text[start..].find(' ') {
         text[start + ws + 1..].to_string()
     } else {
@@ -394,6 +405,25 @@ mod tests {
         let chunks = chunk_text(text, &default_config());
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].text, text);
+    }
+
+    #[test]
+    fn french_accented_text_splits_safely() {
+        let text = "Comment ça va? Ça va, écoute. ".repeat(200);
+        let config = ChunkConfig {
+            chunk_chars: 200,
+            overlap_chars: 50,
+            min_chunk_chars: 30,
+            max_chunks: 100,
+        };
+        let chunks = chunk_text(&text, &config);
+        assert!(chunks.len() > 1);
+        for chunk in &chunks {
+            assert!(chunk.start_byte <= chunk.end_byte);
+            assert!(chunk.end_byte <= text.len());
+            assert!(text.is_char_boundary(chunk.start_byte));
+            assert!(text.is_char_boundary(chunk.end_byte));
+        }
     }
 
     #[test]
