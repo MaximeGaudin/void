@@ -58,7 +58,11 @@ async fn run_bulk_before(args: &ArchiveArgs) -> anyhow::Result<()> {
         cleanup_cached_files(msg);
     }
 
-    info!(count = messages.len(), before = date_str, "bulk archive complete");
+    info!(
+        count = messages.len(),
+        before = date_str,
+        "bulk archive complete"
+    );
     let output = serde_json::json!({ "data": { "archived_count": messages.len() }, "error": null });
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())

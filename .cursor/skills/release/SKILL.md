@@ -147,8 +147,10 @@ Release X.Y.Z:
 - [ ] git commit
 - [ ] git tag -a X.Y.Z
 - [ ] Verify tag
-- [ ] (If requested) Push commit and tag
-- [ ] (If requested) Trigger CI release workflow
+- [ ] Push commit and tag
+- [ ] Wait for CI checks to be done
+- [ ] Fix the code if the checks are failing and publish a corrective tag
+- [ ] Trigger CI release workflow
 ```
 
 ## Notes

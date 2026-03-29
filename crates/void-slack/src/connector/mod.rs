@@ -120,14 +120,8 @@ impl SlackConnector {
                     Some(u) => u.to_string(),
                     None => continue,
                 };
-                let file_id = file
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                let file_name = file
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("file");
+                let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let file_name = file.get("name").and_then(|v| v.as_str()).unwrap_or("file");
                 let local_name = format!("{file_id}_{file_name}");
                 let dest = dir.join(&local_name);
 

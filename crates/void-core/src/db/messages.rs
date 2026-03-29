@@ -273,8 +273,9 @@ pub(super) fn bulk_archive_before(
         .query_map(params_ref.as_slice(), row::row_to_message)?
         .collect::<Result<_, _>>()?;
 
-    let mut update_sql =
-        String::from("UPDATE messages SET is_archived = 1 WHERE is_archived = 0 AND timestamp < ?1");
+    let mut update_sql = String::from(
+        "UPDATE messages SET is_archived = 1 WHERE is_archived = 0 AND timestamp < ?1",
+    );
     let mut update_params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(before_ts)];
 
     if let Some(ct) = connector_filter {
@@ -286,7 +287,10 @@ pub(super) fn bulk_archive_before(
         update_params.iter().map(|p| p.as_ref()).collect();
     conn.execute(&update_sql, update_ref.as_slice())?;
 
-    debug!(count = messages.len(), "bulk archived messages before cutoff");
+    debug!(
+        count = messages.len(),
+        "bulk archived messages before cutoff"
+    );
     Ok(messages)
 }
 
@@ -422,7 +426,10 @@ pub(super) fn messages_pending_file_download(
          ORDER BY timestamp DESC
          LIMIT ?3",
     )?;
-    let rows = stmt.query_map(params![connection_id, connector, limit], row::row_to_message)?;
+    let rows = stmt.query_map(
+        params![connection_id, connector, limit],
+        row::row_to_message,
+    )?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 

@@ -437,7 +437,7 @@ calendar_ids = ["primary", "holidays"]
     #[test]
     fn expand_tilde_works() {
         let expanded = expand_tilde("~/foo/bar");
-        assert!(expanded.to_str().unwrap().ends_with("/foo/bar"));
+        assert!(expanded.ends_with("foo/bar"));
         assert!(!expanded.to_str().unwrap().starts_with('~'));
 
         let no_tilde = expand_tilde("/absolute/path");

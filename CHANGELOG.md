@@ -5,7 +5,21 @@ All notable changes to Void CLI are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.2] - 2026-03-24
+## [0.5.0] - 2026-03-29
+
+### Added
+
+- **CLI** — Added `--page` parameter and pagination metadata to all list commands.
+- **Slack** — Downloaded files locally for auth-free access instead of requiring Slack tokens to view attachments.
+- **Slack** — Retroactively downloaded files for previously synced messages on startup.
+- **Slack** — Automatically deleted cached files when the parent message is archived.
+- **Archive** — Added `--before` flag for bulk date-based archiving.
+
+### Changed
+
+- **Slack** — Removed unused `exclude_channels` config field.
+
+## [0.4.2] - 2026-03-24
 
 ### Added
 
@@ -17,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Slack** — Always force-update the manifest on sync startup. Slack keeps events listed in the exported manifest even when the "Enable Events" toggle is OFF, so checking the manifest alone was unreliable.
 - **Sync** — Prevented premature force-exit and improved shutdown signal logging.
 
-## [4.0.1] - 2026-03-24
+## [0.4.1] - 2026-03-24
 
 ### Added
 
@@ -32,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Gmail** — Stripped internal ID prefix from `--reply-to` and `--thread-id` values so the Gmail API receives clean message IDs.
 - **Build** — Gated `sysinfo::Signal` import to Unix targets to fix Windows compilation.
 
-## [4.0.0] - 2026-03-23
+## [0.4.0] - 2026-03-23
 
 ### Added
 

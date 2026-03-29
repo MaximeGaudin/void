@@ -193,7 +193,7 @@ impl SlackConnector {
             } else {
                 let descs: Vec<String> = raw_files
                     .iter()
-                    .filter_map(|f| {
+                    .map(|f| {
                         let name = f
                             .get("name")
                             .or_else(|| f.get("title"))
@@ -205,7 +205,7 @@ impl SlackConnector {
                             Some(m) if m.starts_with("audio/") => "🎵",
                             _ => "📎",
                         };
-                        Some(format!("{icon} {name}"))
+                        format!("{icon} {name}")
                     })
                     .collect();
                 Some(descs.join(", ")).filter(|s| !s.is_empty())
