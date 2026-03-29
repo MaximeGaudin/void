@@ -3633,6 +3633,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqlite-vec"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76b546e18bc6c1ee5154218bd9a7a8a6807b7cbe7d377923ff76a0b6b399c4d5"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "sqlite-wasm-rs"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4280,6 +4289,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4472,12 +4490,14 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "void-agent",
  "void-calendar",
  "void-core",
  "void-gdrive",
  "void-gmail",
  "void-hackernews",
+ "void-kb",
  "void-slack",
  "void-telegram",
  "void-whatsapp",
@@ -4561,6 +4581,25 @@ dependencies = [
  "tokio-util",
  "tracing",
  "void-core",
+]
+
+[[package]]
+name = "void-kb"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlite-vec",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "unicode-normalization",
+ "uuid",
+ "zerocopy",
 ]
 
 [[package]]

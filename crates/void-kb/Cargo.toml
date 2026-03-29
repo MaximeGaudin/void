@@ -1,0 +1,24 @@
+[package]
+name = "void-kb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Knowledge base with embedding search for void-cli"
+
+[dependencies]
+rusqlite = { workspace = true }
+sqlite-vec = { workspace = true }
+zerocopy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+unicode-normalization = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -71,6 +71,8 @@ enum Command {
     Agent(commands::agent::AgentArgs),
     /// Manage hooks — LLM prompts triggered by events or schedules
     Hook(commands::hook::HookArgs),
+    /// Knowledge base — add, search, and sync documents
+    Kb(commands::kb::KbArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -130,6 +132,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Drive(args)) => commands::gdrive::run(args).await,
         Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,
         Some(Command::Hook(args)) => commands::hook::run(args),
+        Some(Command::Kb(args)) => commands::kb::run(args),
         None => {
             commands::status::run();
             Ok(())

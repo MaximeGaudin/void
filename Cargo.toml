@@ -11,6 +11,7 @@ members = [
     "crates/void-gdrive",
     "crates/void-hackernews",
     "crates/void-agent",
+    "crates/void-kb",
 ]
 
 [workspace.package]
@@ -63,6 +64,12 @@ urlencoding = "2"
 dirs = "6"
 sysinfo = "0.36.1"
 
+# Knowledge base
+sqlite-vec = "0.1.7-alpha.10"
+zerocopy = { version = "0.8", features = ["derive"] }
+unicode-normalization = "0.1"
+sha2 = "0.10"
+
 # Testing
 wiremock = "0.6"
 
@@ -76,3 +83,4 @@ void-telegram = { path = "crates/void-telegram" }
 void-gdrive = { path = "crates/void-gdrive" }
 void-hackernews = { path = "crates/void-hackernews" }
 void-agent = { path = "crates/void-agent" }
+void-kb = { path = "crates/void-kb" }
