@@ -420,6 +420,37 @@ impl KbDatabase {
         Ok(rows)
     }
 
+    /// Remove a sync folder registration and delete all documents that were
+    /// indexed from it (source_type = 'synced' with source_path under the folder).
+    /// Returns the number of documents removed.
+    pub fn remove_sync_folder(&self, folder_path: &str) -> anyhow::Result<usize> {
+        let doc_ids = {
+            let conn = self.conn()?;
+            let pattern = format!("{}%", folder_path);
+            let mut stmt = conn.prepare(
+                "SELECT id FROM kb_documents WHERE source_type = 'synced' AND source_path LIKE ?1",
+            )?;
+            let ids: Vec<String> = stmt
+                .query_map([&pattern], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            ids
+        };
+
+        let count = doc_ids.len();
+        for id in &doc_ids {
+            self.delete_document(id)?;
+        }
+
+        let conn = self.conn()?;
+        conn.execute(
+            "DELETE FROM kb_sync_folders WHERE folder_path = ?1",
+            [folder_path],
+        )?;
+
+        Ok(count)
+    }
+
     pub fn update_sync_folder_scan_time(&self, folder_path: &str, time: &str) -> anyhow::Result<()> {
         let conn = self.conn()?;
         conn.execute(
@@ -771,5 +802,60 @@ mod tests {
         assert_eq!(found.unwrap().id, "fp1");
 
         assert!(db.find_document_by_source_path("/tmp/nope.txt").unwrap().is_none());
+    }
+
+    #[test]
+    fn remove_sync_folder_deletes_docs_and_registration() {
+        let db = test_db();
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let folder = SyncFolder {
+            id: "sf-rm".into(),
+            folder_path: "/data/docs".into(),
+            interval_secs: 60,
+            last_scan_at: None,
+            created_at: now.clone(),
+        };
+        db.upsert_sync_folder(&folder).unwrap();
+
+        let mut d1 = make_doc("sd1", "synced content A");
+        d1.source_type = SourceType::Synced;
+        d1.source_path = Some("/data/docs/a.txt".into());
+        db.insert_document(&d1).unwrap();
+
+        let emb = vec![0.0f32; 1024];
+        db.insert_chunks_with_embeddings("sd1", &[("chunk a".into(), 0, 0, 7)], &[emb.clone()])
+            .unwrap();
+
+        let mut d2 = make_doc("sd2", "synced content B");
+        d2.source_type = SourceType::Synced;
+        d2.source_path = Some("/data/docs/sub/b.md".into());
+        db.insert_document(&d2).unwrap();
+        db.insert_chunks_with_embeddings("sd2", &[("chunk b".into(), 0, 0, 7)], &[emb.clone()])
+            .unwrap();
+
+        // Unrelated document that should survive
+        let mut d3 = make_doc("other", "unrelated");
+        d3.source_type = SourceType::Synced;
+        d3.source_path = Some("/other/folder/x.txt".into());
+        db.insert_document(&d3).unwrap();
+
+        let removed = db.remove_sync_folder("/data/docs").unwrap();
+        assert_eq!(removed, 2);
+
+        assert!(db.get_document("sd1").unwrap().is_none());
+        assert!(db.get_document("sd2").unwrap().is_none());
+        assert!(db.get_document("other").unwrap().is_some());
+        assert!(db.list_sync_folders().unwrap().is_empty());
+
+        let status = db.status().unwrap();
+        assert_eq!(status.sync_folder_count, 0);
+    }
+
+    #[test]
+    fn remove_sync_folder_nonexistent_returns_zero() {
+        let db = test_db();
+        let removed = db.remove_sync_folder("/no/such/folder").unwrap();
+        assert_eq!(removed, 0);
     }
 }

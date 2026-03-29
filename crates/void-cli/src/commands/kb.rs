@@ -26,6 +26,8 @@ pub enum KbCommand {
     Search(SearchArgs),
     /// Register and sync a folder with the knowledge base
     Sync(SyncArgs),
+    /// Stop syncing a folder and remove all its indexed documents
+    Unsync(UnsyncArgs),
     /// List all documents in the knowledge base
     List(ListArgs),
     /// Remove a document from the knowledge base
@@ -74,6 +76,12 @@ pub struct SyncArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct UnsyncArgs {
+    /// Path to the folder to stop syncing
+    pub folder_path: String,
+}
+
+#[derive(Debug, Args)]
 pub struct ListArgs {
     /// Number of results per page
     #[arg(long, short = 'n', default_value = "50")]
@@ -95,6 +103,7 @@ pub fn run(args: &KbArgs) -> anyhow::Result<()> {
         KbCommand::Add(a) => run_add(a),
         KbCommand::Search(a) => run_search(a),
         KbCommand::Sync(a) => run_sync(a),
+        KbCommand::Unsync(a) => run_unsync(a),
         KbCommand::List(a) => run_list(a),
         KbCommand::Remove(a) => run_remove(a),
         KbCommand::Status => run_status(),
@@ -275,6 +284,38 @@ fn run_sync(args: &SyncArgs) -> anyhow::Result<()> {
             "folder_path": canonical_str,
             "registered": true,
             "message": "Folder registered for KB sync. Indexing will happen during `void sync`.",
+        },
+        "error": null
+    });
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn run_unsync(args: &UnsyncArgs) -> anyhow::Result<()> {
+    let path = Path::new(&args.folder_path);
+    let canonical = if path.exists() {
+        std::fs::canonicalize(path)?
+    } else {
+        path.to_path_buf()
+    };
+    #[cfg(windows)]
+    let canonical = {
+        let s = canonical.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            std::path::PathBuf::from(stripped)
+        } else {
+            canonical
+        }
+    };
+    let canonical_str = canonical.to_string_lossy().to_string();
+
+    let db = open_kb_db()?;
+    let removed = db.remove_sync_folder(&canonical_str)?;
+
+    let output = serde_json::json!({
+        "data": {
+            "folder_path": canonical_str,
+            "documents_removed": removed,
         },
         "error": null
     });
