@@ -46,6 +46,8 @@ pub struct Document {
     pub source_path: Option<String>,
     pub content_hash: String,
     pub expiration: Option<String>,
+    /// File last-modification time (ISO 8601). Populated for synced/file sources.
+    pub source_mtime: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub metadata: Vec<MetadataEntry>,

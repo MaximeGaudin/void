@@ -218,6 +218,8 @@ fn ingest_file(
     let now = chrono::Utc::now().to_rfc3339();
     let doc_id = uuid::Uuid::new_v4().to_string();
 
+    let source_mtime = file_mtime(Path::new(file_path));
+
     let doc = Document {
         id: doc_id.clone(),
         content: content.clone(),
@@ -225,6 +227,7 @@ fn ingest_file(
         source_path: Some(file_path.to_string()),
         content_hash: content_hash.to_string(),
         expiration: None,
+        source_mtime,
         created_at: now.clone(),
         updated_at: now,
         metadata: vec![],
@@ -318,6 +321,14 @@ fn hash_file(path: &Path) -> anyhow::Result<String> {
     let mut hasher = Sha256::new();
     hasher.update(&content);
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Read a file's last-modified time as an ISO 8601 string.
+fn file_mtime(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    let modified = meta.modified().ok()?;
+    let dt: chrono::DateTime<chrono::Utc> = modified.into();
+    Some(dt.to_rfc3339())
 }
 
 pub fn hash_content(content: &[u8]) -> String {

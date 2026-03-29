@@ -9,6 +9,13 @@ const W_SEMANTIC: f64 = 1.0;
 const W_GREP: f64 = 1.5;
 const CANDIDATE_POOL: i64 = 100;
 
+/// Maximum additive bonus for a brand-new document.
+/// Calibrated to be meaningful as a tiebreaker (~15% of a rank-1 RRF score)
+/// without overwhelming strong semantic/grep matches.
+const W_RECENCY: f64 = 0.005;
+/// Number of days for the recency bonus to halve.
+const RECENCY_HALF_LIFE_DAYS: f64 = 180.0;
+
 #[derive(Debug, Clone)]
 struct CandidateChunk {
     #[allow(dead_code)]
@@ -55,7 +62,20 @@ pub fn hybrid_search(
         }
     }
 
-    let mut ranked: Vec<(f64, CandidateChunk)> = doc_best.into_values().collect();
+    let now = chrono::Utc::now();
+    let mut ranked: Vec<(f64, CandidateChunk)> = doc_best
+        .into_iter()
+        .map(|(doc_id, (base_score, chunk))| {
+            let bonus = db
+                .get_document_timestamp(&doc_id)
+                .ok()
+                .flatten()
+                .map(|ts| recency_bonus(&ts, &now))
+                .unwrap_or(0.0);
+            (base_score + bonus, chunk)
+        })
+        .collect();
+
     ranked.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -155,6 +175,21 @@ fn rrf_score(candidate: &CandidateChunk) -> f64 {
         .map(|r| W_GREP / (RRF_K + r as f64))
         .unwrap_or(0.0);
     sem + grep
+}
+
+/// Compute a small additive recency bonus from a timestamp.
+/// `bonus = W_RECENCY / (1 + age_days / HALF_LIFE)`.
+/// A brand-new document gets ~W_RECENCY; a 6-month-old one ~W_RECENCY/2.
+fn recency_bonus(timestamp: &str, now: &chrono::DateTime<chrono::Utc>) -> f64 {
+    let parsed = chrono::DateTime::parse_from_rfc3339(timestamp)
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+    match parsed {
+        Ok(dt) => {
+            let age_days = (*now - dt).num_seconds().max(0) as f64 / 86400.0;
+            W_RECENCY / (1.0 + age_days / RECENCY_HALF_LIFE_DAYS)
+        }
+        Err(_) => 0.0,
+    }
 }
 
 #[cfg(test)]
@@ -264,6 +299,39 @@ mod tests {
         let grep = vec![(2i64, "d2".into(), "b".into(), -5.0)];
         let fused = fuse_results(&semantic, &grep);
         assert_eq!(fused.len(), 2);
+    }
+
+    #[test]
+    fn recency_bonus_today_is_max() {
+        let now = chrono::Utc::now();
+        let ts = now.to_rfc3339();
+        let bonus = recency_bonus(&ts, &now);
+        assert!((bonus - W_RECENCY).abs() < 1e-6);
+    }
+
+    #[test]
+    fn recency_bonus_halves_at_half_life() {
+        let now = chrono::Utc::now();
+        let past = now - chrono::Duration::days(RECENCY_HALF_LIFE_DAYS as i64);
+        let ts = past.to_rfc3339();
+        let bonus = recency_bonus(&ts, &now);
+        let expected = W_RECENCY / 2.0;
+        assert!((bonus - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn recency_bonus_old_document_near_zero() {
+        let now = chrono::Utc::now();
+        let past = now - chrono::Duration::days(3650);
+        let ts = past.to_rfc3339();
+        let bonus = recency_bonus(&ts, &now);
+        assert!(bonus < W_RECENCY * 0.1, "very old doc should get negligible bonus");
+    }
+
+    #[test]
+    fn recency_bonus_invalid_timestamp() {
+        let now = chrono::Utc::now();
+        assert_eq!(recency_bonus("not-a-date", &now), 0.0);
     }
 
     #[test]

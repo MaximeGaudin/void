@@ -60,8 +60,8 @@ impl KbDatabase {
         let tx = conn.unchecked_transaction()?;
 
         tx.execute(
-            "INSERT INTO kb_documents (id, content, source_type, source_path, content_hash, expiration, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO kb_documents (id, content, source_type, source_path, content_hash, expiration, source_mtime, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 doc.id,
                 doc.content,
@@ -69,6 +69,7 @@ impl KbDatabase {
                 doc.source_path,
                 doc.content_hash,
                 doc.expiration,
+                doc.source_mtime,
                 doc.created_at,
                 doc.updated_at,
             ],
@@ -88,7 +89,7 @@ impl KbDatabase {
     pub fn get_document(&self, id: &str) -> anyhow::Result<Option<Document>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, content, source_type, source_path, content_hash, expiration, created_at, updated_at
+            "SELECT id, content, source_type, source_path, content_hash, expiration, source_mtime, created_at, updated_at
              FROM kb_documents WHERE id = ?1",
         )?;
 
@@ -100,8 +101,9 @@ impl KbDatabase {
                 source_path: row.get(3)?,
                 content_hash: row.get(4)?,
                 expiration: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                source_mtime: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
             })
         });
 
@@ -142,7 +144,7 @@ impl KbDatabase {
             conn.query_row("SELECT COUNT(*) FROM kb_documents", [], |row| row.get(0))?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, content, source_type, source_path, content_hash, expiration, created_at, updated_at
+            "SELECT id, content, source_type, source_path, content_hash, expiration, source_mtime, created_at, updated_at
              FROM kb_documents ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
         )?;
 
@@ -155,8 +157,9 @@ impl KbDatabase {
                     source_path: row.get(3)?,
                     content_hash: row.get(4)?,
                     expiration: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    source_mtime: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -175,7 +178,7 @@ impl KbDatabase {
     pub fn find_document_by_source_path(&self, path: &str) -> anyhow::Result<Option<Document>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, content, source_type, source_path, content_hash, expiration, created_at, updated_at
+            "SELECT id, content, source_type, source_path, content_hash, expiration, source_mtime, created_at, updated_at
              FROM kb_documents WHERE source_path = ?1",
         )?;
 
@@ -187,8 +190,9 @@ impl KbDatabase {
                 source_path: row.get(3)?,
                 content_hash: row.get(4)?,
                 expiration: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                source_mtime: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
             })
         });
 
@@ -443,6 +447,20 @@ impl KbDatabase {
         })
     }
 
+    /// Look up the best available timestamp for recency ranking.
+    /// Returns `source_mtime` if present, otherwise `updated_at`.
+    pub fn get_document_timestamp(&self, doc_id: &str) -> anyhow::Result<Option<String>> {
+        let conn = self.conn()?;
+        let ts: Option<String> = conn
+            .query_row(
+                "SELECT COALESCE(source_mtime, updated_at) FROM kb_documents WHERE id = ?1",
+                [doc_id],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(ts)
+    }
+
     // ── Helpers ────────────────────────────────────────────────────
 
     fn get_metadata_inner(
@@ -498,6 +516,7 @@ struct DocumentRow {
     source_path: Option<String>,
     content_hash: String,
     expiration: Option<String>,
+    source_mtime: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -511,6 +530,7 @@ impl DocumentRow {
             source_path: self.source_path,
             content_hash: self.content_hash,
             expiration: self.expiration,
+            source_mtime: self.source_mtime,
             created_at: self.created_at,
             updated_at: self.updated_at,
             metadata,
@@ -535,6 +555,7 @@ mod tests {
             source_path: None,
             content_hash: "abc123".to_string(),
             expiration: None,
+            source_mtime: None,
             created_at: now.clone(),
             updated_at: now,
             metadata: vec![],

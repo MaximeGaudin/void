@@ -170,6 +170,13 @@ fn run_add(args: &AddArgs) -> anyhow::Result<()> {
     let doc_id = uuid::Uuid::new_v4().to_string();
     let content_hash = hash_content(content.as_bytes());
 
+    let source_mtime = args.file.as_ref().and_then(|p| {
+        let meta = std::fs::metadata(p).ok()?;
+        let modified = meta.modified().ok()?;
+        let dt: chrono::DateTime<chrono::Utc> = modified.into();
+        Some(dt.to_rfc3339())
+    });
+
     let doc = Document {
         id: doc_id.clone(),
         content: content.clone(),
@@ -177,6 +184,7 @@ fn run_add(args: &AddArgs) -> anyhow::Result<()> {
         source_path,
         content_hash,
         expiration,
+        source_mtime,
         created_at: now.clone(),
         updated_at: now,
         metadata,

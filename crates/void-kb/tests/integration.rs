@@ -16,6 +16,7 @@ fn make_doc(id: &str, content: &str) -> Document {
         source_path: None,
         content_hash: hash_content(content.as_bytes()),
         expiration: None,
+        source_mtime: None,
         created_at: now.clone(),
         updated_at: now,
         metadata: vec![],

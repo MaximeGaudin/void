@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS kb_meta (key TEXT PRIMARY KEY, value TEXT)")?;
@@ -18,12 +18,22 @@ pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     if current_version < 1 {
         migrate_v1(conn)?;
     }
+    if current_version < 2 {
+        migrate_v2(conn)?;
+    }
 
     conn.execute(
         "INSERT OR REPLACE INTO kb_meta (key, value) VALUES ('schema_version', ?1)",
         [SCHEMA_VERSION.to_string()],
     )?;
 
+    Ok(())
+}
+
+fn migrate_v2(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "ALTER TABLE kb_documents ADD COLUMN source_mtime TEXT;",
+    )?;
     Ok(())
 }
 
@@ -128,6 +138,6 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "1");
+        assert_eq!(version, "2");
     }
 }
