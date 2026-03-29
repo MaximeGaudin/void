@@ -9,19 +9,63 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 
 use super::connector_factory;
+use crate::output;
 
 #[derive(Debug, Args)]
 pub struct ArchiveArgs {
     /// Message IDs to archive (one or more)
     pub message_ids: Vec<String>,
+
+    /// Archive all unarchived messages before this date (YYYY-MM-DD).
+    /// Mutually exclusive with positional message IDs.
+    #[arg(long)]
+    pub before: Option<String>,
+
+    /// Restrict --before to a specific connector (e.g. slack, gmail)
+    #[arg(long)]
+    pub connector: Option<String>,
 }
 
 pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
-    if args.message_ids.is_empty() {
-        anyhow::bail!("at least one message ID is required");
+    if args.before.is_some() {
+        return run_bulk_before(args).await;
     }
 
-    debug!(count = args.message_ids.len(), "bulk archive");
+    if args.message_ids.is_empty() {
+        anyhow::bail!("at least one message ID is required (or use --before DATE)");
+    }
+
+    run_by_ids(args).await
+}
+
+async fn run_bulk_before(args: &ArchiveArgs) -> anyhow::Result<()> {
+    if !args.message_ids.is_empty() {
+        anyhow::bail!("--before cannot be combined with positional message IDs");
+    }
+
+    let date_str = args.before.as_deref().unwrap();
+    let before_ts = parse_date_to_ts(date_str)
+        .ok_or_else(|| anyhow::anyhow!("invalid date \"{date_str}\", expected YYYY-MM-DD"))?;
+
+    let connector_filter = output::resolve_connector_filter(args.connector.as_deref())?;
+
+    debug!(before = date_str, connector = ?connector_filter, "bulk archive before date");
+    let cfg = VoidConfig::load_or_default(&config::default_config_path());
+    let db = Database::open(&cfg.db_path())?;
+
+    let messages = db.bulk_archive_before(before_ts, connector_filter.as_deref())?;
+    for msg in &messages {
+        cleanup_cached_files(msg);
+    }
+
+    info!(count = messages.len(), before = date_str, "bulk archive complete");
+    let output = serde_json::json!({ "data": { "archived_count": messages.len() }, "error": null });
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+async fn run_by_ids(args: &ArchiveArgs) -> anyhow::Result<()> {
+    debug!(count = args.message_ids.len(), "archive by IDs");
     let cfg = VoidConfig::load_or_default(&config::default_config_path());
     let db = Database::open(&cfg.db_path())?;
 
@@ -98,6 +142,13 @@ pub async fn run(args: &ArchiveArgs) -> anyhow::Result<()> {
     let output = serde_json::json!({ "data": results, "error": null });
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
+}
+
+fn parse_date_to_ts(date: &str) -> Option<i64> {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|dt| dt.and_utc().timestamp())
 }
 
 /// Delete locally cached files referenced in `metadata.files[].local_path`.

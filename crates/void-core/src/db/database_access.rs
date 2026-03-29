@@ -178,6 +178,17 @@ impl Database {
         Ok((rows, total))
     }
 
+    /// Archive all unarchived messages older than `before_ts`, optionally
+    /// filtered by connector type. Returns the affected messages so callers
+    /// can clean up cached files.
+    pub fn bulk_archive_before(
+        &self,
+        before_ts: i64,
+        connector_filter: Option<&str>,
+    ) -> Result<Vec<Message>, DbError> {
+        messages::bulk_archive_before(&*self.conn()?, before_ts, connector_filter)
+    }
+
     pub fn mark_message_archived(&self, id: &str) -> Result<bool, DbError> {
         messages::mark_archived(&*self.conn()?, id)
     }
