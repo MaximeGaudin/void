@@ -66,9 +66,21 @@ version = "X.Y.Z"
 
 All crates inherit `version.workspace = true`, so a single edit propagates everywhere.
 
-Verify with `cargo check`.
+## 5. Pre-flight checks (mirror CI)
 
-## 5. Build and install
+Run every check that CI enforces **before** committing, so failures are caught locally:
+
+```bash
+cargo fmt --check        # formatting
+cargo clippy -- -D warnings   # lints (warnings = errors, same as CI RUSTFLAGS)
+cargo test               # all tests
+```
+
+If any step fails, fix the issue and re-run before proceeding.
+
+These three commands match the CI matrix exactly (`ci.yml` runs them on both Ubuntu and Windows). Catching them here avoids a push → fail → amend → force-push cycle.
+
+## 6. Build and install
 
 ```
 ./scripts/build-install.sh
@@ -86,7 +98,7 @@ Important:
 - **Always** use project install scripts. Do not use `cp` or manual binary copy.
 - The script safely stops the sync daemon and performs an atomic replace.
 
-## 6. Commit and tag
+## 7. Commit and tag
 
 ```
 git add -A
@@ -96,7 +108,7 @@ git tag -a X.Y.Z -m "Release X.Y.Z"
 
 Use an **annotated** tag (`-a`), not a lightweight tag.
 
-## 7. Verify
+## 8. Verify
 
 ```
 git log --oneline -1
@@ -104,7 +116,7 @@ git tag -l "X.Y.Z" -n1
 void --version
 ```
 
-## 8. Publish (only when explicitly requested)
+## 9. Publish (only when explicitly requested)
 
 If the user asks to publish the release, push the commit and tag:
 
@@ -141,16 +153,16 @@ Release X.Y.Z:
 - [ ] Gather commits since last tag
 - [ ] Update CHANGELOG.md
 - [ ] Bump version in Cargo.toml
-- [ ] cargo check
+- [ ] Pre-flight: cargo fmt --check
+- [ ] Pre-flight: cargo clippy -- -D warnings
+- [ ] Pre-flight: cargo test
 - [ ] Build and install locally (./scripts/build-install.sh)
 - [ ] void --version shows new version
 - [ ] git commit
 - [ ] git tag -a X.Y.Z
 - [ ] Verify tag
-- [ ] Push commit and tag
-- [ ] Wait for CI checks to be done
-- [ ] Fix the code if the checks are failing and publish a corrective tag
-- [ ] Trigger CI release workflow
+- [ ] (If requested) Push commit and tag
+- [ ] (If requested) Trigger CI release workflow
 ```
 
 ## Notes
