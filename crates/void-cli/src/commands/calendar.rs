@@ -57,10 +57,10 @@ pub struct CreateEventArgs {
     /// Event description / notes
     #[arg(long)]
     pub description: Option<String>,
-    /// Start time (RFC 3339 or "YYYY-MM-DD HH:MM")
+    /// Start time in ISO 8601 format (e.g. 2026-03-31T17:00:00)
     #[arg(long)]
     pub start: String,
-    /// End time (default: start + 30min)
+    /// End time in ISO 8601 format (default: start + 30min)
     #[arg(long)]
     pub end: Option<String>,
     /// Auto-attach Google Meet link
@@ -99,10 +99,10 @@ pub struct UpdateEventArgs {
     /// New description
     #[arg(long)]
     pub description: Option<String>,
-    /// New start time (RFC 3339 or "YYYY-MM-DD HH:MM")
+    /// New start time in ISO 8601 format (e.g. 2026-03-31T17:00:00)
     #[arg(long)]
     pub start: Option<String>,
-    /// New end time (RFC 3339 or "YYYY-MM-DD HH:MM")
+    /// New end time in ISO 8601 format (e.g. 2026-03-31T17:00:00)
     #[arg(long)]
     pub end: Option<String>,
     /// Calendar connection to use
@@ -251,18 +251,21 @@ async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {
     let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
-    let end = args.end.clone().unwrap_or_else(|| {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&args.start) {
-            (dt + chrono::Duration::minutes(30)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-        } else {
-            args.start.clone()
+    let start = normalize_datetime(&args.start)?;
+    let end = match &args.end {
+        Some(e) => normalize_datetime(e)?,
+        None => {
+            let dt = chrono::DateTime::parse_from_rfc3339(&start)
+                .expect("normalize_datetime always returns valid RFC 3339");
+            (dt + chrono::Duration::minutes(30))
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
         }
-    });
+    };
 
     let params = void_calendar::connector::CreateEventParams {
         title: &args.title,
         description: args.description.as_deref(),
-        start: &args.start,
+        start: &start,
         end: &end,
         meet: args.meet,
         attendees: args.attendees.as_deref(),
@@ -323,12 +326,19 @@ async fn run_update(args: &UpdateEventArgs) -> anyhow::Result<()> {
     let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
     let db = Database::open(&cfg.db_path())?;
 
+    let start = args
+        .start
+        .as_deref()
+        .map(normalize_datetime)
+        .transpose()?;
+    let end = args.end.as_deref().map(normalize_datetime).transpose()?;
+
     let params = void_calendar::connector::UpdateEventParams {
         event_id: &args.event_id,
         title: args.title.as_deref(),
         description: args.description.as_deref(),
-        start: args.start.as_deref(),
-        end: args.end.as_deref(),
+        start: start.as_deref(),
+        end: end.as_deref(),
         send_updates: Some("all"),
     };
     let event = connector.update_event(&params, &db).await?;
@@ -427,17 +437,57 @@ async fn run_availability(args: &AvailabilityArgs) -> anyhow::Result<()> {
 }
 
 fn parse_datetime_or_date(s: &str) -> anyhow::Result<String> {
-    if chrono::DateTime::parse_from_rfc3339(s).is_ok() {
-        return Ok(s.to_string());
+    normalize_datetime(s)
+}
+
+/// Parse a datetime string in various common formats and return RFC 3339.
+///
+/// Accepted formats:
+/// - RFC 3339: `2026-03-31T17:00:00Z`, `2026-03-31T17:00:00+02:00`
+/// - ISO 8601 without offset: `2026-03-31T17:00:00`, `2026-03-31T17:00`
+/// - Space-separated: `2026-03-31 17:00:00`, `2026-03-31 17:00`
+/// - Date only: `2026-03-31` (midnight local time)
+fn normalize_datetime(s: &str) -> anyhow::Result<String> {
+    let s = s.trim();
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
     }
+
+    // "YYYY-MM-DDTHH:MM:SS" or "YYYY-MM-DDTHH:MM" (no timezone → local)
+    for fmt in &["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
+            let local = ndt
+                .and_local_timezone(Local)
+                .single()
+                .ok_or_else(|| anyhow::anyhow!("Ambiguous local time for \"{s}\""))?;
+            return Ok(local.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+        }
+    }
+
+    // "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD HH:MM" (space instead of T)
+    for fmt in &["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
+            let local = ndt
+                .and_local_timezone(Local)
+                .single()
+                .ok_or_else(|| anyhow::anyhow!("Ambiguous local time for \"{s}\""))?;
+            return Ok(local.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+        }
+    }
+
+    // Date only → midnight local
     if let Ok(date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         let dt = date
             .and_hms_opt(0, 0, 0)
             .and_then(|ndt| ndt.and_local_timezone(Local).single())
             .ok_or_else(|| anyhow::anyhow!("Failed to convert date to local timezone"))?;
-        return Ok(dt.to_rfc3339());
+        return Ok(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
     }
-    anyhow::bail!("Invalid date/time: \"{s}\". Use YYYY-MM-DD or RFC 3339 format.")
+
+    anyhow::bail!(
+        "Invalid date/time: \"{s}\". Use ISO 8601 format, e.g. 2026-03-31T17:00:00 or 2026-03-31."
+    )
 }
 
 fn build_calendar_connector(
@@ -507,7 +557,7 @@ fn parse_date_to_ts(date: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Duration, Local, NaiveDate};
+    use chrono::{Duration, Local, NaiveDate, Timelike};
 
     #[test]
     fn parse_day_spec_today() {
@@ -605,5 +655,91 @@ mod tests {
             .unwrap()
             .timestamp();
         assert_eq!(ts, local_midnight);
+    }
+
+    // ─── normalize_datetime ───────────────────────────────────────────────
+
+    #[test]
+    fn normalize_rfc3339_utc() {
+        let result = normalize_datetime("2026-03-31T17:00:00Z").unwrap();
+        assert_eq!(result, "2026-03-31T17:00:00Z");
+    }
+
+    #[test]
+    fn normalize_rfc3339_with_offset() {
+        let result = normalize_datetime("2026-03-31T17:00:00+02:00").unwrap();
+        assert!(chrono::DateTime::parse_from_rfc3339(&result).is_ok());
+    }
+
+    #[test]
+    fn normalize_iso8601_no_offset() {
+        let result = normalize_datetime("2026-03-31T17:00:00").unwrap();
+        let parsed = chrono::DateTime::parse_from_rfc3339(&result).unwrap();
+        assert_eq!(parsed.naive_local().hour(), 17);
+        assert_eq!(parsed.naive_local().minute(), 0);
+    }
+
+    #[test]
+    fn normalize_iso8601_no_seconds() {
+        let result = normalize_datetime("2026-03-31T17:00").unwrap();
+        let parsed = chrono::DateTime::parse_from_rfc3339(&result).unwrap();
+        assert_eq!(parsed.naive_local().hour(), 17);
+        assert_eq!(parsed.naive_local().minute(), 0);
+    }
+
+    #[test]
+    fn normalize_space_separated_with_seconds() {
+        let result = normalize_datetime("2026-03-31 17:00:00").unwrap();
+        let parsed = chrono::DateTime::parse_from_rfc3339(&result).unwrap();
+        assert_eq!(parsed.naive_local().hour(), 17);
+    }
+
+    #[test]
+    fn normalize_space_separated_no_seconds() {
+        let result = normalize_datetime("2026-03-31 17:00").unwrap();
+        let parsed = chrono::DateTime::parse_from_rfc3339(&result).unwrap();
+        assert_eq!(parsed.naive_local().hour(), 17);
+        assert_eq!(parsed.naive_local().minute(), 0);
+    }
+
+    #[test]
+    fn normalize_date_only() {
+        let result = normalize_datetime("2026-03-31").unwrap();
+        let parsed = chrono::DateTime::parse_from_rfc3339(&result).unwrap();
+        assert_eq!(parsed.naive_local().hour(), 0);
+        assert_eq!(parsed.naive_local().minute(), 0);
+    }
+
+    #[test]
+    fn normalize_trims_whitespace() {
+        let result = normalize_datetime("  2026-03-31T17:00:00Z  ").unwrap();
+        assert_eq!(result, "2026-03-31T17:00:00Z");
+    }
+
+    #[test]
+    fn normalize_rejects_garbage() {
+        assert!(normalize_datetime("not-a-date").is_err());
+        assert!(normalize_datetime("").is_err());
+        assert!(normalize_datetime("17:00").is_err());
+        assert!(normalize_datetime("March 31, 2026").is_err());
+    }
+
+    #[test]
+    fn normalize_output_is_always_valid_rfc3339() {
+        let inputs = [
+            "2026-03-31T17:00:00Z",
+            "2026-03-31T17:00:00",
+            "2026-03-31T17:00",
+            "2026-03-31 17:00",
+            "2026-03-31 17:00:00",
+            "2026-03-31",
+        ];
+        for input in inputs {
+            let result = normalize_datetime(input).unwrap();
+            assert!(
+                chrono::DateTime::parse_from_rfc3339(&result).is_ok(),
+                "normalize_datetime({input:?}) returned {result:?} which is not valid RFC 3339"
+            );
+        }
     }
 }
