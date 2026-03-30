@@ -99,7 +99,7 @@ fn main() -> anyhow::Result<()> {
 
 async fn async_main(cli: Cli) -> anyhow::Result<()> {
     let base_level = if cli.verbose { "debug" } else { "warn" };
-    let filter = format!("{base_level},wa_rs::handlers::notification=error");
+    let filter = format!("{base_level},wa_rs::handlers::notification=error,html5ever=error");
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

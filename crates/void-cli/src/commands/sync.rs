@@ -323,10 +323,11 @@ pub fn run_daemon_inner(args: &SyncArgs, verbose: bool) -> anyhow::Result<()> {
 
     rt.block_on(async move {
         let log_level = if verbose { "debug" } else { "info" };
+        let filter = format!("{log_level},html5ever=error");
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level)),
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&filter)),
             )
             .with_writer(std::io::stderr)
             .try_init();
