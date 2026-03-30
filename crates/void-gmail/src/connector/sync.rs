@@ -253,7 +253,7 @@ impl GmailConnector {
             connection_id: connection_id.clone(),
             connector: "gmail".into(),
             external_id: thread_id.to_string(),
-            name: Some(subject),
+            name: Some(subject.clone()),
             kind: ConversationKind::Thread,
             last_message_at: msg
                 .internal_date
@@ -281,6 +281,7 @@ impl GmailConnector {
 
         let attachments = msg.file_attachments();
         let mut metadata = serde_json::Map::new();
+        metadata.insert("subject".into(), serde_json::json!(subject));
         if html_body.is_some() {
             metadata.insert("has_html".into(), serde_json::json!(true));
             metadata.insert("snippet".into(), serde_json::json!(msg.snippet));
