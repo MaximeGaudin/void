@@ -1,17 +1,26 @@
 //! Socket Mode: WebSocket connection, event handling, conversation creation.
 
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use void_core::db::Database;
 use void_core::models::Message;
 
 use crate::connector::mapping::{map_conversation, parse_ts};
 use crate::connector::SlackConnector;
+
+/// Wall-clock idle timeout for the WebSocket connection. We use `SystemTime`
+/// rather than monotonic `Instant` because macOS pauses the monotonic clock
+/// during sleep — a 1-hour hibernation would look like 0 elapsed seconds.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(3 * 60);
+
+/// How often we check the wall clock to detect stale connections.
+const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 
 impl SlackConnector {
     pub(crate) async fn run_socket_mode(
@@ -35,7 +44,7 @@ impl SlackConnector {
                 Ok(resp) => resp.url,
                 Err(e) => {
                     error!(connection_id = %self.connection_id, error = %e, "failed to open Socket Mode connection");
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
             };
@@ -46,7 +55,7 @@ impl SlackConnector {
                 Ok(conn) => conn,
                 Err(e) => {
                     error!(connection_id = %self.connection_id, error = %e, "WebSocket connect failed");
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
             };
@@ -54,13 +63,37 @@ impl SlackConnector {
             eprintln!("[slack:{}] Socket Mode connected", self.connection_id);
             let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
+            let mut last_activity = SystemTime::now();
+            let mut health_tick = tokio::time::interval(HEALTH_CHECK_INTERVAL);
+            health_tick.tick().await;
+            let mut idle_timeout_triggered = false;
+
             let disconnect = loop {
                 tokio::select! {
                     _ = cancel.cancelled() => {
                         info!(connection_id = %self.connection_id, "Slack sync cancelled");
                         return Ok(());
                     }
+                    _ = health_tick.tick() => {
+                        if let Ok(elapsed) = last_activity.elapsed() {
+                            if elapsed > IDLE_TIMEOUT {
+                                warn!(
+                                    connection_id = %self.connection_id,
+                                    idle_secs = elapsed.as_secs(),
+                                    "no WebSocket activity, forcing reconnect"
+                                );
+                                eprintln!(
+                                    "[slack:{}] no activity for {}s, forcing reconnect",
+                                    self.connection_id,
+                                    elapsed.as_secs(),
+                                );
+                                idle_timeout_triggered = true;
+                                break true;
+                            }
+                        }
+                    }
                     frame = ws_rx.next() => {
+                        last_activity = SystemTime::now();
                         match frame {
                             Some(Ok(tungstenite::Message::Text(text))) => {
                                 let envelope: serde_json::Value = match serde_json::from_str(&text) {
@@ -124,11 +157,41 @@ impl SlackConnector {
                 return Ok(());
             }
 
+            if idle_timeout_triggered {
+                self.repair_event_subscriptions().await;
+            }
+
             eprintln!(
                 "[slack:{}] reconnecting Socket Mode in 2s...",
                 self.connection_id
             );
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+
+    async fn repair_event_subscriptions(&self) {
+        let Some(app_id) = &self.app_id else { return };
+        let token_path = self.config_token_path();
+        if !token_path.exists() {
+            return;
+        }
+        eprintln!(
+            "[slack:{}] re-verifying event subscriptions after stale connection",
+            self.connection_id
+        );
+        if let Err(e) =
+            crate::manifest::ensure_event_subscriptions(&token_path, app_id, &self.connection_id)
+                .await
+        {
+            warn!(
+                connection_id = %self.connection_id,
+                error = %e,
+                "event subscription repair failed after stale connection"
+            );
+            eprintln!(
+                "[slack:{}] event subscription repair failed: {e}",
+                self.connection_id
+            );
         }
     }
 
