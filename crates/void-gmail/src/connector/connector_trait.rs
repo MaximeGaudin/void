@@ -1,10 +1,15 @@
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
+
+/// Wall-clock threshold to detect hibernation gaps (same rationale as Slack:
+/// `SystemTime` survives macOS sleep where the monotonic clock pauses).
+const IDLE_THRESHOLD: Duration = Duration::from_secs(3 * 60);
 
 use void_core::connector::Connector;
 use void_core::db::Database;
@@ -49,7 +54,8 @@ impl Connector for GmailConnector {
     async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
         self.initial_sync(&db).await?;
 
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        let mut last_sync = SystemTime::now();
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
@@ -57,9 +63,26 @@ impl Connector for GmailConnector {
                     break;
                 }
                 _ = interval.tick() => {
+                    let elapsed = last_sync.elapsed().unwrap_or_default();
+                    if elapsed > IDLE_THRESHOLD {
+                        warn!(
+                            connection_id = %self.config_id,
+                            idle_secs = elapsed.as_secs(),
+                            "Gmail sync was idle, refreshing inbox"
+                        );
+                        eprintln!(
+                            "[gmail:{}] sync idle for {}s, refreshing inbox",
+                            self.config_id,
+                            elapsed.as_secs(),
+                        );
+                        if let Err(e) = self.refresh_inbox(&db).await {
+                            error!(connection_id = %self.config_id, "inbox refresh after idle failed: {e}");
+                        }
+                    }
                     if let Err(e) = self.incremental_sync(&db).await {
                         error!(connection_id = %self.config_id, "incremental sync error: {e}");
                     }
+                    last_sync = SystemTime::now();
                 }
             }
         }

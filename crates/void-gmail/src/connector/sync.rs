@@ -81,7 +81,7 @@ impl GmailConnector {
     /// Refresh inbox state: fetch current INBOX message IDs from Gmail and
     /// reconcile `is_archived` in the local DB so it mirrors Gmail exactly.
     /// Also fetches any new INBOX messages not yet in the local DB.
-    async fn refresh_inbox(&self, db: &Database) -> anyhow::Result<()> {
+    pub(crate) async fn refresh_inbox(&self, db: &Database) -> anyhow::Result<()> {
         let api = self.get_client().await?;
         let connection_id = self.display_connection_id();
 

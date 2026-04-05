@@ -159,6 +159,18 @@ impl SlackConnector {
 
             if idle_timeout_triggered {
                 self.repair_event_subscriptions().await;
+
+                eprintln!(
+                    "[slack:{}] catching up missed messages during disconnection",
+                    self.connection_id
+                );
+                if let Err(e) = self.catch_up(db).await {
+                    warn!(
+                        connection_id = %self.connection_id,
+                        error = %e,
+                        "catch-up after stale connection failed"
+                    );
+                }
             }
 
             eprintln!(
