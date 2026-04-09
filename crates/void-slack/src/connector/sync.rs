@@ -96,6 +96,9 @@ impl SlackConnector {
         label: &str,
     ) -> anyhow::Result<()> {
         let user_cache = self.prefetch_users().await?;
+
+        self.backfill_avatars(db, &user_cache).await;
+
         let conversations = self.list_all_conversations().await?;
 
         let oldest_secs: u64 = oldest_ts.parse().unwrap_or(0);
@@ -199,6 +202,60 @@ impl SlackConnector {
         self.download_pending_files(db).await;
 
         Ok(())
+    }
+
+    /// Backfill avatar URLs: first from the prefetched user cache, then resolve
+    /// remaining unknown senders individually via `users.info`.
+    async fn backfill_avatars(&self, db: &Database, user_cache: &HashMap<String, CachedUser>) {
+        let avatar_map: HashMap<String, String> = user_cache
+            .iter()
+            .filter_map(|(id, u)| u.avatar_url.as_ref().map(|url| (id.clone(), url.clone())))
+            .collect();
+        if !avatar_map.is_empty() {
+            match db.backfill_avatar_urls(&self.connection_id, "slack", &avatar_map) {
+                Ok(n) if n > 0 => {
+                    info!(connection_id = %self.connection_id, updated = n, "backfilled avatar URLs from cache")
+                }
+                Err(e) => {
+                    warn!(connection_id = %self.connection_id, error = %e, "avatar backfill failed")
+                }
+                _ => {}
+            }
+        }
+
+        let missing = match db.senders_missing_avatar(&self.connection_id, "slack") {
+            Ok(ids) => ids,
+            Err(e) => {
+                warn!(connection_id = %self.connection_id, error = %e, "failed to query missing avatars");
+                return;
+            }
+        };
+        if missing.is_empty() {
+            return;
+        }
+
+        info!(connection_id = %self.connection_id, count = missing.len(), "resolving unknown senders via users.info");
+        let mut resolved = HashMap::new();
+        for user_id in &missing {
+            match self.api.users_info(user_id).await {
+                Ok(resp) => {
+                    if let Some(user) = resp.user {
+                        if let Some(url) = user.profile.as_ref().and_then(|p| p.image_72.clone()) {
+                            resolved.insert(user_id.clone(), url);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(user_id, error = %e, "users.info lookup failed, skipping");
+                }
+            }
+        }
+        if !resolved.is_empty() {
+            match db.backfill_avatar_urls(&self.connection_id, "slack", &resolved) {
+                Ok(n) => info!(connection_id = %self.connection_id, resolved = resolved.len(), updated = n, "resolved unknown sender avatars"),
+                Err(e) => warn!(connection_id = %self.connection_id, error = %e, "failed to store resolved avatars"),
+            }
+        }
     }
 
     /// Download files for previously synced messages that are missing a local copy.

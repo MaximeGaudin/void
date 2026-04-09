@@ -235,6 +235,26 @@ impl Database {
         messages::messages_pending_file_download(&*self.conn()?, connection_id, connector, limit)
     }
 
+    /// Bulk-set `sender_avatar_url` for messages missing one.
+    /// Returns the number of rows updated.
+    pub fn backfill_avatar_urls(
+        &self,
+        connection_id: &str,
+        connector: &str,
+        avatars: &std::collections::HashMap<String, String>,
+    ) -> Result<usize, DbError> {
+        messages::backfill_avatar_urls(&*self.conn()?, connection_id, connector, avatars)
+    }
+
+    /// Return distinct sender IDs that have no `sender_avatar_url`.
+    pub fn senders_missing_avatar(
+        &self,
+        connection_id: &str,
+        connector: &str,
+    ) -> Result<Vec<String>, DbError> {
+        messages::senders_missing_avatar(&*self.conn()?, connection_id, connector)
+    }
+
     /// Get the most recent message in a conversation (used for time-window context grouping).
     pub fn last_message_in_conversation(
         &self,

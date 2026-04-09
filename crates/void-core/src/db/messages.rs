@@ -435,6 +435,43 @@ pub(super) fn messages_pending_file_download(
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
+/// Bulk-set `sender_avatar_url` for messages that don't have one yet.
+/// Takes a map of sender_id → avatar_url and updates all matching messages
+/// within the given connection/connector in a single transaction.
+pub(super) fn backfill_avatar_urls(
+    conn: &Connection,
+    connection_id: &str,
+    connector: &str,
+    avatars: &HashMap<String, String>,
+) -> Result<usize, DbError> {
+    let mut stmt = conn.prepare(
+        "UPDATE messages SET sender_avatar_url = ?1
+         WHERE connection_id = ?2 AND connector = ?3 AND sender = ?4
+           AND sender_avatar_url IS NULL",
+    )?;
+    let mut total = 0usize;
+    for (sender, avatar_url) in avatars {
+        let updated = stmt.execute(params![avatar_url, connection_id, connector, sender])?;
+        total += updated;
+    }
+    debug!(connection_id, connector, updated = total, "backfilled avatar URLs");
+    Ok(total)
+}
+
+/// Return distinct sender IDs that have no `sender_avatar_url` for the given connection/connector.
+pub(super) fn senders_missing_avatar(
+    conn: &Connection,
+    connection_id: &str,
+    connector: &str,
+) -> Result<Vec<String>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT sender FROM messages
+         WHERE connection_id = ?1 AND connector = ?2 AND sender_avatar_url IS NULL",
+    )?;
+    let rows = stmt.query_map(params![connection_id, connector], |row| row.get(0))?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 pub(super) fn last_in_conversation(
     conn: &Connection,
     conversation_id: &str,
