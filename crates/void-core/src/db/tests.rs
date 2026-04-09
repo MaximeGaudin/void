@@ -1018,3 +1018,200 @@ fn clear_connector_data_removes_all_messages_conversations_events_sync_state() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn backfill_avatar_urls_updates_null_rows() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    let mut m1 = make_message("m1", "c1", "test-slack", "hi", 1_000);
+    m1.sender = "U001".into();
+    db.upsert_message(&m1).unwrap();
+
+    let mut m2 = make_message("m2", "c1", "test-slack", "hey", 2_000);
+    m2.sender = "U001".into();
+    db.upsert_message(&m2).unwrap();
+
+    let mut m3 = make_message("m3", "c1", "test-slack", "yo", 3_000);
+    m3.sender = "U002".into();
+    db.upsert_message(&m3).unwrap();
+
+    let avatars: std::collections::HashMap<String, String> = [
+        ("U001".into(), "https://example.com/u1.jpg".into()),
+        ("U002".into(), "https://example.com/u2.jpg".into()),
+    ]
+    .into();
+
+    let updated = db
+        .backfill_avatar_urls("test-slack", "slack", &avatars)
+        .unwrap();
+    assert_eq!(updated, 3);
+
+    let loaded = db.get_message("m1").unwrap().unwrap();
+    assert_eq!(
+        loaded.sender_avatar_url.as_deref(),
+        Some("https://example.com/u1.jpg")
+    );
+    let loaded3 = db.get_message("m3").unwrap().unwrap();
+    assert_eq!(
+        loaded3.sender_avatar_url.as_deref(),
+        Some("https://example.com/u2.jpg")
+    );
+}
+
+#[test]
+fn backfill_avatar_urls_skips_already_set() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    let mut m1 = make_message("m1", "c1", "test-slack", "hi", 1_000);
+    m1.sender = "U001".into();
+    m1.sender_avatar_url = Some("https://existing.com/old.jpg".into());
+    db.upsert_message(&m1).unwrap();
+
+    let avatars: std::collections::HashMap<String, String> =
+        [("U001".into(), "https://new.com/new.jpg".into())].into();
+
+    let updated = db
+        .backfill_avatar_urls("test-slack", "slack", &avatars)
+        .unwrap();
+    assert_eq!(updated, 0);
+
+    let loaded = db.get_message("m1").unwrap().unwrap();
+    assert_eq!(
+        loaded.sender_avatar_url.as_deref(),
+        Some("https://existing.com/old.jpg"),
+    );
+}
+
+#[test]
+fn backfill_avatar_urls_scoped_to_connection() {
+    let db = test_db();
+    let c1 = make_conversation("c1", "slack-a", "C1");
+    db.upsert_conversation(&c1).unwrap();
+    let c2 = make_conversation("c2", "slack-b", "C2");
+    db.upsert_conversation(&c2).unwrap();
+
+    let mut m1 = make_message("m1", "c1", "slack-a", "hi", 1_000);
+    m1.sender = "U001".into();
+    db.upsert_message(&m1).unwrap();
+
+    let mut m2 = make_message("m2", "c2", "slack-b", "hey", 2_000);
+    m2.sender = "U001".into();
+    db.upsert_message(&m2).unwrap();
+
+    let avatars: std::collections::HashMap<String, String> =
+        [("U001".into(), "https://example.com/a.jpg".into())].into();
+
+    let updated = db
+        .backfill_avatar_urls("slack-a", "slack", &avatars)
+        .unwrap();
+    assert_eq!(updated, 1);
+
+    let loaded_a = db.get_message("m1").unwrap().unwrap();
+    assert_eq!(
+        loaded_a.sender_avatar_url.as_deref(),
+        Some("https://example.com/a.jpg")
+    );
+    let loaded_b = db.get_message("m2").unwrap().unwrap();
+    assert!(loaded_b.sender_avatar_url.is_none());
+}
+
+#[test]
+fn senders_missing_avatar_returns_distinct_ids() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    let mut m1 = make_message("m1", "c1", "test-slack", "hi", 1_000);
+    m1.sender = "U001".into();
+    db.upsert_message(&m1).unwrap();
+
+    let mut m2 = make_message("m2", "c1", "test-slack", "hey", 2_000);
+    m2.sender = "U001".into();
+    db.upsert_message(&m2).unwrap();
+
+    let mut m3 = make_message("m3", "c1", "test-slack", "yo", 3_000);
+    m3.sender = "U002".into();
+    m3.sender_avatar_url = Some("https://example.com/u2.jpg".into());
+    db.upsert_message(&m3).unwrap();
+
+    let missing = db
+        .senders_missing_avatar("test-slack", "slack")
+        .unwrap();
+    assert_eq!(missing, vec!["U001".to_string()]);
+}
+
+#[test]
+fn senders_missing_avatar_empty_when_all_set() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    let mut m1 = make_message("m1", "c1", "test-slack", "hi", 1_000);
+    m1.sender = "U001".into();
+    m1.sender_avatar_url = Some("https://example.com/u1.jpg".into());
+    db.upsert_message(&m1).unwrap();
+
+    let missing = db
+        .senders_missing_avatar("test-slack", "slack")
+        .unwrap();
+    assert!(missing.is_empty());
+}
+
+#[test]
+fn list_contacts_includes_avatar_url() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    let mut m1 = make_message("m1", "c1", "test-slack", "hi", 1_000);
+    m1.sender = "alice@test.com".into();
+    m1.sender_name = Some("Alice".into());
+    m1.sender_avatar_url = Some("https://example.com/alice.jpg".into());
+    db.upsert_message(&m1).unwrap();
+
+    let mut m2 = make_message("m2", "c1", "test-slack", "hey", 2_000);
+    m2.sender = "bob@test.com".into();
+    m2.sender_name = Some("Bob".into());
+    db.upsert_message(&m2).unwrap();
+
+    let contacts = db.list_contacts(None, None, None, 100).unwrap();
+    assert_eq!(contacts.len(), 2);
+
+    let alice = contacts.iter().find(|c| c.sender == "alice@test.com").unwrap();
+    assert_eq!(
+        alice.avatar_url.as_deref(),
+        Some("https://example.com/alice.jpg")
+    );
+
+    let bob = contacts.iter().find(|c| c.sender == "bob@test.com").unwrap();
+    assert!(bob.avatar_url.is_none());
+}
+
+#[test]
+fn list_contacts_avatar_picks_non_null_across_messages() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    let mut m1 = make_message("m1", "c1", "test-slack", "old msg", 1_000);
+    m1.sender = "U001".into();
+    m1.sender_name = Some("User1".into());
+    db.upsert_message(&m1).unwrap();
+
+    let mut m2 = make_message("m2", "c1", "test-slack", "new msg", 2_000);
+    m2.sender = "U001".into();
+    m2.sender_name = Some("User1".into());
+    m2.sender_avatar_url = Some("https://example.com/u1.jpg".into());
+    db.upsert_message(&m2).unwrap();
+
+    let contacts = db.list_contacts(None, None, None, 100).unwrap();
+    assert_eq!(contacts.len(), 1);
+    assert_eq!(
+        contacts[0].avatar_url.as_deref(),
+        Some("https://example.com/u1.jpg"),
+    );
+}
