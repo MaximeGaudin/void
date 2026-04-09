@@ -29,6 +29,7 @@ fn make_message(id: &str, conv_id: &str, connection_id: &str, body: &str, ts: i6
         external_id: format!("ext-{id}"),
         sender: "sender@test".into(),
         sender_name: Some("Test Sender".into()),
+        sender_avatar_url: None,
         body: Some(body.into()),
         timestamp: ts,
         synced_at: None,

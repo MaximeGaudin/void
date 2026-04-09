@@ -691,6 +691,7 @@ mod tests {
             external_id: "ext1".into(),
             sender: "alice@example.com".into(),
             sender_name: None,
+            sender_avatar_url: None,
             body: Some("Hello".into()),
             timestamp: 1_700_000_000,
             synced_at: None,

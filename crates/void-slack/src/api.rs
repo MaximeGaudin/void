@@ -660,6 +660,7 @@ pub struct SlackUser {
 pub struct SlackUserProfile {
     pub display_name: Option<String>,
     pub real_name: Option<String>,
+    pub image_72: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

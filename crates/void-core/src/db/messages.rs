@@ -29,12 +29,13 @@ pub(super) fn upsert_row(conn: &Connection, msg: &Message) -> Result<bool, DbErr
     let is_new = !message_exists(conn, &msg.connection_id, &msg.external_id)?;
     let now = chrono::Utc::now().timestamp();
     conn.execute(
-        "INSERT INTO messages (id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        "INSERT INTO messages (id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
          ON CONFLICT(connection_id, external_id) DO UPDATE SET
             body = excluded.body,
             connector = excluded.connector,
             sender_name = excluded.sender_name,
+            sender_avatar_url = COALESCE(excluded.sender_avatar_url, sender_avatar_url),
             is_archived = excluded.is_archived,
             media_type = excluded.media_type,
             metadata = excluded.metadata,
@@ -47,6 +48,7 @@ pub(super) fn upsert_row(conn: &Connection, msg: &Message) -> Result<bool, DbErr
             msg.external_id,
             msg.sender,
             msg.sender_name,
+            msg.sender_avatar_url,
             msg.body,
             msg.timestamp,
             msg.synced_at.unwrap_or(now),
@@ -70,7 +72,7 @@ pub(super) fn list_for_conversation(
 ) -> Result<Vec<Message>, DbError> {
     let suffix_pattern = format!("%-{conversation_id}");
     let mut sql = String::from(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages WHERE (conversation_id = ?1 OR conversation_id LIKE ?2)",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
@@ -136,7 +138,7 @@ pub(super) fn count_for_conversation(
 pub(super) fn get(conn: &Connection, id: &str) -> Result<Option<Message>, DbError> {
     let suffix_pattern = format!("%-{id}");
     conn.query_row(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages WHERE id = ?1 OR id LIKE ?2",
         params![id, suffix_pattern],
         row::row_to_message,
@@ -168,7 +170,7 @@ pub(super) fn list_recent(
     include_muted: bool,
 ) -> Result<Vec<Message>, DbError> {
     let mut sql = String::from(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages WHERE 1=1",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -256,7 +258,7 @@ pub(super) fn bulk_archive_before(
     connector_filter: Option<&str>,
 ) -> Result<Vec<Message>, DbError> {
     let mut sql = String::from(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages WHERE is_archived = 0 AND timestamp < ?1",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(before_ts)];
@@ -323,7 +325,7 @@ pub(super) fn find_by_external_id(
     external_id: &str,
 ) -> Result<Option<Message>, DbError> {
     conn.query_row(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages WHERE connection_id = ?1 AND external_id = ?2",
         params![connection_id, external_id],
         row::row_to_message,
@@ -348,7 +350,7 @@ pub(super) fn enrich_with_context(
     let mut context_map: HashMap<String, Vec<Message>> = HashMap::new();
 
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages WHERE context_id = ?1 ORDER BY timestamp ASC LIMIT 50",
     )?;
 
@@ -418,7 +420,7 @@ pub(super) fn messages_pending_file_download(
     limit: i64,
 ) -> Result<Vec<Message>, DbError> {
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages
          WHERE connection_id = ?1 AND connector = ?2
            AND metadata LIKE '%url_private%'
@@ -438,7 +440,7 @@ pub(super) fn last_in_conversation(
     conversation_id: &str,
 ) -> Result<Option<Message>, DbError> {
     conn.query_row(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
          FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT 1",
         params![conversation_id],
         row::row_to_message,

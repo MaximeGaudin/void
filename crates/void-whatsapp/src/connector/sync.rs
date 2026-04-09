@@ -136,6 +136,7 @@ pub(super) fn handle_history_sync(
                 external_id: msg_id.to_string(),
                 sender: sender_jid,
                 sender_name,
+                sender_avatar_url: None,
                 body,
                 timestamp: *msg_ts,
                 synced_at: None,
@@ -252,6 +253,7 @@ pub(super) fn handle_message(
         } else {
             Some(info.push_name.clone())
         },
+        sender_avatar_url: None,
         body,
         timestamp: msg_ts,
         synced_at: None,

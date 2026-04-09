@@ -303,6 +303,7 @@ impl GmailConnector {
             external_id: msg_id.to_string(),
             sender: sender_email,
             sender_name: Some(sender_name),
+            sender_avatar_url: None,
             body,
             timestamp: msg
                 .internal_date

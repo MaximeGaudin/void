@@ -162,6 +162,7 @@ pub struct Message {
     pub external_id: String,
     pub sender: String,
     pub sender_name: Option<String>,
+    pub sender_avatar_url: Option<String>,
     pub body: Option<String>,
     /// When the message was originally sent (ISO 8601 in JSON, epoch seconds internally).
     #[serde(with = "epoch_iso8601")]
@@ -246,6 +247,7 @@ pub struct CalendarEvent {
 pub struct Contact {
     pub sender: String,
     pub sender_name: Option<String>,
+    pub avatar_url: Option<String>,
     pub connection_id: String,
     pub connector: String,
     pub message_count: i64,
@@ -323,6 +325,7 @@ mod tests {
             external_id: "ext1".into(),
             sender: "user@example.com".into(),
             sender_name: Some("Alice".into()),
+            sender_avatar_url: None,
             body: Some("Hello world".into()),
             timestamp: 1_700_000_000,
             synced_at: Some(1_700_000_010),
@@ -451,6 +454,7 @@ mod tests {
             external_id: format!("ext-{id}"),
             sender: "user@test".into(),
             sender_name: None,
+            sender_avatar_url: None,
             body: Some(format!("body of {id}")),
             timestamp: ts,
             synced_at: None,

@@ -55,7 +55,7 @@ impl Database {
     ) -> Result<(Vec<Message>, i64), crate::error::DbError> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
-            "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
+            "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.sender_avatar_url, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1",

@@ -186,6 +186,7 @@ async fn initial_sync_saves_history_id() {
                         .map(|i| from[i + 1..].trim_end_matches('>').trim().to_string())
                         .unwrap_or_else(|| from.clone()),
                     sender_name: None,
+                    sender_avatar_url: None,
                     body: msg.text_body().or(msg.snippet.clone()),
                     timestamp: msg
                         .internal_date
@@ -317,6 +318,7 @@ async fn incremental_sync_uses_history_id() {
                             .map(|i| from[i + 1..].trim_end_matches('>').trim().to_string())
                             .unwrap_or_else(|| from.clone()),
                         sender_name: None,
+                        sender_avatar_url: None,
                         body: msg.text_body().or(msg.snippet.clone()),
                         timestamp: msg
                             .internal_date

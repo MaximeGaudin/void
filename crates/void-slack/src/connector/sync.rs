@@ -9,12 +9,12 @@ use void_core::models::Message;
 
 use crate::api::SlackConversation;
 use crate::connector::mapping::{
-    assign_time_window_context, map_conversation, map_message_cached, parse_ts,
+    assign_time_window_context, map_conversation, map_message_cached, parse_ts, CachedUser,
 };
 use crate::connector::SlackConnector;
 
 impl SlackConnector {
-    pub(crate) async fn prefetch_users(&self) -> anyhow::Result<HashMap<String, String>> {
+    pub(crate) async fn prefetch_users(&self) -> anyhow::Result<HashMap<String, CachedUser>> {
         info!(connection_id = %self.connection_id, "prefetching Slack users");
         let mut cache = HashMap::new();
         let mut cursor: Option<String> = None;
@@ -22,13 +22,13 @@ impl SlackConnector {
         loop {
             let resp = self.api.users_list(cursor.as_deref(), 200).await?;
             for user in &resp.members {
-                let name = user
-                    .profile
-                    .as_ref()
+                let profile = user.profile.as_ref();
+                let name = profile
                     .and_then(|p| p.display_name.clone().filter(|n| !n.is_empty()))
                     .or_else(|| user.real_name.clone())
                     .unwrap_or_else(|| user.name.clone());
-                cache.insert(user.id.clone(), name);
+                let avatar_url = profile.and_then(|p| p.image_72.clone());
+                cache.insert(user.id.clone(), CachedUser { name, avatar_url });
             }
 
             cursor = resp

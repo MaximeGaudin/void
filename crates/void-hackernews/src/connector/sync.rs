@@ -180,6 +180,7 @@ fn build_message(item: &HnItem, connection_id: &str, conv_id: &str) -> Message {
         external_id: format!("hackernews_{connection_id}_{id}"),
         sender: author.to_string(),
         sender_name: Some(author.to_string()),
+        sender_avatar_url: None,
         body: Some(body),
         timestamp: item.time.unwrap_or_else(|| chrono::Utc::now().timestamp()),
         synced_at: Some(chrono::Utc::now().timestamp()),

@@ -15,7 +15,7 @@ pub(super) fn list_contacts(
     offset: i64,
 ) -> Result<Vec<Contact>, DbError> {
     let mut sql = String::from(
-        "SELECT sender, sender_name, connection_id, connector, COUNT(*) as msg_count, MAX(timestamp) as last_ts
+        "SELECT sender, sender_name, connection_id, connector, COUNT(*) as msg_count, MAX(timestamp) as last_ts, MAX(sender_avatar_url) as avatar_url
          FROM messages WHERE sender != connection_id",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -59,6 +59,7 @@ pub(super) fn list_contacts(
         Ok(Contact {
             sender: row.get(0)?,
             sender_name: row.get(1)?,
+            avatar_url: row.get(6)?,
             connection_id: row.get(2)?,
             connector: row.get(3)?,
             message_count: row.get(4)?,

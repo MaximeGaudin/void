@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::error::DbError;
 
-pub const SCHEMA_VERSION: i32 = 10;
+pub const SCHEMA_VERSION: i32 = 11;
 
 /// Run all pending migrations on the database connection.
 pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
@@ -54,6 +54,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     }
     if version < 10 {
         migrate_v10(conn)?;
+    }
+    if version < 11 {
+        migrate_v11(conn)?;
     }
     Ok(())
 }
@@ -270,6 +273,18 @@ fn migrate_v10(conn: &Connection) -> Result<(), DbError> {
         ALTER TABLE sync_state RENAME COLUMN account_id TO connection_id;
 
         INSERT OR REPLACE INTO schema_version (version) VALUES (10);
+    ",
+    )?;
+    Ok(())
+}
+
+fn migrate_v11(conn: &Connection) -> Result<(), DbError> {
+    debug!("running migration v11: add sender_avatar_url to messages");
+    conn.execute_batch(
+        "
+        ALTER TABLE messages ADD COLUMN sender_avatar_url TEXT;
+
+        INSERT OR REPLACE INTO schema_version (version) VALUES (11);
     ",
     )?;
     Ok(())

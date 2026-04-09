@@ -6,10 +6,16 @@ use void_core::models::{Conversation, ConversationKind, Message};
 
 use crate::api::{SlackConversation, SlackMessage, SlackReaction};
 
+#[derive(Debug, Clone)]
+pub(crate) struct CachedUser {
+    pub name: String,
+    pub avatar_url: Option<String>,
+}
+
 pub(crate) fn map_conversation(
     conv: &SlackConversation,
     connection_id: &str,
-    user_cache: &HashMap<String, String>,
+    user_cache: &HashMap<String, CachedUser>,
 ) -> Conversation {
     let kind = if conv.is_im.unwrap_or(false) {
         ConversationKind::Dm
@@ -22,7 +28,7 @@ pub(crate) fn map_conversation(
     let name = if conv.is_im.unwrap_or(false) {
         conv.user
             .as_deref()
-            .and_then(|uid| user_cache.get(uid).cloned())
+            .and_then(|uid| user_cache.get(uid).map(|u| u.name.clone()))
             .or_else(|| conv.user.clone())
             .unwrap_or_else(|| conv.id.clone())
     } else {
@@ -48,17 +54,18 @@ pub(crate) fn map_message_cached(
     conv: &SlackConversation,
     conversation_id: &str,
     connection_id: &str,
-    user_cache: &HashMap<String, String>,
+    user_cache: &HashMap<String, CachedUser>,
 ) -> Option<Message> {
     if msg.subtype.is_some() {
         return None;
     }
 
     let sender = msg.user.clone().unwrap_or_else(|| "unknown".into());
-    let sender_name = user_cache
-        .get(&sender)
-        .cloned()
+    let cached = user_cache.get(&sender);
+    let sender_name = cached
+        .map(|u| u.name.clone())
         .unwrap_or_else(|| sender.clone());
+    let sender_avatar_url = cached.and_then(|u| u.avatar_url.clone());
 
     let mut metadata = build_metadata(conv, &msg.reactions, user_cache);
     let text = msg.text.clone().unwrap_or_default();
@@ -151,6 +158,7 @@ pub(crate) fn map_message_cached(
         external_id: msg.ts.clone(),
         sender: sender.clone(),
         sender_name: Some(sender_name),
+        sender_avatar_url,
         body,
         timestamp: parse_ts(&msg.ts).unwrap_or(0),
         synced_at: None,
@@ -169,7 +177,7 @@ pub(crate) fn map_message_cached(
 pub(crate) fn build_metadata(
     conv: &SlackConversation,
     reactions: &[SlackReaction],
-    user_cache: &HashMap<String, String>,
+    user_cache: &HashMap<String, CachedUser>,
 ) -> Option<serde_json::Value> {
     let kind = if conv.is_im.unwrap_or(false) {
         "dm"
@@ -184,7 +192,7 @@ pub(crate) fn build_metadata(
     let channel_name = if conv.is_im.unwrap_or(false) {
         conv.user
             .as_deref()
-            .and_then(|uid| user_cache.get(uid).map(|s| s.as_str()))
+            .and_then(|uid| user_cache.get(uid).map(|u| u.name.as_str()))
             .or(conv.user.as_deref())
             .unwrap_or(&conv.id)
     } else {

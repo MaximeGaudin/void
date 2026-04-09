@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 use void_core::db::Database;
 use void_core::models::Message;
 
-use crate::connector::mapping::{map_conversation, parse_ts};
+use crate::connector::mapping::{map_conversation, parse_ts, CachedUser};
 use crate::connector::SlackConnector;
 
 /// Wall-clock idle timeout for the WebSocket connection. We use `SystemTime`
@@ -211,7 +211,7 @@ impl SlackConnector {
         &self,
         payload: &serde_json::Value,
         db: &Database,
-        user_cache: &HashMap<String, String>,
+        user_cache: &HashMap<String, CachedUser>,
     ) {
         let event = match payload.get("event") {
             Some(e) => e,
@@ -326,10 +326,11 @@ impl SlackConnector {
             return;
         }
 
-        let sender_name = user_cache
-            .get(user_id)
-            .cloned()
+        let cached = user_cache.get(user_id);
+        let sender_name = cached
+            .map(|u| u.name.clone())
             .unwrap_or_else(|| user_id.to_string());
+        let sender_avatar_url = cached.and_then(|u| u.avatar_url.clone());
 
         let conv_id = format!("{}-{}", self.connection_id, channel_id);
 
@@ -367,6 +368,7 @@ impl SlackConnector {
             external_id: ts.to_string(),
             sender: user_id.to_string(),
             sender_name: Some(sender_name.clone()),
+            sender_avatar_url,
             body: Some(body),
             timestamp,
             synced_at: None,
@@ -419,7 +421,7 @@ impl SlackConnector {
         db: &Database,
         channel_id: &str,
         conv_id: &str,
-        user_cache: &HashMap<String, String>,
+        user_cache: &HashMap<String, CachedUser>,
     ) -> anyhow::Result<()> {
         if db.get_conversation(conv_id)?.is_some() {
             return Ok(());

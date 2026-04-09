@@ -262,6 +262,7 @@ fn tg_message_to_void(
         external_id,
         sender,
         sender_name,
+        sender_avatar_url: None,
         body: extract::extract_text(msg),
         timestamp: msg.date().timestamp(),
         synced_at: Some(chrono::Utc::now().timestamp()),

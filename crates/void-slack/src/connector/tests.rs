@@ -5,6 +5,7 @@ use void_core::models::{Conversation, ConversationKind, Message};
 
 use super::*;
 use crate::api::{SlackConversation, SlackReaction};
+use crate::connector::mapping::CachedUser;
 
 #[test]
 fn map_conversation_dm() {
@@ -20,7 +21,7 @@ fn map_conversation_dm() {
         updated: None,
     };
     let mut cache = HashMap::new();
-    cache.insert("U456".to_string(), "Alice".to_string());
+    cache.insert("U456".to_string(), CachedUser { name: "Alice".to_string(), avatar_url: None });
     let result = map_conversation(&conv, "work-slack", &cache);
     assert_eq!(result.kind, ConversationKind::Dm);
     assert_eq!(result.connector, "slack");
@@ -100,7 +101,7 @@ fn build_metadata_dm_with_reactions() {
         },
     ];
     let mut cache = HashMap::new();
-    cache.insert("U456".to_string(), "Bob".to_string());
+    cache.insert("U456".to_string(), CachedUser { name: "Bob".to_string(), avatar_url: None });
     let meta = build_metadata(&conv, &reactions, &cache).unwrap();
     assert_eq!(meta["channel_id"], "D123");
     assert_eq!(meta["channel_name"], "Bob");
@@ -600,6 +601,7 @@ async fn catch_up_fetches_messages_since_latest() {
         external_id: "1741700000.000100".into(),
         sender: "U1".into(),
         sender_name: Some("Alice".into()),
+        sender_avatar_url: None,
         body: Some("Old message".into()),
         timestamp: 1_741_700_000,
         synced_at: None,
@@ -703,6 +705,7 @@ async fn start_sync_runs_catch_up_when_backfill_done() {
         external_id: "1741700000.000100".into(),
         sender: "U1".into(),
         sender_name: Some("Alice".into()),
+        sender_avatar_url: None,
         body: Some("Old message".into()),
         timestamp: 1_741_700_000,
         synced_at: None,
