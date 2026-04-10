@@ -218,7 +218,11 @@ pub(crate) async fn reauthenticate_specific_connection(
 
         if !refresh_token.trim().is_empty() {
             let token_path = store_path.join(format!("slack-config-token-{}.json", connection.id));
-            let _ = void_slack::manifest::save_refresh_token(&token_path, refresh_token.trim());
+            if let Err(e) = void_slack::manifest::save_refresh_token(&token_path, refresh_token.trim()) {
+                eprintln!("  ✗ Failed to save refresh token to {}: {e}", token_path.display());
+            } else {
+                eprintln!("  ✓ Refresh token saved to {}", token_path.display());
+            }
         }
 
         cfg.save(config_path)?;
