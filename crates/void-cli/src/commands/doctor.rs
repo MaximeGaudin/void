@@ -1,7 +1,6 @@
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 use crate::commands::connector_factory;
-use crate::commands::setup::auth::authenticate_connection;
 use crate::commands::setup::prompt::confirm_default_yes;
 
 pub async fn run() -> anyhow::Result<()> {
@@ -88,12 +87,21 @@ pub async fn run() -> anyhow::Result<()> {
         
         if !failed_connections.is_empty() {
             eprintln!("\n[!!] Some connections failed health checks.");
+            let mut cfg_mut = cfg.clone();
             for conn_config in failed_connections {
                 if confirm_default_yes(&format!("Would you like to re-authenticate connection '{}'?", conn_config.id)) {
                     eprintln!("Re-authenticating {}...", conn_config.id);
-                    match authenticate_connection(&conn_config, &store_path).await {
-                        Ok(()) => eprintln!("  ✓ Re-authentication successful."),
-                        Err(e) => eprintln!("  ✗ Re-authentication failed: {}", e),
+                    if let Some(idx) = cfg_mut.connections.iter().position(|c| c.id == conn_config.id) {
+                        if let Err(e) = crate::commands::setup::connection_menu::reauthenticate_specific_connection(
+                            &mut cfg_mut,
+                            &config_path,
+                            &store_path,
+                            idx,
+                        )
+                        .await
+                        {
+                            eprintln!("  ✗ Error during re-authentication: {}", e);
+                        }
                     }
                 }
             }

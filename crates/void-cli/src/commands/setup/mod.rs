@@ -3,7 +3,7 @@
 pub(crate) mod auth;
 mod calendar;
 mod config_ui;
-mod connection_menu;
+pub(crate) mod connection_menu;
 mod gdrive;
 mod gmail;
 mod hackernews;
@@ -100,7 +100,7 @@ pub async fn run() -> anyhow::Result<()> {
                 eprintln!("\nConnection renamed. Configuration saved.");
             }
             4 => {
-                reauthenticate_connection(&cfg, &store_path).await?;
+                reauthenticate_connection(&mut cfg, &config_path, &store_path).await?;
             }
             5 => {
                 show_configuration(&config_path, &cfg);

@@ -142,7 +142,8 @@ pub(crate) fn rename_connection(
 }
 
 pub(crate) async fn reauthenticate_connection(
-    cfg: &VoidConfig,
+    cfg: &mut VoidConfig,
+    config_path: &Path,
     store_path: &Path,
 ) -> anyhow::Result<()> {
     if cfg.connections.is_empty() {
@@ -161,11 +162,52 @@ pub(crate) async fn reauthenticate_connection(
         "Which connection would you like to re-authenticate?",
         &options_refs,
     );
-    let connection = &cfg.connections[choice];
 
-    match authenticate_connection(connection, store_path).await {
-        Ok(()) => eprintln!("  ✓ Re-authentication successful."),
-        Err(e) => eprintln!("  ✗ Re-authentication failed: {e}"),
+    reauthenticate_specific_connection(cfg, config_path, store_path, choice).await
+}
+
+pub(crate) async fn reauthenticate_specific_connection(
+    cfg: &mut VoidConfig,
+    config_path: &Path,
+    store_path: &Path,
+    choice: usize,
+) -> anyhow::Result<()> {
+    let connection = cfg.connections[choice].clone();
+
+    if connection.connector_type == void_core::models::ConnectorType::Slack {
+        eprintln!("  You need to provide your Slack tokens again.");
+        let user_token = prompt("User OAuth Token (xoxp-...): ");
+        let app_token = prompt("App-Level Token  (xapp-...): ");
+        let app_id = prompt("App ID (optional, e.g. A012ABCD0A0): ");
+        let refresh_token = prompt("Config Refresh Token (optional, xoxe-...): ");
+
+        if !user_token.is_empty() && !app_token.is_empty() {
+            if let void_core::config::ConnectionSettings::Slack {
+                app_token: ref mut at,
+                user_token: ref mut ut,
+                app_id: ref mut aid,
+            } = cfg.connections[choice].settings
+            {
+                *at = app_token;
+                *ut = user_token;
+                *aid = if app_id.is_empty() { None } else { Some(app_id.clone()) };
+            }
+
+            if !refresh_token.is_empty() {
+                let token_path = store_path.join(format!("slack-config-token-{}.json", connection.id));
+                let _ = void_slack::manifest::save_refresh_token(&token_path, &refresh_token);
+            }
+
+            cfg.save(config_path)?;
+            eprintln!("  ✓ Re-authentication successful. Configuration saved.");
+        } else {
+            eprintln!("  ✗ Tokens required. Re-authentication skipped.");
+        }
+    } else {
+        match authenticate_connection(&connection, store_path).await {
+            Ok(()) => eprintln!("  ✓ Re-authentication successful."),
+            Err(e) => eprintln!("  ✗ Re-authentication failed: {e}"),
+        }
     }
     Ok(())
 }
