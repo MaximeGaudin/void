@@ -252,7 +252,16 @@ pub async fn ensure_event_subscriptions(
     let http = reqwest::Client::new();
 
     debug!(connection_id, "rotating Slack config token");
-    let rotated = rotate_config_token(&http, &refresh_token).await?;
+    let rotated = match rotate_config_token(&http, &refresh_token).await {
+        Ok(r) => r,
+        Err(e) => {
+            if e.to_string().contains("invalid_refresh_token") {
+                let _ = std::fs::remove_file(token_path);
+                anyhow::bail!("Slack config token is invalid (invalid_refresh_token). The file has been removed. Please run `void setup` again for this connection to restore auto-repair.");
+            }
+            return Err(e);
+        }
+    };
 
     save_refresh_token(token_path, &rotated.refresh_token)?;
     debug!(connection_id, "saved rotated refresh token");

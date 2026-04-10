@@ -1,13 +1,13 @@
 //! Interactive setup wizard: per-connector flows, config inspection, and connection management.
 
-mod auth;
+pub(crate) mod auth;
 mod calendar;
 mod config_ui;
 mod connection_menu;
 mod gdrive;
 mod gmail;
 mod hackernews;
-mod prompt;
+pub(crate) mod prompt;
 mod slack;
 mod telegram;
 mod whatsapp;

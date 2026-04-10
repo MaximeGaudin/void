@@ -1,7 +1,10 @@
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
+use crate::commands::connector_factory;
+use crate::commands::setup::auth::authenticate_connection;
+use crate::commands::setup::prompt::confirm_default_yes;
 
-pub fn run() -> anyhow::Result<()> {
+pub async fn run() -> anyhow::Result<()> {
     eprintln!("void doctor: checking system health...\n");
 
     let config_path = config::default_config_path();
@@ -50,8 +53,50 @@ pub fn run() -> anyhow::Result<()> {
         eprintln!("[!!] No connections configured");
     } else {
         eprintln!("[OK] {} connection(s) configured:", cfg.connections.len());
-        for conn in &cfg.connections {
-            eprintln!("     - {} ({})", conn.id, conn.connector_type);
+        
+        let mut failed_connections = Vec::new();
+        
+        for conn_config in &cfg.connections {
+            eprint!("     - {} ({}): checking... ", conn_config.id, conn_config.connector_type);
+            
+            // Flush stderr to ensure checking message appears immediately
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+
+            match connector_factory::build_connector(conn_config, &store_path) {
+                Ok(connector) => {
+                    match connector.health_check().await {
+                        Ok(status) => {
+                            if status.ok {
+                                eprintln!("OK ({})", status.message);
+                            } else {
+                                eprintln!("FAILED ({})", status.message);
+                                failed_connections.push(conn_config.clone());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("ERROR ({})", e);
+                            failed_connections.push(conn_config.clone());
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("ERROR BUILDING ({})", e);
+                    failed_connections.push(conn_config.clone());
+                }
+            }
+        }
+        
+        if !failed_connections.is_empty() {
+            eprintln!("\n[!!] Some connections failed health checks.");
+            for conn_config in failed_connections {
+                if confirm_default_yes(&format!("Would you like to re-authenticate connection '{}'?", conn_config.id)) {
+                    eprintln!("Re-authenticating {}...", conn_config.id);
+                    match authenticate_connection(&conn_config, &store_path).await {
+                        Ok(()) => eprintln!("  ✓ Re-authentication successful."),
+                        Err(e) => eprintln!("  ✗ Re-authentication failed: {}", e),
+                    }
+                }
+            }
         }
     }
 
