@@ -96,31 +96,69 @@ impl Connector for SlackConnector {
     }
 
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
-        match self.api.auth_test().await {
-            Ok(resp) => Ok(HealthStatus {
-                connection_id: self.connection_id.clone(),
-                connector_type: ConnectorType::Slack,
-                ok: true,
-                message: format!(
-                    "Authenticated as {} in {}",
-                    resp.user.as_deref().unwrap_or("?"),
-                    resp.team.as_deref().unwrap_or("?")
-                ),
-                last_sync: None,
-                message_count: None,
-            }),
+        let auth_resp = match self.api.auth_test().await {
+            Ok(resp) => resp,
             Err(e) => {
                 warn!(connection_id = %self.connection_id, error = %e, "Slack health check failed");
-                Ok(HealthStatus {
+                return Ok(HealthStatus {
                     connection_id: self.connection_id.clone(),
                     connector_type: ConnectorType::Slack,
                     ok: false,
                     message: format!("Auth failed: {e}"),
                     last_sync: None,
                     message_count: None,
-                })
+                });
+            }
+        };
+
+        if let Some(app_id) = &self.app_id {
+            let token_path = self.config_token_path();
+            if token_path.exists() {
+                if let Err(e) = crate::manifest::ensure_event_subscriptions(
+                    &token_path,
+                    app_id,
+                    &self.connection_id,
+                )
+                .await
+                {
+                    warn!(
+                        connection_id = %self.connection_id,
+                        error = %e,
+                        "Slack health check: event subscription check failed"
+                    );
+                    return Ok(HealthStatus {
+                        connection_id: self.connection_id.clone(),
+                        connector_type: ConnectorType::Slack,
+                        ok: false,
+                        message: format!("Auth OK, but event subscription repair token is invalid: {e}"),
+                        last_sync: None,
+                        message_count: None,
+                    });
+                }
+            } else {
+                return Ok(HealthStatus {
+                    connection_id: self.connection_id.clone(),
+                    connector_type: ConnectorType::Slack,
+                    ok: false,
+                    message: "Auth OK, but missing config token file (run void setup again to restore auto-repair)".to_string(),
+                    last_sync: None,
+                    message_count: None,
+                });
             }
         }
+
+        Ok(HealthStatus {
+            connection_id: self.connection_id.clone(),
+            connector_type: ConnectorType::Slack,
+            ok: true,
+            message: format!(
+                "Authenticated as {} in {}",
+                auth_resp.user.as_deref().unwrap_or("?"),
+                auth_resp.team.as_deref().unwrap_or("?")
+            ),
+            last_sync: None,
+            message_count: None,
+        })
     }
 
     async fn mark_read(
