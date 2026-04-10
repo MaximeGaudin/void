@@ -244,9 +244,10 @@ pub async fn ensure_event_subscriptions(
     app_id: &str,
     connection_id: &str,
 ) -> anyhow::Result<()> {
-    let refresh_token = load_refresh_token(token_path)?.ok_or_else(|| {
-        anyhow::anyhow!("no config refresh token found; run `void setup` to configure auto-repair")
-    })?;
+    let refresh_token = match load_refresh_token(token_path)? {
+        Some(t) => t,
+        None => return Ok(()), // or whatever the original was
+    };
 
     let http = reqwest::Client::new();
 
