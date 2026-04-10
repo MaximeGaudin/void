@@ -177,14 +177,26 @@ pub(crate) async fn reauthenticate_specific_connection(
     if connection.connector_type == void_core::models::ConnectorType::Slack {
         eprintln!("  You need to provide your Slack tokens again.");
         eprintln!("  (Press Enter to keep the existing value)");
-        let user_token = prompt("User OAuth Token (xoxp-...): ");
-        let app_token = prompt("App-Level Token  (xapp-...): ");
-        
+        let current_app_token = if let void_core::config::ConnectionSettings::Slack { ref app_token, .. } = connection.settings {
+            app_token.clone()
+        } else {
+            String::new()
+        };
+
+        let current_user_token = if let void_core::config::ConnectionSettings::Slack { ref user_token, .. } = connection.settings {
+            user_token.clone()
+        } else {
+            String::new()
+        };
+
         let current_app_id = if let void_core::config::ConnectionSettings::Slack { ref app_id, .. } = connection.settings {
             app_id.clone().unwrap_or_default()
         } else {
             String::new()
         };
+
+        let user_token = super::prompt::prompt_default("User OAuth Token (xoxp-...)", &current_user_token);
+        let app_token = super::prompt::prompt_default("App-Level Token  (xapp-...)", &current_app_token);
         let app_id = super::prompt::prompt_default("App ID (optional, e.g. A012ABCD0A0)", &current_app_id);
         
         let refresh_token = prompt("Config Refresh Token (optional, xoxe-...): ");
