@@ -1215,3 +1215,185 @@ fn list_contacts_avatar_picks_non_null_across_messages() {
         Some("https://example.com/u1.jpg"),
     );
 }
+
+// ---- Context dedup (SQL-level) tests ----
+
+fn make_message_with_context(
+    id: &str,
+    conv_id: &str,
+    connection_id: &str,
+    body: &str,
+    ts: i64,
+    context_id: Option<&str>,
+) -> Message {
+    let mut msg = make_message(id, conv_id, connection_id, body, ts);
+    msg.context_id = context_id.map(|s| s.into());
+    msg
+}
+
+#[test]
+fn dedup_context_keeps_most_recent_per_group() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message_with_context(
+        "m1", "c1", "test-slack", "old ctx msg", 1_000, Some("ctx-A"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2", "c1", "test-slack", "new ctx msg", 2_000, Some("ctx-A"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m3", "c1", "test-slack", "standalone", 3_000, None,
+    ))
+    .unwrap();
+
+    let (rows, total) =
+        db.recent_messages_paginated(None, None, 50, 0, true, true, true).unwrap();
+    assert_eq!(total, 2, "count should collapse ctx-A group to 1");
+    assert_eq!(rows.len(), 2);
+    let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+    assert!(ids.contains(&"m2"), "most recent in ctx-A kept");
+    assert!(ids.contains(&"m3"), "NULL context_id always kept");
+    assert!(!ids.contains(&"m1"), "older ctx-A member removed");
+}
+
+#[test]
+fn dedup_context_disabled_returns_all() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message_with_context(
+        "m1", "c1", "test-slack", "old", 1_000, Some("ctx-A"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2", "c1", "test-slack", "new", 2_000, Some("ctx-A"),
+    ))
+    .unwrap();
+
+    let (rows, total) =
+        db.recent_messages_paginated(None, None, 50, 0, true, true, false).unwrap();
+    assert_eq!(total, 2);
+    assert_eq!(rows.len(), 2);
+}
+
+#[test]
+fn dedup_context_pagination_metadata_matches_data() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    // 3 context groups of 2 + 2 standalone = 8 messages, 5 after dedup
+    for (id, ts, ctx) in [
+        ("m1", 1_000, Some("ctx-A")),
+        ("m2", 2_000, Some("ctx-A")),
+        ("m3", 3_000, Some("ctx-B")),
+        ("m4", 4_000, Some("ctx-B")),
+        ("m5", 5_000, Some("ctx-C")),
+        ("m6", 6_000, Some("ctx-C")),
+        ("m7", 7_000, None),
+        ("m8", 8_000, None),
+    ] {
+        db.upsert_message(&make_message_with_context(
+            id, "c1", "test-slack", "body", ts, ctx,
+        ))
+        .unwrap();
+    }
+
+    let (page1, total1) =
+        db.recent_messages_paginated(None, None, 3, 0, true, true, true).unwrap();
+    let (page2, total2) =
+        db.recent_messages_paginated(None, None, 3, 3, true, true, true).unwrap();
+
+    assert_eq!(total1, 5, "total should reflect deduped count");
+    assert_eq!(total2, 5);
+    assert_eq!(page1.len(), 3);
+    assert_eq!(page2.len(), 2);
+
+    let all_ids: Vec<&str> = page1.iter().chain(page2.iter()).map(|m| m.id.as_str()).collect();
+    assert!(!all_ids.contains(&"m1"), "older ctx-A removed");
+    assert!(!all_ids.contains(&"m3"), "older ctx-B removed");
+    assert!(!all_ids.contains(&"m5"), "older ctx-C removed");
+}
+
+#[test]
+fn dedup_context_conversation_messages() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message_with_context(
+        "m1", "c1", "test-slack", "older", 1_000, Some("ctx-X"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2", "c1", "test-slack", "newer", 2_000, Some("ctx-X"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m3", "c1", "test-slack", "solo", 3_000, None,
+    ))
+    .unwrap();
+
+    let (rows, total) =
+        db.list_messages_paginated("c1", 50, 0, None, None, true).unwrap();
+    assert_eq!(total, 2);
+    assert_eq!(rows.len(), 2);
+    let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+    assert!(ids.contains(&"m2"));
+    assert!(ids.contains(&"m3"));
+}
+
+#[test]
+fn dedup_context_search_messages() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message_with_context(
+        "m1", "c1", "test-slack", "meeting old", 1_000, Some("ctx-Y"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2", "c1", "test-slack", "meeting new", 2_000, Some("ctx-Y"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m3", "c1", "test-slack", "meeting solo", 3_000, None,
+    ))
+    .unwrap();
+
+    let (rows, total) =
+        db.search_messages_paginated("meeting", None, None, 50, 0, true, true).unwrap();
+    assert_eq!(total, 2);
+    assert_eq!(rows.len(), 2);
+    let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+    assert!(ids.contains(&"m2"), "most recent ctx-Y kept");
+    assert!(ids.contains(&"m3"), "NULL context kept");
+}
+
+#[test]
+fn dedup_context_same_timestamp_uses_id_tiebreak() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message_with_context(
+        "m-aaa", "c1", "test-slack", "first", 1_000, Some("ctx-T"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m-zzz", "c1", "test-slack", "second", 1_000, Some("ctx-T"),
+    ))
+    .unwrap();
+
+    let (rows, total) =
+        db.recent_messages_paginated(None, None, 50, 0, true, true, true).unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "m-zzz", "highest id wins on timestamp tie");
+}
