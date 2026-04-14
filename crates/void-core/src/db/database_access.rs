@@ -432,6 +432,16 @@ impl Database {
         mute_sync::set_mute_by_external_id(&*self.conn()?, connection_id, external_id, is_muted)
     }
 
+    /// Auto-mute conversations matching the given patterns (case-insensitive
+    /// substring on name or external_id). Returns number of newly muted conversations.
+    pub fn auto_mute_matching_conversations(
+        &self,
+        connection_id: &str,
+        patterns: &[String],
+    ) -> Result<usize, DbError> {
+        mute_sync::auto_mute_matching_conversations(&*self.conn()?, connection_id, patterns)
+    }
+
     // -- Sync state --
 
     pub fn list_sync_states(&self) -> Result<Vec<(String, String, String)>, DbError> {

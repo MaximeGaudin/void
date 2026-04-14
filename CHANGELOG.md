@@ -5,6 +5,16 @@ All notable changes to Void CLI are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Config** — Added `ignore_conversations` option to any connection. Matching conversations are auto-muted on every sync start (case-insensitive substring match on name or external ID).
+
+### Fixed
+
+- **CLI** — Fixed pagination metadata (`total_elements`, `total_pages`) being inflated when context dedup removed messages from the result set. Count and data queries now apply identical filtering at the SQL level.
+
 ## [0.5.0] - 2026-03-29
 
 ### Added

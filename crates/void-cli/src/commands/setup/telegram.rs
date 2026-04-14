@@ -41,6 +41,7 @@ pub(crate) async fn setup_telegram(
     let connection = ConnectionConfig {
         id: connection_id.clone(),
         connector_type: ConnectorType::Telegram,
+        ignore_conversations: vec![],
         settings: ConnectionSettings::Telegram {
             api_id: None,
             api_hash: None,

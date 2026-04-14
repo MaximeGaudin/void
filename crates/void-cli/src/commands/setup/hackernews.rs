@@ -51,6 +51,7 @@ pub(crate) fn setup_hackernews(cfg: &mut VoidConfig, add_only: bool) -> anyhow::
     let connection = ConnectionConfig {
         id: connection_id,
         connector_type: ConnectorType::HackerNews,
+        ignore_conversations: vec![],
         settings: ConnectionSettings::HackerNews {
             keywords,
             min_score,

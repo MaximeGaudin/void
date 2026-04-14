@@ -82,6 +82,8 @@ pub struct ConnectionConfig {
     pub id: String,
     #[serde(rename = "type")]
     pub connector_type: ConnectorType,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignore_conversations: Vec<String>,
     #[serde(flatten)]
     pub settings: ConnectionSettings,
 }
@@ -122,6 +124,7 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
         Ok(ConnectionConfig {
             id: raw.id,
             connector_type: raw.connector_type,
+            ignore_conversations: raw.ignore_conversations.unwrap_or_default(),
             settings,
         })
     }
@@ -150,6 +153,8 @@ struct RawConnectionConfig {
     keywords: Option<Vec<String>>,
     #[serde(default)]
     min_score: Option<u32>,
+    #[serde(default)]
+    ignore_conversations: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -469,6 +474,7 @@ calendar_ids = ["primary", "holidays"]
                 ConnectionConfig {
                     id: "work-slack".into(),
                     connector_type: ConnectorType::Slack,
+                    ignore_conversations: vec![],
                     settings: ConnectionSettings::Slack {
                         app_token: "xapp".into(),
                         user_token: "xoxp".into(),
@@ -478,6 +484,7 @@ calendar_ids = ["primary", "holidays"]
                 ConnectionConfig {
                     id: "personal-gmail".into(),
                     connector_type: ConnectorType::Gmail,
+                    ignore_conversations: vec![],
                     settings: ConnectionSettings::Gmail {
                         credentials_file: Some("creds.json".into()),
                     },
@@ -500,6 +507,7 @@ calendar_ids = ["primary", "holidays"]
             connections: vec![ConnectionConfig {
                 id: "gmail-1".into(),
                 connector_type: ConnectorType::Gmail,
+                ignore_conversations: vec![],
                 settings: ConnectionSettings::Gmail {
                     credentials_file: Some("creds.json".into()),
                 },
@@ -543,6 +551,7 @@ calendar_ids = ["primary", "holidays"]
             connections: vec![ConnectionConfig {
                 id: "wa".to_string(),
                 connector_type: ConnectorType::WhatsApp,
+                ignore_conversations: vec![],
                 settings: ConnectionSettings::WhatsApp {},
             }],
         };
@@ -710,5 +719,42 @@ type = "hackernews"
         assert!(config_str.contains("[store]"));
         assert!(config_str.contains("path"));
         assert!(config_str.contains("[sync]"));
+    }
+
+    #[test]
+    fn parse_ignore_conversations() {
+        let toml = r#"
+[[connections]]
+id = "my-whatsapp"
+type = "whatsapp"
+ignore_conversations = ["noisy-group@g.us", "spam"]
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.connections[0].ignore_conversations, vec!["noisy-group@g.us", "spam"]);
+    }
+
+    #[test]
+    fn parse_ignore_conversations_absent_defaults_empty() {
+        let toml = r#"
+[[connections]]
+id = "my-whatsapp"
+type = "whatsapp"
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert!(config.connections[0].ignore_conversations.is_empty());
+    }
+
+    #[test]
+    fn parse_ignore_conversations_works_for_any_connector() {
+        let toml = r#"
+[[connections]]
+id = "work-slack"
+type = "slack"
+app_token = "xapp-1-test"
+user_token = "xoxp-test"
+ignore_conversations = ["random", "social"]
+"#;
+        let config: VoidConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.connections[0].ignore_conversations, vec!["random", "social"]);
     }
 }

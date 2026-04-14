@@ -64,6 +64,7 @@ pub(crate) async fn setup_gmail(
     let connection = ConnectionConfig {
         id: connection_id.clone(),
         connector_type: ConnectorType::Gmail,
+        ignore_conversations: vec![],
         settings: ConnectionSettings::Gmail {
             credentials_file: custom_creds,
         },

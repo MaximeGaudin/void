@@ -485,8 +485,49 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
 
     let cancel = CancellationToken::new();
 
+    // Apply ignore_conversations patterns: mute matching conversations now,
+    // and periodically during sync to catch newly synced conversations.
+    let ignore_rules: Vec<(String, Vec<String>)> = cfg
+        .connections
+        .iter()
+        .filter(|c| !c.ignore_conversations.is_empty())
+        .map(|c| (c.id.clone(), c.ignore_conversations.clone()))
+        .collect();
+
+    if !ignore_rules.is_empty() {
+        apply_ignore_rules(&db, &ignore_rules);
+
+        let db_bg = Arc::clone(&db);
+        let cancel_bg = cancel.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(120));
+            interval.tick().await;
+            loop {
+                tokio::select! {
+                    _ = cancel_bg.cancelled() => break,
+                    _ = interval.tick() => apply_ignore_rules(&db_bg, &ignore_rules),
+                }
+            }
+        });
+    }
+
     super::kb::spawn_kb_sync_loop(&store_path, cancel.clone()).await;
 
     let engine = SyncEngine::new(connectors, db, &store_path, hook_runner);
     engine.run(cancel).await
+}
+
+fn apply_ignore_rules(db: &Database, rules: &[(String, Vec<String>)]) {
+    for (connection_id, patterns) in rules {
+        match db.auto_mute_matching_conversations(connection_id, patterns) {
+            Ok(n) if n > 0 => {
+                eprintln!("[{connection_id}] auto-muted {n} conversation(s) matching ignore patterns");
+                info!(connection_id, count = n, "auto-muted conversations");
+            }
+            Err(e) => {
+                eprintln!("[{connection_id}] failed to apply ignore patterns: {e}");
+            }
+            _ => {}
+        }
+    }
 }

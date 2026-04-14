@@ -89,6 +89,7 @@ pub(crate) async fn setup_calendar(
     let connection = ConnectionConfig {
         id: connection_id.clone(),
         connector_type: ConnectorType::Calendar,
+        ignore_conversations: vec![],
         settings: ConnectionSettings::Calendar {
             credentials_file: custom_creds,
             calendar_ids,

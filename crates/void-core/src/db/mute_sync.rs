@@ -38,6 +38,54 @@ pub(super) fn set_mute_by_external_id(
     Ok(updated > 0)
 }
 
+/// Auto-mute conversations whose name or external_id matches any of the given
+/// patterns (case-insensitive substring match). Only affects non-muted
+/// conversations for the specified connection. Returns the number of newly muted
+/// conversations.
+pub(super) fn auto_mute_matching_conversations(
+    conn: &Connection,
+    connection_id: &str,
+    patterns: &[String],
+) -> Result<usize, DbError> {
+    if patterns.is_empty() {
+        return Ok(0);
+    }
+
+    let mut sql = String::from(
+        "UPDATE conversations SET is_muted = 1
+         WHERE connection_id = ?1 AND is_muted = 0 AND (",
+    );
+    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+        vec![Box::new(connection_id.to_string())];
+
+    for (i, pattern) in patterns.iter().enumerate() {
+        if i > 0 {
+            sql.push_str(" OR ");
+        }
+        let like = format!("%{}%", pattern.to_lowercase());
+        let idx = param_values.len() + 1;
+        sql.push_str(&format!(
+            "LOWER(COALESCE(name, '')) LIKE ?{idx} OR LOWER(external_id) LIKE ?{idx}"
+        ));
+        param_values.push(Box::new(like));
+    }
+    sql.push(')');
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
+    let updated = stmt.execute(params_ref.as_slice())?;
+
+    if updated > 0 {
+        debug!(
+            connection_id,
+            count = updated,
+            "auto-muted conversations matching ignore patterns"
+        );
+    }
+    Ok(updated)
+}
+
 pub(super) fn list_sync_states(
     conn: &Connection,
 ) -> Result<Vec<(String, String, String)>, DbError> {

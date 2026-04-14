@@ -209,12 +209,14 @@ hackernews_poll_interval_secs = 3600
 [[connections]]
 id = "whatsapp"
 type = "whatsapp"
+ignore_conversations = ["noisy-group@g.us", "spam"]
 
 [[connections]]
 id = "work-slack"
 type = "slack"
 app_token = "xapp-1-..."
 user_token = "xoxp-..."
+ignore_conversations = ["random", "social"]
 
 [[connections]]
 id = "telegram"
@@ -237,6 +239,19 @@ type = "hackernews"
 keywords = ["rust", "ai", "startup"]
 min_score = 100
 ```
+
+### `ignore_conversations`
+
+Any connection can include an `ignore_conversations` list. Matching conversations are auto-muted on every sync start (case-insensitive substring match on name or external ID). This is useful for permanently silencing noisy groups or channels:
+
+```toml
+[[connections]]
+id = "whatsapp"
+type = "whatsapp"
+ignore_conversations = ["noisy-group@g.us", "spam", "social"]
+```
+
+You can also mute/unmute conversations interactively with `void mute` (see [Write Commands](#write-commands)).
 
 ## Connector Setup
 

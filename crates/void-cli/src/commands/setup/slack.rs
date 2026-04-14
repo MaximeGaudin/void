@@ -172,6 +172,7 @@ pub(crate) async fn setup_slack(
     let connection = ConnectionConfig {
         id: connection_id.clone(),
         connector_type: ConnectorType::Slack,
+        ignore_conversations: vec![],
         settings: ConnectionSettings::Slack {
             app_token,
             user_token,

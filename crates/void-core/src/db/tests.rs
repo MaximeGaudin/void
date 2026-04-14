@@ -1397,3 +1397,123 @@ fn dedup_context_same_timestamp_uses_id_tiebreak() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "m-zzz", "highest id wins on timestamp tie");
 }
+
+// ---- Auto-mute matching conversations (ignore_conversations) tests ----
+
+#[test]
+fn auto_mute_matches_by_name() {
+    let db = test_db();
+    let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
+    c1.name = Some("Family Group".into());
+    db.upsert_conversation(&c1).unwrap();
+
+    let mut c2 = make_conversation("c2", "my-wa", "222@g.us");
+    c2.name = Some("Work Updates".into());
+    db.upsert_conversation(&c2).unwrap();
+
+    let patterns = vec!["family".to_string()];
+    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    assert_eq!(muted, 1);
+
+    let loaded = db.get_conversation("c1").unwrap().unwrap();
+    assert!(loaded.is_muted, "Family Group should be muted");
+
+    let loaded2 = db.get_conversation("c2").unwrap().unwrap();
+    assert!(!loaded2.is_muted, "Work Updates should not be muted");
+}
+
+#[test]
+fn auto_mute_matches_by_external_id() {
+    let db = test_db();
+    let c1 = make_conversation("c1", "my-wa", "spam-group@g.us");
+    db.upsert_conversation(&c1).unwrap();
+
+    let patterns = vec!["spam-group".to_string()];
+    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    assert_eq!(muted, 1);
+
+    let loaded = db.get_conversation("c1").unwrap().unwrap();
+    assert!(loaded.is_muted);
+}
+
+#[test]
+fn auto_mute_case_insensitive() {
+    let db = test_db();
+    let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
+    c1.name = Some("NOISY GROUP".into());
+    db.upsert_conversation(&c1).unwrap();
+
+    let patterns = vec!["noisy".to_string()];
+    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    assert_eq!(muted, 1);
+}
+
+#[test]
+fn auto_mute_skips_already_muted() {
+    let db = test_db();
+    let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
+    c1.name = Some("Spam".into());
+    db.upsert_conversation(&c1).unwrap();
+    db.update_conversation_mute("c1", true).unwrap();
+
+    let patterns = vec!["spam".to_string()];
+    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    assert_eq!(muted, 0, "already-muted conversation should not be counted");
+}
+
+#[test]
+fn auto_mute_scoped_to_connection() {
+    let db = test_db();
+    let mut c1 = make_conversation("c1", "wa-1", "111@g.us");
+    c1.name = Some("Random".into());
+    db.upsert_conversation(&c1).unwrap();
+
+    let mut c2 = make_conversation("c2", "wa-2", "222@g.us");
+    c2.name = Some("Random".into());
+    db.upsert_conversation(&c2).unwrap();
+
+    let patterns = vec!["random".to_string()];
+    let muted = db.auto_mute_matching_conversations("wa-1", &patterns).unwrap();
+    assert_eq!(muted, 1);
+
+    let loaded1 = db.get_conversation("c1").unwrap().unwrap();
+    assert!(loaded1.is_muted);
+
+    let loaded2 = db.get_conversation("c2").unwrap().unwrap();
+    assert!(!loaded2.is_muted, "other connection should not be affected");
+}
+
+#[test]
+fn auto_mute_multiple_patterns() {
+    let db = test_db();
+    let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
+    c1.name = Some("Random Chat".into());
+    db.upsert_conversation(&c1).unwrap();
+
+    let mut c2 = make_conversation("c2", "my-wa", "222@g.us");
+    c2.name = Some("Social Club".into());
+    db.upsert_conversation(&c2).unwrap();
+
+    let mut c3 = make_conversation("c3", "my-wa", "333@g.us");
+    c3.name = Some("Important Work".into());
+    db.upsert_conversation(&c3).unwrap();
+
+    let patterns = vec!["random".to_string(), "social".to_string()];
+    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    assert_eq!(muted, 2);
+
+    assert!(db.get_conversation("c1").unwrap().unwrap().is_muted);
+    assert!(db.get_conversation("c2").unwrap().unwrap().is_muted);
+    assert!(!db.get_conversation("c3").unwrap().unwrap().is_muted);
+}
+
+#[test]
+fn auto_mute_empty_patterns_is_noop() {
+    let db = test_db();
+    let c1 = make_conversation("c1", "my-wa", "111@g.us");
+    db.upsert_conversation(&c1).unwrap();
+
+    let muted = db.auto_mute_matching_conversations("my-wa", &[]).unwrap();
+    assert_eq!(muted, 0);
+    assert!(!db.get_conversation("c1").unwrap().unwrap().is_muted);
+}

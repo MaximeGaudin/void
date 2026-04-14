@@ -41,6 +41,7 @@ pub(crate) async fn setup_whatsapp(
     let connection = ConnectionConfig {
         id: connection_id.clone(),
         connector_type: ConnectorType::WhatsApp,
+        ignore_conversations: vec![],
         settings: ConnectionSettings::WhatsApp {},
     };
 
