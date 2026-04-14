@@ -100,7 +100,15 @@ impl Database {
         since: Option<i64>,
         until: Option<i64>,
     ) -> Result<Vec<Message>, DbError> {
-        messages::list_for_conversation(&*self.conn()?, conversation_id, limit, 0, since, until)
+        messages::list_for_conversation(
+            &*self.conn()?,
+            conversation_id,
+            limit,
+            0,
+            since,
+            until,
+            false,
+        )
     }
 
     pub fn list_messages_paginated(
@@ -110,11 +118,20 @@ impl Database {
         offset: i64,
         since: Option<i64>,
         until: Option<i64>,
+        dedup_context: bool,
     ) -> Result<(Vec<Message>, i64), DbError> {
         let conn = self.conn()?;
-        let rows =
-            messages::list_for_conversation(&conn, conversation_id, limit, offset, since, until)?;
-        let total = messages::count_for_conversation(&conn, conversation_id, since, until)?;
+        let rows = messages::list_for_conversation(
+            &conn,
+            conversation_id,
+            limit,
+            offset,
+            since,
+            until,
+            dedup_context,
+        )?;
+        let total =
+            messages::count_for_conversation(&conn, conversation_id, since, until, dedup_context)?;
         Ok((rows, total))
     }
 
@@ -146,6 +163,7 @@ impl Database {
             0,
             include_archived,
             include_muted,
+            false,
         )
     }
 
@@ -157,6 +175,7 @@ impl Database {
         offset: i64,
         include_archived: bool,
         include_muted: bool,
+        dedup_context: bool,
     ) -> Result<(Vec<Message>, i64), DbError> {
         let conn = self.conn()?;
         let rows = messages::list_recent(
@@ -167,6 +186,7 @@ impl Database {
             offset,
             include_archived,
             include_muted,
+            dedup_context,
         )?;
         let total = messages::count_recent(
             &conn,
@@ -174,6 +194,7 @@ impl Database {
             connector_filter,
             include_archived,
             include_muted,
+            dedup_context,
         )?;
         Ok((rows, total))
     }

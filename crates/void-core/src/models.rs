@@ -184,7 +184,11 @@ pub struct Message {
 /// Remove messages that already appear in another message's context to avoid duplication.
 /// For each context group, the most recent message in the top-level list is the anchor;
 /// all other messages from that group are removed.
-pub fn dedup_context_messages(messages: Vec<Message>) -> Vec<Message> {
+///
+/// NOTE: This in-memory dedup is superseded by SQL-level context dedup in queries
+/// (see `DEDUP_CONTEXT_CLAUSE` in `db::messages`). Retained for unit tests.
+#[cfg(test)]
+fn dedup_context_messages(messages: Vec<Message>) -> Vec<Message> {
     use std::collections::{HashMap, HashSet};
 
     let mut best_per_context: HashMap<String, (i64, String)> = HashMap::new();

@@ -2,7 +2,6 @@ use clap::Args;
 use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
-use void_core::models::dedup_context_messages;
 
 use super::pagination::{build_meta, parse_page};
 use crate::output::{resolve_connector_filter, OutputFormatter};
@@ -43,10 +42,10 @@ pub fn run(args: &SearchArgs, enrich_context: bool) -> anyhow::Result<()> {
         args.size,
         offset,
         args.include_muted,
+        enrich_context,
     )?;
     if enrich_context {
         db.enrich_with_context(&mut messages)?;
-        messages = dedup_context_messages(messages);
     }
     let meta = build_meta(args.page, args.size, total_elements);
     formatter.print_paginated(&messages, meta)

@@ -2,6 +2,7 @@
 
 use tracing::debug;
 
+use super::messages::DEDUP_CONTEXT_CLAUSE_ALIASED;
 use super::row;
 use super::Database;
 use crate::models::Message;
@@ -40,6 +41,7 @@ impl Database {
             limit,
             0,
             include_muted,
+            false,
         )?;
         Ok(results)
     }
@@ -52,6 +54,7 @@ impl Database {
         limit: i64,
         offset: i64,
         include_muted: bool,
+        dedup_context: bool,
     ) -> Result<(Vec<Message>, i64), crate::error::DbError> {
         let escaped = fts5_escape(query);
         let mut sql = String::from(
@@ -72,6 +75,10 @@ impl Database {
             let muted_clause = " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.is_muted = 1)";
             sql.push_str(muted_clause);
             count_sql.push_str(muted_clause);
+        }
+        if dedup_context {
+            sql.push_str(DEDUP_CONTEXT_CLAUSE_ALIASED);
+            count_sql.push_str(DEDUP_CONTEXT_CLAUSE_ALIASED);
         }
         if let Some(acct) = connection_filter {
             let pattern = format!("%{acct}%");

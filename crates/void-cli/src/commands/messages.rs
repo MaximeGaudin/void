@@ -2,7 +2,6 @@ use clap::Args;
 use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
-use void_core::models::dedup_context_messages;
 
 use super::pagination::{build_meta, parse_page};
 use super::resolve::{resolve_messages_target, MessagesTarget};
@@ -55,11 +54,16 @@ pub fn run(args: &MessagesArgs, enrich_context: bool) -> anyhow::Result<()> {
             let until = args.until.as_deref().and_then(parse_date_to_ts);
             let offset = parse_page(args.size, args.page)?;
 
-            let (mut messages, total_elements) =
-                db.list_messages_paginated(&conv_id, args.size, offset, since, until)?;
+            let (mut messages, total_elements) = db.list_messages_paginated(
+                &conv_id,
+                args.size,
+                offset,
+                since,
+                until,
+                enrich_context,
+            )?;
             if enrich_context {
                 db.enrich_with_context(&mut messages)?;
-                messages = dedup_context_messages(messages);
             }
             let meta = build_meta(args.page, args.size, total_elements);
             formatter.print_paginated(&messages, meta)

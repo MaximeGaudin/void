@@ -9,6 +9,15 @@ use super::row;
 use crate::error::DbError;
 use crate::models::Message;
 
+/// SQL clause that keeps only the most recent message per `context_id`,
+/// letting NULL-context messages pass through unchanged.
+const DEDUP_CONTEXT_CLAUSE: &str =
+    " AND (context_id IS NULL OR id = (SELECT m2.id FROM messages m2 WHERE m2.context_id = messages.context_id ORDER BY m2.timestamp DESC, m2.id DESC LIMIT 1))";
+
+/// Same clause but using `m.` alias (for JOINed queries like FTS search).
+pub(super) const DEDUP_CONTEXT_CLAUSE_ALIASED: &str =
+    " AND (m.context_id IS NULL OR m.id = (SELECT m2.id FROM messages m2 WHERE m2.context_id = m.context_id ORDER BY m2.timestamp DESC, m2.id DESC LIMIT 1))";
+
 pub(super) fn message_exists(
     conn: &Connection,
     connection_id: &str,
@@ -69,6 +78,7 @@ pub(super) fn list_for_conversation(
     offset: i64,
     since: Option<i64>,
     until: Option<i64>,
+    dedup_context: bool,
 ) -> Result<Vec<Message>, DbError> {
     let suffix_pattern = format!("%-{conversation_id}");
     let mut sql = String::from(
@@ -80,6 +90,9 @@ pub(super) fn list_for_conversation(
         Box::new(suffix_pattern),
     ];
 
+    if dedup_context {
+        sql.push_str(DEDUP_CONTEXT_CLAUSE);
+    }
     if let Some(s) = since {
         sql.push_str(&format!(" AND timestamp >= ?{}", param_values.len() + 1));
         param_values.push(Box::new(s));
@@ -109,6 +122,7 @@ pub(super) fn count_for_conversation(
     conversation_id: &str,
     since: Option<i64>,
     until: Option<i64>,
+    dedup_context: bool,
 ) -> Result<i64, DbError> {
     let suffix_pattern = format!("%-{conversation_id}");
     let mut sql = String::from(
@@ -119,6 +133,9 @@ pub(super) fn count_for_conversation(
         Box::new(suffix_pattern),
     ];
 
+    if dedup_context {
+        sql.push_str(DEDUP_CONTEXT_CLAUSE);
+    }
     if let Some(s) = since {
         sql.push_str(&format!(" AND timestamp >= ?{}", param_values.len() + 1));
         param_values.push(Box::new(s));
@@ -168,6 +185,7 @@ pub(super) fn list_recent(
     offset: i64,
     include_archived: bool,
     include_muted: bool,
+    dedup_context: bool,
 ) -> Result<Vec<Message>, DbError> {
     let mut sql = String::from(
         "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
@@ -182,6 +200,9 @@ pub(super) fn list_recent(
         sql.push_str(
             " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = messages.conversation_id AND c.is_muted = 1)",
         );
+    }
+    if dedup_context {
+        sql.push_str(DEDUP_CONTEXT_CLAUSE);
     }
     if let Some(acct) = connection_filter {
         let pattern = format!("%{acct}%");
@@ -217,6 +238,7 @@ pub(super) fn count_recent(
     connector_filter: Option<&str>,
     include_archived: bool,
     include_muted: bool,
+    dedup_context: bool,
 ) -> Result<i64, DbError> {
     let mut sql = String::from("SELECT COUNT(*) FROM messages WHERE 1=1");
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -228,6 +250,9 @@ pub(super) fn count_recent(
         sql.push_str(
             " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = messages.conversation_id AND c.is_muted = 1)",
         );
+    }
+    if dedup_context {
+        sql.push_str(DEDUP_CONTEXT_CLAUSE);
     }
     if let Some(acct) = connection_filter {
         let pattern = format!("%{acct}%");
