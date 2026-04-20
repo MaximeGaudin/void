@@ -7,7 +7,6 @@ pub use args::*;
 
 use tracing::debug;
 use void_core::config::{self, expand_tilde, VoidConfig};
-use void_core::db::Database;
 use void_core::models::ConnectorType;
 
 pub async fn run(args: &GmailArgs) -> anyhow::Result<()> {
@@ -27,35 +26,6 @@ fn strip_void_id_prefix(id: &str) -> &str {
         }
     }
     id
-}
-
-fn resolve_forward_connection<'a>(
-    explicit: Option<&'a str>,
-    message_connection: &'a str,
-) -> &'a str {
-    explicit.unwrap_or(message_connection)
-}
-
-fn resolve_forward_connector(
-    message_id: &str,
-    db: &Database,
-    expected: &str,
-) -> anyhow::Result<void_core::models::Message> {
-    let msg = super::resolve::resolve_message(db, message_id)?;
-    check_forward_connector(message_id, &msg.connector, expected)?;
-    Ok(msg)
-}
-
-fn check_forward_connector(message_id: &str, actual: &str, expected: &str) -> anyhow::Result<()> {
-    if actual != expected {
-        anyhow::bail!(
-            "Message {} is from connector '{}', not {}.",
-            message_id,
-            actual,
-            expected
-        );
-    }
-    Ok(())
 }
 
 fn build_gmail_connector(
@@ -99,39 +69,7 @@ fn build_gmail_connector(
 
 #[cfg(test)]
 mod tests {
-    use super::{check_forward_connector, resolve_forward_connection, strip_void_id_prefix};
-
-    #[test]
-    fn forward_connection_prefers_explicit_connection() {
-        assert_eq!(
-            resolve_forward_connection(Some("explicit-conn"), "msg-conn"),
-            "explicit-conn"
-        );
-    }
-
-    #[test]
-    fn forward_connection_defaults_to_message_connection() {
-        assert_eq!(resolve_forward_connection(None, "msg-conn"), "msg-conn");
-    }
-
-    #[test]
-    fn forward_connector_guard_accepts_gmail() {
-        assert!(check_forward_connector("id1", "gmail", "gmail").is_ok());
-    }
-
-    #[test]
-    fn forward_connector_guard_rejects_non_gmail() {
-        assert!(check_forward_connector("id1", "slack", "gmail").is_err());
-    }
-
-    #[test]
-    fn forward_connector_guard_error_mentions_actual_connector() {
-        let err = check_forward_connector("id1", "slack", "gmail")
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("slack"), "error should mention 'slack': {err}");
-        assert!(err.contains("gmail"), "error should mention 'gmail': {err}");
-    }
+    use super::strip_void_id_prefix;
 
     #[test]
     fn strip_void_prefix_removes_connection_prefix() {

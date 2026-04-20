@@ -113,13 +113,14 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
-    check_forward_connector(&args.message_id, &msg.connector, "telegram")?;
+    super::resolve::check_forward_connector(&args.message_id, &msg.connector, "telegram")?;
 
     let conv = db
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    let conn_id = resolve_forward_connection(args.connection.as_deref(), &msg.connection_id);
+    let conn_id =
+        super::resolve::resolve_forward_connection(args.connection.as_deref(), &msg.connection_id);
     let connector = build_tg_connector(Some(conn_id), &cfg)?;
 
     let fwd_id = connector
@@ -132,25 +133,6 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
         .await?;
 
     eprintln!("Message forwarded (id: {fwd_id})");
-    Ok(())
-}
-
-fn resolve_forward_connection<'a>(
-    explicit: Option<&'a str>,
-    message_connection: &'a str,
-) -> &'a str {
-    explicit.unwrap_or(message_connection)
-}
-
-fn check_forward_connector(message_id: &str, actual: &str, expected: &str) -> anyhow::Result<()> {
-    if actual != expected {
-        anyhow::bail!(
-            "Message {} is from connector '{}', not {}.",
-            message_id,
-            actual,
-            expected
-        );
-    }
     Ok(())
 }
 
@@ -186,42 +168,3 @@ fn build_tg_connector(
     ))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn forward_connection_prefers_explicit_connection() {
-        assert_eq!(
-            resolve_forward_connection(Some("explicit-conn"), "msg-conn"),
-            "explicit-conn"
-        );
-    }
-
-    #[test]
-    fn forward_connection_defaults_to_message_connection() {
-        assert_eq!(resolve_forward_connection(None, "msg-conn"), "msg-conn");
-    }
-
-    #[test]
-    fn forward_connector_guard_accepts_telegram() {
-        assert!(check_forward_connector("id1", "telegram", "telegram").is_ok());
-    }
-
-    #[test]
-    fn forward_connector_guard_rejects_non_telegram() {
-        assert!(check_forward_connector("id1", "gmail", "telegram").is_err());
-    }
-
-    #[test]
-    fn forward_connector_guard_error_mentions_actual_connector() {
-        let err = check_forward_connector("id1", "slack", "telegram")
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("slack"), "error should mention 'slack': {err}");
-        assert!(
-            err.contains("telegram"),
-            "error should mention 'telegram': {err}"
-        );
-    }
-}

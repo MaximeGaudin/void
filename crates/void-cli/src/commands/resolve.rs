@@ -19,6 +19,33 @@ pub fn resolve_message(db: &Database, input: &str) -> anyhow::Result<Message> {
         .ok_or_else(|| anyhow::anyhow!("Message not found: {input}"))
 }
 
+/// Pick the connection to use for a forwarded message: explicit `--connection`
+/// flag wins, otherwise fall back to the message's original connection.
+pub fn resolve_forward_connection<'a>(
+    explicit: Option<&'a str>,
+    message_connection: &'a str,
+) -> &'a str {
+    explicit.unwrap_or(message_connection)
+}
+
+/// Ensure a message belongs to the expected connector, or bail with a
+/// descriptive error mentioning both the actual and expected connectors.
+pub fn check_forward_connector(
+    message_id: &str,
+    actual: &str,
+    expected: &str,
+) -> anyhow::Result<()> {
+    if actual != expected {
+        anyhow::bail!(
+            "Message {} is from connector '{}', not {}.",
+            message_id,
+            actual,
+            expected
+        );
+    }
+    Ok(())
+}
+
 /// Resolve a user-supplied identifier for the `messages` command.
 ///
 /// If the input is a Slack link, returns `Link { message_id, conversation_id }`.
@@ -46,6 +73,33 @@ pub fn resolve_messages_target(input: &str) -> MessagesTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forward_connection_prefers_explicit() {
+        assert_eq!(
+            resolve_forward_connection(Some("explicit"), "msg-conn"),
+            "explicit"
+        );
+    }
+
+    #[test]
+    fn forward_connection_falls_back_to_message() {
+        assert_eq!(resolve_forward_connection(None, "msg-conn"), "msg-conn");
+    }
+
+    #[test]
+    fn forward_connector_guard_accepts_match() {
+        assert!(check_forward_connector("id1", "slack", "slack").is_ok());
+    }
+
+    #[test]
+    fn forward_connector_guard_rejects_mismatch() {
+        let err = check_forward_connector("id1", "gmail", "slack")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("gmail"));
+        assert!(err.contains("slack"));
+    }
 
     #[test]
     fn resolve_messages_target_slack_link() {

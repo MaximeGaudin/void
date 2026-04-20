@@ -273,13 +273,17 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
 
     let db = Database::open(&cfg.db_path())?;
 
-    let msg = super::resolve_forward_connector(&args.message_id, &db, "gmail")?;
+    let msg = crate::commands::resolve::resolve_message(&db, &args.message_id)?;
+    crate::commands::resolve::check_forward_connector(&args.message_id, &msg.connector, "gmail")?;
 
     let conv = db
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    let conn_id = super::resolve_forward_connection(args.connection.as_deref(), &msg.connection_id);
+    let conn_id = crate::commands::resolve::resolve_forward_connection(
+        args.connection.as_deref(),
+        &msg.connection_id,
+    );
     let connector = build_gmail_connector(Some(conn_id))?;
 
     let fwd_id = connector
