@@ -3,7 +3,6 @@ use base64::Engine;
 use tracing::debug;
 use tracing::warn;
 
-use super::compose::encode_rfc2047;
 
 use crate::api::GmailApiClient;
 use crate::auth;
@@ -166,10 +165,7 @@ impl GmailConnector {
                 to, subject, body, file_path, None, None, None,
             )?
         } else {
-            let subject = encode_rfc2047(subject);
-            format!(
-                "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
-            )
+            super::compose::compose_rfc2822(to, subject, body, None, None)
         };
 
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
@@ -245,17 +241,13 @@ pub(super) async fn create_draft_with_api(
             reply_to_message_id,
         )?
     } else {
-        let subject = encode_rfc2047(subject);
-        let mut headers = format!(
-            "To: {to_str}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n"
-        );
-        if let Some(ref_id) = reply_to_message_id {
-            headers.push_str(&format!(
-                "In-Reply-To: {ref_id}\r\nReferences: {ref_id}\r\n"
-            ));
-        }
-        headers.push_str(&format!("\r\n{body}"));
-        headers
+        super::compose::compose_rfc2822(
+            to_str,
+            subject,
+            body,
+            reply_to_message_id,
+            reply_to_message_id,
+        )
     };
 
     let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());

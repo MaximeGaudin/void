@@ -11,11 +11,40 @@ pub fn encode_rfc2047(value: &str) -> String {
     format!("=?UTF-8?B?{encoded}?=")
 }
 
-pub fn compose_rfc2822(to: &str, subject: &str, body: &str) -> String {
+pub fn compose_rfc2822(
+    to: &str,
+    subject: &str,
+    body: &str,
+    in_reply_to: Option<&str>,
+    references: Option<&str>,
+) -> String {
     let subject = encode_rfc2047(subject);
-    format!(
-        "To: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"
-    )
+
+    let (content_type, final_body) = if looks_like_html(body) {
+        ("text/html", body.to_string())
+    } else {
+        ("text/html", body.replace('\n', "<br>\n"))
+    };
+
+    let mut headers = format!(
+        "To: {to}\r\nSubject: {subject}\r\nContent-Type: {content_type}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n"
+    );
+    if let Some(irt) = in_reply_to {
+        headers.push_str(&format!("In-Reply-To: {irt}\r\n"));
+    }
+    if let Some(refs) = references {
+        headers.push_str(&format!("References: {refs}\r\n"));
+    }
+    let body_encoded = STANDARD.encode(final_body.as_bytes());
+    let body_wrapped = body_encoded
+        .as_bytes()
+        .chunks(76)
+        .map(|c| unsafe { std::str::from_utf8_unchecked(c) })
+        .collect::<Vec<_>>()
+        .join("\r\n");
+
+    headers.push_str(&format!("\r\n{body_wrapped}"));
+    headers
 }
 
 pub fn compose_rfc2822_with_attachment(
@@ -60,8 +89,22 @@ pub fn compose_rfc2822_with_attachment(
     }
     headers.push_str("\r\n");
 
+    let (content_type, final_body) = if looks_like_html(body) {
+        ("text/html", body.to_string())
+    } else {
+        ("text/html", body.replace('\n', "<br>\n"))
+    };
+
+    let body_encoded = STANDARD.encode(final_body.as_bytes());
+    let body_wrapped = body_encoded
+        .as_bytes()
+        .chunks(76)
+        .map(|c| unsafe { std::str::from_utf8_unchecked(c) })
+        .collect::<Vec<_>>()
+        .join("\r\n");
+
     let raw = format!(
-        "{headers}--{BOUNDARY}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}\r\n--{BOUNDARY}\r\nContent-Type: {mime}; name=\"{filename}\"\r\nContent-Disposition: attachment; filename=\"{filename}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{wrapped}\r\n--{BOUNDARY}--"
+        "{headers}--{BOUNDARY}\r\nContent-Type: {content_type}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n{body_wrapped}\r\n--{BOUNDARY}\r\nContent-Type: {mime}; name=\"{filename}\"\r\nContent-Disposition: attachment; filename=\"{filename}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{wrapped}\r\n--{BOUNDARY}--"
     );
     Ok(raw)
 }

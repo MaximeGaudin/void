@@ -134,7 +134,7 @@ impl Connector for GmailConnector {
             MessageContent::Text(t) => {
                 let subject = "(no subject)";
                 info!(recipient = %to, subject = %subject, "sending Gmail message");
-                compose_rfc2822(to, subject, t)
+                compose_rfc2822(to, subject, t, None, None)
             }
             MessageContent::File {
                 path,
@@ -200,28 +200,28 @@ impl Connector for GmailConnector {
 
         let api = self.get_client().await?;
 
+        let orig = api.get_message(message_id).await?;
+        let to = orig.get_header("From").unwrap_or_default();
+        let subj = orig
+            .get_header("Subject")
+            .unwrap_or_else(|| "(no subject)".into());
+        let subject = if subj.starts_with("Re:") {
+            subj
+        } else {
+            format!("Re: {subj}")
+        };
+        let in_reply_to = orig.get_header("Message-ID");
+        let references = in_reply_to.as_deref();
+
         let raw = match &content {
-            MessageContent::Text(t) => format!(
-                "In-Reply-To: {message_id}\r\nReferences: {message_id}\r\n\
-                 Content-Type: text/plain; charset=utf-8\r\n\r\n{t}"
-            ),
+            MessageContent::Text(t) => {
+                compose_rfc2822(&to, &subject, t, in_reply_to.as_deref(), references)
+            }
             MessageContent::File {
                 path,
                 caption,
                 mime_type,
             } => {
-                let orig = api.get_message(message_id).await?;
-                let to = orig.get_header("From").unwrap_or_default();
-                let subj = orig
-                    .get_header("Subject")
-                    .unwrap_or_else(|| "(no subject)".into());
-                let subject = if subj.starts_with("Re:") {
-                    subj
-                } else {
-                    format!("Re: {subj}")
-                };
-                let in_reply_to = orig.get_header("Message-ID");
-                let references = in_reply_to.as_deref();
                 let body = caption.clone().unwrap_or_default();
                 compose_rfc2822_with_attachment(
                     &to,
@@ -283,7 +283,7 @@ impl Connector for GmailConnector {
         body.push_str("\r\n");
         body.push_str(&orig_body);
 
-        let raw = compose_rfc2822(to, &subject, &body);
+        let raw = compose_rfc2822(to, &subject, &body, None, None);
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
 
         let resp = api.send_message(&encoded).await?;

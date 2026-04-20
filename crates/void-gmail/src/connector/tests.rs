@@ -423,10 +423,11 @@ fn parse_email_name_with_brackets() {
 
 #[test]
 fn compose_rfc2822_basic() {
-    let raw = compose_rfc2822("alice@example.com", "Test Subject", "Hello, Alice!");
+    let raw = compose_rfc2822("alice@example.com", "Test Subject", "Hello, Alice!", None, None);
     assert!(raw.contains("To: alice@example.com"));
     assert!(raw.contains("Subject: Test Subject"));
-    assert!(raw.contains("Hello, Alice!"));
+    // "Hello, Alice!" in Base64
+    assert!(raw.contains("SGVsbG8sIEFsaWNlIQ=="));
 }
 
 #[test]
@@ -471,14 +472,14 @@ fn compose_rfc2822_with_attachment_uses_provided_mime_type() {
 
 #[test]
 fn compose_rfc2822_encodes_non_ascii_subject() {
-    let raw = compose_rfc2822("a@b.com", "Séjour — Réservation", "body");
+    let raw = compose_rfc2822("a@b.com", "Séjour — Réservation", "body", None, None);
     assert!(raw.contains("Subject: =?UTF-8?B?"));
     assert!(!raw.contains("Séjour"));
 }
 
 #[test]
 fn compose_rfc2822_ascii_subject_unchanged() {
-    let raw = compose_rfc2822("a@b.com", "Hello World", "body");
+    let raw = compose_rfc2822("a@b.com", "Hello World", "body", None, None);
     assert!(raw.contains("Subject: Hello World"));
 }
 
