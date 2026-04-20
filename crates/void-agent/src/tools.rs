@@ -281,7 +281,14 @@ mod tests {
     #[tokio::test]
     async fn void_command_tool_definition_keeps_existing_command_sections() {
         let desc = tool_description().await;
-        for section in ["INBOX & MESSAGES:", "SENDING:", "GMAIL:", "SLACK:", "CALENDAR:", "OTHER:"] {
+        for section in [
+            "INBOX & MESSAGES:",
+            "SENDING:",
+            "GMAIL:",
+            "SLACK:",
+            "CALENDAR:",
+            "OTHER:",
+        ] {
             assert!(
                 desc.contains(section),
                 "Tool definition should still contain section '{section}'"

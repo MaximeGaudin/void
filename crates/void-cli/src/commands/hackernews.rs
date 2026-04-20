@@ -192,3 +192,26 @@ fn parse_csv(s: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_csv;
+
+    #[test]
+    fn parse_csv_empty_yields_empty() {
+        assert!(parse_csv("").is_empty());
+    }
+
+    #[test]
+    fn parse_csv_splits_trims_lowercases() {
+        assert_eq!(
+            parse_csv(" Rust , , AI "),
+            vec!["rust".to_string(), "ai".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_csv_single_token() {
+        assert_eq!(parse_csv("keyword"), vec!["keyword".to_string()]);
+    }
+}

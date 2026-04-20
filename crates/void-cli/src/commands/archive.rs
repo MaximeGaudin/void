@@ -43,7 +43,10 @@ async fn run_bulk_before(args: &ArchiveArgs) -> anyhow::Result<()> {
         anyhow::bail!("--before cannot be combined with positional message IDs");
     }
 
-    let date_str = args.before.as_deref().unwrap();
+    let date_str = args
+        .before
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("internal error: --before flag without date"))?;
     let before_ts = parse_date_to_ts(date_str)
         .ok_or_else(|| anyhow::anyhow!("invalid date \"{date_str}\", expected YYYY-MM-DD"))?;
 

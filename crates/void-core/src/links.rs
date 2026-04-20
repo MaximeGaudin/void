@@ -103,6 +103,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_link_strips_fragment_after_timestamp() {
+        let link =
+            SlackLink::parse("https://foo.slack.com/archives/C123/p1234567890123456#threads")
+                .unwrap();
+        assert_eq!(link.message_ts, "1234567890.123456");
+    }
+
+    #[test]
     fn parse_rejects_non_slack_url() {
         assert!(SlackLink::parse("https://example.com/foo").is_none());
     }

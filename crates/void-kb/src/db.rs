@@ -52,10 +52,7 @@ impl KbDatabase {
 
     // ── Document CRUD ──────────────────────────────────────────────
 
-    pub fn insert_document(
-        &self,
-        doc: &Document,
-    ) -> anyhow::Result<()> {
+    pub fn insert_document(&self, doc: &Document) -> anyhow::Result<()> {
         let conn = self.conn()?;
         let tx = conn.unchecked_transaction()?;
 
@@ -451,7 +448,11 @@ impl KbDatabase {
         Ok(count)
     }
 
-    pub fn update_sync_folder_scan_time(&self, folder_path: &str, time: &str) -> anyhow::Result<()> {
+    pub fn update_sync_folder_scan_time(
+        &self,
+        folder_path: &str,
+        time: &str,
+    ) -> anyhow::Result<()> {
         let conn = self.conn()?;
         conn.execute(
             "UPDATE kb_sync_folders SET last_scan_at = ?1 WHERE folder_path = ?2",
@@ -499,9 +500,8 @@ impl KbDatabase {
         conn: &Connection,
         doc_id: &str,
     ) -> anyhow::Result<Vec<MetadataEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT key, value FROM kb_document_metadata WHERE document_id = ?1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT key, value FROM kb_document_metadata WHERE document_id = ?1")?;
         let rows: Vec<MetadataEntry> = stmt
             .query_map([doc_id], |row| {
                 Ok(MetadataEntry {
@@ -615,8 +615,14 @@ mod tests {
         let db = test_db();
         let mut doc = make_doc("d2", "with metadata");
         doc.metadata = vec![
-            MetadataEntry { key: "author".into(), value: "Alice".into() },
-            MetadataEntry { key: "tag".into(), value: "test".into() },
+            MetadataEntry {
+                key: "author".into(),
+                value: "Alice".into(),
+            },
+            MetadataEntry {
+                key: "tag".into(),
+                value: "test".into(),
+            },
         ];
         db.insert_document(&doc).unwrap();
 
@@ -632,11 +638,8 @@ mod tests {
         db.insert_document(&doc).unwrap();
 
         let embedding = vec![0.0f32; 1024];
-        db.insert_chunks_with_embeddings(
-            "d3",
-            &[("chunk one".to_string(), 0, 0, 9)],
-            &[embedding],
-        ).unwrap();
+        db.insert_chunks_with_embeddings("d3", &[("chunk one".to_string(), 0, 0, 9)], &[embedding])
+            .unwrap();
 
         assert!(db.delete_document("d3").unwrap());
         assert!(db.get_document("d3").unwrap().is_none());
@@ -652,7 +655,8 @@ mod tests {
     fn list_documents_paginated() {
         let db = test_db();
         for i in 0..5 {
-            db.insert_document(&make_doc(&format!("d{i}"), &format!("content {i}"))).unwrap();
+            db.insert_document(&make_doc(&format!("d{i}"), &format!("content {i}")))
+                .unwrap();
         }
 
         let (docs, total) = db.list_documents(2, 0).unwrap();
@@ -674,8 +678,9 @@ mod tests {
         db.insert_chunks_with_embeddings(
             "d4",
             &[("hello semantic".to_string(), 0, 0, 14)],
-            &[emb.clone()],
-        ).unwrap();
+            std::slice::from_ref(&emb),
+        )
+        .unwrap();
 
         let results = db.semantic_search(&emb, 10).unwrap();
         assert_eq!(results.len(), 1);
@@ -693,7 +698,8 @@ mod tests {
             "d5",
             &[("The quick brown fox jumps".to_string(), 0, 0, 25)],
             &[emb],
-        ).unwrap();
+        )
+        .unwrap();
 
         let results = db.grep_search("quick brown", 10).unwrap();
         assert_eq!(results.len(), 1);
@@ -711,7 +717,8 @@ mod tests {
             "d6",
             &[("Le café est délicieux".to_string(), 0, 0, 24)],
             &[emb],
-        ).unwrap();
+        )
+        .unwrap();
 
         let results = db.grep_search("cafe", 10).unwrap();
         assert_eq!(results.len(), 1);
@@ -752,9 +759,13 @@ mod tests {
         assert_eq!(folders.len(), 1);
         assert_eq!(folders[0].folder_path, "/tmp/docs");
 
-        db.update_sync_folder_scan_time("/tmp/docs", "2025-01-01T00:00:00Z").unwrap();
+        db.update_sync_folder_scan_time("/tmp/docs", "2025-01-01T00:00:00Z")
+            .unwrap();
         let folders = db.list_sync_folders().unwrap();
-        assert_eq!(folders[0].last_scan_at.as_deref(), Some("2025-01-01T00:00:00Z"));
+        assert_eq!(
+            folders[0].last_scan_at.as_deref(),
+            Some("2025-01-01T00:00:00Z")
+        );
     }
 
     #[test]
@@ -767,7 +778,12 @@ mod tests {
         db.insert_document(&make_doc("s2", "b")).unwrap();
 
         let emb = vec![0.0f32; 1024];
-        db.insert_chunks_with_embeddings("s1", &[("chunk".into(), 0, 0, 5)], &[emb.clone()]).unwrap();
+        db.insert_chunks_with_embeddings(
+            "s1",
+            &[("chunk".into(), 0, 0, 5)],
+            std::slice::from_ref(&emb),
+        )
+        .unwrap();
 
         let status = db.status().unwrap();
         assert_eq!(status.document_count, 2);
@@ -801,7 +817,10 @@ mod tests {
         assert!(found.is_some());
         assert_eq!(found.unwrap().id, "fp1");
 
-        assert!(db.find_document_by_source_path("/tmp/nope.txt").unwrap().is_none());
+        assert!(db
+            .find_document_by_source_path("/tmp/nope.txt")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -824,15 +843,23 @@ mod tests {
         db.insert_document(&d1).unwrap();
 
         let emb = vec![0.0f32; 1024];
-        db.insert_chunks_with_embeddings("sd1", &[("chunk a".into(), 0, 0, 7)], &[emb.clone()])
-            .unwrap();
+        db.insert_chunks_with_embeddings(
+            "sd1",
+            &[("chunk a".into(), 0, 0, 7)],
+            std::slice::from_ref(&emb),
+        )
+        .unwrap();
 
         let mut d2 = make_doc("sd2", "synced content B");
         d2.source_type = SourceType::Synced;
         d2.source_path = Some("/data/docs/sub/b.md".into());
         db.insert_document(&d2).unwrap();
-        db.insert_chunks_with_embeddings("sd2", &[("chunk b".into(), 0, 0, 7)], &[emb.clone()])
-            .unwrap();
+        db.insert_chunks_with_embeddings(
+            "sd2",
+            &[("chunk b".into(), 0, 0, 7)],
+            std::slice::from_ref(&emb),
+        )
+        .unwrap();
 
         // Unrelated document that should survive
         let mut d3 = make_doc("other", "unrelated");

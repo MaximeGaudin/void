@@ -130,7 +130,9 @@ impl Connector for SlackConnector {
                         connection_id: self.connection_id.clone(),
                         connector_type: ConnectorType::Slack,
                         ok: false,
-                        message: format!("Auth OK, but event subscription repair token is invalid: {e}"),
+                        message: format!(
+                            "Auth OK, but event subscription repair token is invalid: {e}"
+                        ),
                         last_sync: None,
                         message_count: None,
                     });

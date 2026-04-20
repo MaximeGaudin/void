@@ -46,6 +46,7 @@ impl Database {
         Ok(results)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn search_messages_paginated(
         &self,
         query: &str,

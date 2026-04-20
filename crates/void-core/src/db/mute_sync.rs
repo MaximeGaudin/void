@@ -89,11 +89,9 @@ pub(super) fn auto_mute_matching_conversations(
 pub(super) fn list_sync_states(
     conn: &Connection,
 ) -> Result<Vec<(String, String, String)>, DbError> {
-    let mut stmt =
-        conn.prepare("SELECT connection_id, key, value FROM sync_state ORDER BY connection_id, key")?;
-    let rows = stmt.query_map([], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-    })?;
+    let mut stmt = conn
+        .prepare("SELECT connection_id, key, value FROM sync_state ORDER BY connection_id, key")?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 

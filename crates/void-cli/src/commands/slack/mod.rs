@@ -203,11 +203,7 @@ fn resolve_forward_connection<'a>(
     explicit.unwrap_or(message_connection)
 }
 
-fn check_forward_connector(
-    message_id: &str,
-    actual: &str,
-    expected: &str,
-) -> anyhow::Result<()> {
+fn check_forward_connector(message_id: &str, actual: &str, expected: &str) -> anyhow::Result<()> {
     if actual != expected {
         anyhow::bail!(
             "Message {} is from connector '{}', not {}.",
@@ -295,7 +291,10 @@ mod tests {
         let err = check_forward_connector("id1", "telegram", "slack")
             .unwrap_err()
             .to_string();
-        assert!(err.contains("telegram"), "error should mention 'telegram': {err}");
+        assert!(
+            err.contains("telegram"),
+            "error should mention 'telegram': {err}"
+        );
         assert!(err.contains("slack"), "error should mention 'slack': {err}");
     }
 

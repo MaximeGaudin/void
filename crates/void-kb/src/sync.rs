@@ -10,9 +10,9 @@ use crate::embedding::Embedder;
 use crate::models::{Document, SourceType, SyncFolder};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "txt", "md", "rst", "json", "csv", "html", "xml", "toml", "yaml", "yml",
-    "rs", "py", "js", "ts", "go", "java", "c", "cpp", "h", "hpp", "rb", "sh",
-    "sql", "css", "scss", "lua", "zig", "swift", "kt", "r",
+    "txt", "md", "rst", "json", "csv", "html", "xml", "toml", "yaml", "yml", "rs", "py", "js",
+    "ts", "go", "java", "c", "cpp", "h", "hpp", "rb", "sh", "sql", "css", "scss", "lua", "zig",
+    "swift", "kt", "r",
 ];
 
 const BATCH_EMBED_SIZE: usize = 16;
@@ -105,8 +105,15 @@ pub fn diff_and_apply(
     let disk_files = scan_folder(Path::new(folder_path))?;
     let db_entries = db.list_synced_paths_for_folder(folder_path)?;
 
-    debug!(folder = folder_path, disk_count = disk_files.len(), db_count = db_entries.len(), "diff_and_apply");
-    progress(SyncEvent::ScanComplete { total_files: disk_files.len() });
+    debug!(
+        folder = folder_path,
+        disk_count = disk_files.len(),
+        db_count = db_entries.len(),
+        "diff_and_apply"
+    );
+    progress(SyncEvent::ScanComplete {
+        total_files: disk_files.len(),
+    });
 
     let db_map: HashMap<String, (String, String)> = db_entries
         .into_iter()
@@ -166,7 +173,10 @@ pub fn diff_and_apply(
         info!(file_path, "re-indexing modified file");
         db.delete_document(doc_id)?;
         let ok = match ingest_file(db, embedder, file_path, new_hash) {
-            Ok(_) => { report.updated += 1; true }
+            Ok(_) => {
+                report.updated += 1;
+                true
+            }
             Err(e) => {
                 warn!(file_path, error = %e, "failed to re-index file");
                 report.errors += 1;
@@ -190,7 +200,10 @@ pub fn diff_and_apply(
         });
         info!(file_path, "indexing new file");
         let ok = match ingest_file(db, embedder, file_path, file_hash) {
-            Ok(_) => { report.added += 1; true }
+            Ok(_) => {
+                report.added += 1;
+                true
+            }
             Err(e) => {
                 warn!(file_path, error = %e, "failed to index file");
                 report.errors += 1;
@@ -437,8 +450,14 @@ mod tests {
             .collect();
 
         assert!(names.contains(&"keep.txt"), "keep.txt should be included");
-        assert!(!names.contains(&"skip.txt"), "skip.txt should be gitignored");
-        assert!(!names.contains(&"output.txt"), "build/ should be gitignored");
+        assert!(
+            !names.contains(&"skip.txt"),
+            "skip.txt should be gitignored"
+        );
+        assert!(
+            !names.contains(&"output.txt"),
+            "build/ should be gitignored"
+        );
     }
 
     #[test]

@@ -23,6 +23,7 @@ pub fn resolve_message(db: &Database, input: &str) -> anyhow::Result<Message> {
 ///
 /// If the input is a Slack link, returns `Link { message_id, conversation_id }`.
 /// Otherwise, returns `ConversationId` for listing.
+#[derive(Debug, PartialEq, Eq)]
 pub enum MessagesTarget {
     Link {
         message_id: String,
@@ -39,5 +40,33 @@ pub fn resolve_messages_target(input: &str) -> MessagesTarget {
         }
     } else {
         MessagesTarget::ConversationId(input.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_messages_target_slack_link() {
+        let url = "https://gladiaio.slack.com/archives/D09R63ASNEL/p1773903727112369";
+        match resolve_messages_target(url) {
+            MessagesTarget::Link {
+                message_id,
+                conversation_id,
+            } => {
+                assert_eq!(message_id, "gladiaio-1773903727.112369");
+                assert_eq!(conversation_id, "gladiaio-D09R63ASNEL");
+            }
+            MessagesTarget::ConversationId(_) => panic!("expected Link variant"),
+        }
+    }
+
+    #[test]
+    fn resolve_messages_target_plain_conversation_id() {
+        assert_eq!(
+            resolve_messages_target("slack-uuid-C123"),
+            MessagesTarget::ConversationId("slack-uuid-C123".into())
+        );
     }
 }

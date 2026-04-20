@@ -25,3 +25,65 @@ pub fn build_meta(current_page: i64, page_size: i64, total_elements: i64) -> Pag
         total_pages,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_page_first_page_zero_offset() {
+        assert_eq!(parse_page(10, 1).unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_page_second_page_offset() {
+        assert_eq!(parse_page(10, 2).unwrap(), 10);
+    }
+
+    #[test]
+    fn parse_page_rejects_non_positive_size() {
+        let err = parse_page(0, 1).unwrap_err();
+        assert!(err.to_string().contains("size"));
+        let err = parse_page(-5, 1).unwrap_err();
+        assert!(err.to_string().contains("size"));
+    }
+
+    #[test]
+    fn parse_page_rejects_non_positive_page() {
+        let err = parse_page(10, 0).unwrap_err();
+        assert!(err.to_string().contains("page"));
+        let err = parse_page(10, -1).unwrap_err();
+        assert!(err.to_string().contains("page"));
+    }
+
+    #[test]
+    fn parse_page_overflow() {
+        let err = parse_page(i64::MAX, 3).unwrap_err();
+        assert!(err.to_string().contains("overflow"), "{err}");
+    }
+
+    #[test]
+    fn build_meta_zero_total() {
+        let m = build_meta(1, 50, 0);
+        assert_eq!(m.total_pages, 0);
+        assert_eq!(m.total_elements, 0);
+    }
+
+    #[test]
+    fn build_meta_negative_total_treated_as_empty() {
+        let m = build_meta(1, 50, -3);
+        assert_eq!(m.total_pages, 0);
+    }
+
+    #[test]
+    fn build_meta_exact_page_boundary() {
+        let m = build_meta(2, 10, 100);
+        assert_eq!(m.total_pages, 10);
+    }
+
+    #[test]
+    fn build_meta_partial_last_page() {
+        let m = build_meta(1, 10, 95);
+        assert_eq!(m.total_pages, 10);
+    }
+}

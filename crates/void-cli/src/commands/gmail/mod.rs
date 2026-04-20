@@ -46,11 +46,7 @@ fn resolve_forward_connector(
     Ok(msg)
 }
 
-fn check_forward_connector(
-    message_id: &str,
-    actual: &str,
-    expected: &str,
-) -> anyhow::Result<()> {
+fn check_forward_connector(message_id: &str, actual: &str, expected: &str) -> anyhow::Result<()> {
     if actual != expected {
         anyhow::bail!(
             "Message {} is from connector '{}', not {}.",

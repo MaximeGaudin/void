@@ -177,28 +177,40 @@ pub(crate) async fn reauthenticate_specific_connection(
     if connection.connector_type == void_core::models::ConnectorType::Slack {
         eprintln!("  You need to provide your Slack tokens again.");
         eprintln!("  (Press Enter to keep the existing value)");
-        let current_app_token = if let void_core::config::ConnectionSettings::Slack { ref app_token, .. } = connection.settings {
-            app_token.clone()
-        } else {
-            String::new()
-        };
+        let current_app_token =
+            if let void_core::config::ConnectionSettings::Slack { ref app_token, .. } =
+                connection.settings
+            {
+                app_token.clone()
+            } else {
+                String::new()
+            };
 
-        let current_user_token = if let void_core::config::ConnectionSettings::Slack { ref user_token, .. } = connection.settings {
-            user_token.clone()
-        } else {
-            String::new()
-        };
+        let current_user_token =
+            if let void_core::config::ConnectionSettings::Slack { ref user_token, .. } =
+                connection.settings
+            {
+                user_token.clone()
+            } else {
+                String::new()
+            };
 
-        let current_app_id = if let void_core::config::ConnectionSettings::Slack { ref app_id, .. } = connection.settings {
-            app_id.clone().unwrap_or_default()
-        } else {
-            String::new()
-        };
+        let current_app_id =
+            if let void_core::config::ConnectionSettings::Slack { ref app_id, .. } =
+                connection.settings
+            {
+                app_id.clone().unwrap_or_default()
+            } else {
+                String::new()
+            };
 
-        let user_token = super::prompt::prompt_default("User OAuth Token (xoxp-...)", &current_user_token);
-        let app_token = super::prompt::prompt_default("App-Level Token  (xapp-...)", &current_app_token);
-        let app_id = super::prompt::prompt_default("App ID (optional, e.g. A012ABCD0A0)", &current_app_id);
-        
+        let user_token =
+            super::prompt::prompt_default("User OAuth Token (xoxp-...)", &current_user_token);
+        let app_token =
+            super::prompt::prompt_default("App-Level Token  (xapp-...)", &current_app_token);
+        let app_id =
+            super::prompt::prompt_default("App ID (optional, e.g. A012ABCD0A0)", &current_app_id);
+
         let refresh_token = prompt("Config Refresh Token (optional, xoxe-...): ");
 
         if let void_core::config::ConnectionSettings::Slack {
@@ -213,22 +225,34 @@ pub(crate) async fn reauthenticate_specific_connection(
             if !user_token.trim().is_empty() {
                 *ut = user_token.trim().to_string();
             }
-            *aid = if app_id.trim().is_empty() { None } else { Some(app_id.trim().to_string()) };
+            *aid = if app_id.trim().is_empty() {
+                None
+            } else {
+                Some(app_id.trim().to_string())
+            };
         }
 
         if !refresh_token.trim().is_empty() {
             let token_path = store_path.join(format!("slack-config-token-{}.json", connection.id));
-            if let Err(e) = void_slack::manifest::save_refresh_token(&token_path, refresh_token.trim()) {
-                eprintln!("  ✗ Failed to save refresh token to {}: {e}", token_path.display());
+            if let Err(e) =
+                void_slack::manifest::save_refresh_token(&token_path, refresh_token.trim())
+            {
+                eprintln!(
+                    "  ✗ Failed to save refresh token to {}: {e}",
+                    token_path.display()
+                );
             } else {
                 eprintln!("  ✓ Refresh token saved to {}", token_path.display());
             }
         }
 
         cfg.save(config_path)?;
-        
+
         // Also verify the tokens
-        let mut conn = crate::commands::connector_factory::build_connector(&cfg.connections[choice], store_path)?;
+        let mut conn = crate::commands::connector_factory::build_connector(
+            &cfg.connections[choice],
+            store_path,
+        )?;
         if let Some(conn_mut) = std::sync::Arc::get_mut(&mut conn) {
             match conn_mut.authenticate().await {
                 Ok(()) => eprintln!("  ✓ Re-authentication successful. Configuration saved."),

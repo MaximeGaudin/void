@@ -31,9 +31,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
 }
 
 fn migrate_v2(conn: &Connection) -> Result<(), rusqlite::Error> {
-    conn.execute_batch(
-        "ALTER TABLE kb_documents ADD COLUMN source_mtime TEXT;",
-    )?;
+    conn.execute_batch("ALTER TABLE kb_documents ADD COLUMN source_mtime TEXT;")?;
     Ok(())
 }
 

@@ -4,7 +4,7 @@ use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 
 use super::pagination::{build_meta, parse_page};
-use crate::output::{resolve_connector_filter, OutputFormatter};
+use crate::output::{resolve_connector_filter, OutputFormatter, CONNECTOR_FILTER_HELP};
 
 #[derive(Debug, Args)]
 pub struct ChannelsArgs {
@@ -14,8 +14,7 @@ pub struct ChannelsArgs {
     /// Filter by connection (partial match on connection_id)
     #[arg(long)]
     pub connection: Option<String>,
-    /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
-    #[arg(long)]
+    #[arg(long, help = CONNECTOR_FILTER_HELP)]
     pub connector: Option<String>,
     /// Maximum number of results to return
     #[arg(short = 'n', long, default_value = "100")]

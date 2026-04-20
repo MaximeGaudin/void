@@ -154,6 +154,18 @@ void calendar
 | `void drive info <url>` | Show metadata for a Google Drive file |
 | `void drive auth` | Authenticate with Google Drive |
 
+### Knowledge Base
+
+| Command | Description |
+|---------|-------------|
+| `void kb add` | Add text or a file to the knowledge base |
+| `void kb search <query>` | Search the knowledge base |
+| `void kb sync <path>` | Register and sync a folder with the knowledge base |
+| `void kb unsync <path>` | Stop syncing a folder and remove its indexed documents |
+| `void kb list` | List all documents in the knowledge base |
+| `void kb remove <id>` | Remove a document from the knowledge base |
+| `void kb status` | Show knowledge base status and statistics |
+
 ### AI & Automation
 
 | Command | Description |

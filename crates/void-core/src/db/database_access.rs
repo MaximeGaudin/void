@@ -167,6 +167,8 @@ impl Database {
         )
     }
 
+    /// Paginated inbox-style listing with optional filters (shared by CLI inbox/search).
+    #[allow(clippy::too_many_arguments)]
     pub fn recent_messages_paginated(
         &self,
         connection_filter: Option<&str>,

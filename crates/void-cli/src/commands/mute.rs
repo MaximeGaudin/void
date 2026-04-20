@@ -3,7 +3,7 @@ use tracing::debug;
 use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 
-use crate::output::resolve_connector_filter;
+use crate::output::{resolve_connector_filter, CONNECTOR_FILTER_HELP};
 
 #[derive(Debug, Args)]
 pub struct MuteArgs {
@@ -15,8 +15,7 @@ pub struct MuteArgs {
     /// Filter by connection (partial match on connection_id)
     #[arg(long)]
     pub connection: Option<String>,
-    /// Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews)
-    #[arg(long)]
+    #[arg(long, help = CONNECTOR_FILTER_HELP)]
     pub connector: Option<String>,
     /// List all currently muted conversations
     #[arg(long)]

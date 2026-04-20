@@ -31,7 +31,14 @@ fn ingest_doc(db: &KbDatabase, embedder: &dyn Embedder, doc: &Document) {
     }
     let chunk_data: Vec<(String, i64, i64, i64)> = chunks
         .iter()
-        .map(|c| (c.text.clone(), c.index as i64, c.start_byte as i64, c.end_byte as i64))
+        .map(|c| {
+            (
+                c.text.clone(),
+                c.index as i64,
+                c.start_byte as i64,
+                c.end_byte as i64,
+            )
+        })
         .collect();
     let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
     let embeddings = embedder.embed(&texts).unwrap();
@@ -46,17 +53,13 @@ fn add_text_then_semantic_search_finds_it() {
     let db = KbDatabase::open_in_memory().unwrap();
     let embedder = DeterministicEmbedder::new(1024);
 
-    let doc = make_doc("d1", "Rust programming language is great for systems programming");
+    let doc = make_doc(
+        "d1",
+        "Rust programming language is great for systems programming",
+    );
     ingest_doc(&db, &embedder, &doc);
 
-    let results = hybrid_search(
-        &db,
-        &embedder,
-        "systems programming language",
-        None,
-        10,
-    )
-    .unwrap();
+    let results = hybrid_search(&db, &embedder, "systems programming language", None, 10).unwrap();
 
     assert!(!results.is_empty(), "search should return results");
     assert_eq!(results[0].document_id, "d1");
@@ -69,7 +72,10 @@ fn add_file_then_search_finds_content() {
     let db = KbDatabase::open_in_memory().unwrap();
     let embedder = DeterministicEmbedder::new(1024);
 
-    let mut doc = make_doc("f1", "Machine learning with neural networks and deep learning");
+    let mut doc = make_doc(
+        "f1",
+        "Machine learning with neural networks and deep learning",
+    );
     doc.source_type = SourceType::File;
     doc.source_path = Some("/tmp/ml.txt".to_string());
     ingest_doc(&db, &embedder, &doc);
@@ -89,8 +95,14 @@ fn metadata_appears_in_search_results() {
 
     let mut doc = make_doc("m1", "Kubernetes container orchestration platform");
     doc.metadata = vec![
-        MetadataEntry { key: "author".into(), value: "Alice".into() },
-        MetadataEntry { key: "topic".into(), value: "devops".into() },
+        MetadataEntry {
+            key: "author".into(),
+            value: "Alice".into(),
+        },
+        MetadataEntry {
+            key: "topic".into(),
+            value: "devops".into(),
+        },
     ];
     ingest_doc(&db, &embedder, &doc);
 
@@ -158,14 +170,8 @@ fn grep_search_accent_insensitive() {
     let doc = make_doc("a1", "Le café est délicieux et le résumé est prêt");
     ingest_doc(&db, &embedder, &doc);
 
-    let results = hybrid_search(
-        &db,
-        &embedder,
-        "french text about coffee",
-        Some("cafe"),
-        10,
-    )
-    .unwrap();
+    let results =
+        hybrid_search(&db, &embedder, "french text about coffee", Some("cafe"), 10).unwrap();
     assert!(!results.is_empty(), "accent-insensitive grep should match");
 }
 
@@ -181,14 +187,7 @@ fn grep_boost_ranks_exact_match_higher() {
     ingest_doc(&db, &embedder, &doc1);
     ingest_doc(&db, &embedder, &doc2);
 
-    let results = hybrid_search(
-        &db,
-        &embedder,
-        "animal jumping",
-        Some("fox"),
-        10,
-    )
-    .unwrap();
+    let results = hybrid_search(&db, &embedder, "animal jumping", Some("fox"), 10).unwrap();
 
     assert!(!results.is_empty());
     assert_eq!(
@@ -203,7 +202,11 @@ fn grep_boost_ranks_exact_match_higher() {
 fn sync_folder_then_search() {
     let dir = tempfile::tempdir().unwrap();
     let mut f1 = std::fs::File::create(dir.path().join("rust.txt")).unwrap();
-    writeln!(f1, "Rust is a systems programming language focused on safety").unwrap();
+    writeln!(
+        f1,
+        "Rust is a systems programming language focused on safety"
+    )
+    .unwrap();
     let mut f2 = std::fs::File::create(dir.path().join("python.txt")).unwrap();
     writeln!(f2, "Python is great for data science and scripting").unwrap();
 
@@ -221,7 +224,11 @@ fn sync_folder_then_search() {
 #[test]
 fn sync_modified_file_updates_search() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("notes.txt"), "Original content about databases").unwrap();
+    std::fs::write(
+        dir.path().join("notes.txt"),
+        "Original content about databases",
+    )
+    .unwrap();
 
     let db = KbDatabase::open_in_memory().unwrap();
     let embedder = DeterministicEmbedder::new(1024);
@@ -238,7 +245,10 @@ fn sync_modified_file_updates_search() {
     sync_folder(&db, &embedder, path).unwrap();
 
     let status = db.status().unwrap();
-    assert_eq!(status.document_count, 1, "should have exactly one doc after update");
+    assert_eq!(
+        status.document_count, 1,
+        "should have exactly one doc after update"
+    );
 }
 
 // ── Sync: delete file -> gone from search ──────────────────────
@@ -268,7 +278,10 @@ fn results_sorted_by_score_descending() {
     let embedder = DeterministicEmbedder::new(1024);
 
     for i in 0..5 {
-        let doc = make_doc(&format!("s{i}"), &format!("Document number {i} about topic {i}"));
+        let doc = make_doc(
+            &format!("s{i}"),
+            &format!("Document number {i} about topic {i}"),
+        );
         ingest_doc(&db, &embedder, &doc);
     }
 
@@ -289,7 +302,10 @@ fn size_parameter_limits_results() {
     let embedder = DeterministicEmbedder::new(1024);
 
     for i in 0..20 {
-        let doc = make_doc(&format!("l{i}"), &format!("Content entry number {i} in the kb"));
+        let doc = make_doc(
+            &format!("l{i}"),
+            &format!("Content entry number {i} in the kb"),
+        );
         ingest_doc(&db, &embedder, &doc);
     }
 

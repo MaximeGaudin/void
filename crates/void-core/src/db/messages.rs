@@ -177,6 +177,7 @@ pub(super) fn latest_timestamp(
     .map_err(Into::into)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn list_recent(
     conn: &Connection,
     connection_filter: Option<&str>,
@@ -479,7 +480,12 @@ pub(super) fn backfill_avatar_urls(
         let updated = stmt.execute(params![avatar_url, connection_id, connector, sender])?;
         total += updated;
     }
-    debug!(connection_id, connector, updated = total, "backfilled avatar URLs");
+    debug!(
+        connection_id,
+        connector,
+        updated = total,
+        "backfilled avatar URLs"
+    );
     Ok(total)
 }
 

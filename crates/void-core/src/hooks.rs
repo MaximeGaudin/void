@@ -682,6 +682,18 @@ mod tests {
     }
 
     #[test]
+    fn expand_placeholders_keeps_message_tokens_when_no_message() {
+        let result = expand_placeholders(
+            "before {message_id} after {connector} {connection_id}",
+            None,
+        );
+        assert_eq!(
+            result, "before {message_id} after {connector} {connection_id}",
+            "message placeholders must remain literal when no Message is supplied"
+        );
+    }
+
+    #[test]
     fn expand_placeholders_with_message() {
         let msg = Message {
             id: "msg-123".into(),

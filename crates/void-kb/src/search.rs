@@ -40,7 +40,10 @@ pub fn hybrid_search(
 
     let formatted = format_query(semantic_query);
     let query_embedding = embedder.embed(&[formatted.as_str()])?;
-    anyhow::ensure!(!query_embedding.is_empty(), "embedding returned empty result");
+    anyhow::ensure!(
+        !query_embedding.is_empty(),
+        "embedding returned empty result"
+    );
 
     let semantic_results = db.semantic_search(&query_embedding[0], CANDIDATE_POOL)?;
 
@@ -54,9 +57,9 @@ pub fn hybrid_search(
     let mut doc_best: HashMap<String, (f64, CandidateChunk)> = HashMap::new();
     for candidate in &fused {
         let score = rrf_score(candidate);
-        let entry = doc_best.entry(candidate.document_id.clone()).or_insert_with(|| {
-            (score, candidate.clone())
-        });
+        let entry = doc_best
+            .entry(candidate.document_id.clone())
+            .or_insert_with(|| (score, candidate.clone()));
         if score > entry.0 {
             *entry = (score, candidate.clone());
         }
@@ -82,12 +85,16 @@ pub fn hybrid_search(
             .then_with(|| {
                 let a_dist = a.1.semantic_distance.unwrap_or(f64::MAX);
                 let b_dist = b.1.semantic_distance.unwrap_or(f64::MAX);
-                a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
+                a_dist
+                    .partial_cmp(&b_dist)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .then_with(|| {
                 let a_bm25 = a.1.bm25_score.unwrap_or(f64::MAX);
                 let b_bm25 = b.1.bm25_score.unwrap_or(f64::MAX);
-                a_bm25.partial_cmp(&b_bm25).unwrap_or(std::cmp::Ordering::Equal)
+                a_bm25
+                    .partial_cmp(&b_bm25)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .then_with(|| a.1.document_id.cmp(&b.1.document_id))
     });
@@ -133,15 +140,18 @@ fn fuse_results(
     let mut chunks: HashMap<i64, CandidateChunk> = HashMap::new();
 
     for (rank, (chunk_id, doc_id, content, distance)) in semantic.iter().enumerate() {
-        chunks.insert(*chunk_id, CandidateChunk {
-            chunk_id: *chunk_id,
-            document_id: doc_id.clone(),
-            chunk_content: content.clone(),
-            semantic_rank: Some(rank + 1),
-            grep_rank: None,
-            semantic_distance: Some(*distance),
-            bm25_score: None,
-        });
+        chunks.insert(
+            *chunk_id,
+            CandidateChunk {
+                chunk_id: *chunk_id,
+                document_id: doc_id.clone(),
+                chunk_content: content.clone(),
+                semantic_rank: Some(rank + 1),
+                grep_rank: None,
+                semantic_distance: Some(*distance),
+                bm25_score: None,
+            },
+        );
     }
 
     for (rank, (chunk_id, doc_id, content, bm25)) in grep.iter().enumerate() {
@@ -181,8 +191,8 @@ fn rrf_score(candidate: &CandidateChunk) -> f64 {
 /// `bonus = W_RECENCY / (1 + age_days / HALF_LIFE)`.
 /// A brand-new document gets ~W_RECENCY; a 6-month-old one ~W_RECENCY/2.
 fn recency_bonus(timestamp: &str, now: &chrono::DateTime<chrono::Utc>) -> f64 {
-    let parsed = chrono::DateTime::parse_from_rfc3339(timestamp)
-        .map(|dt| dt.with_timezone(&chrono::Utc));
+    let parsed =
+        chrono::DateTime::parse_from_rfc3339(timestamp).map(|dt| dt.with_timezone(&chrono::Utc));
     match parsed {
         Ok(dt) => {
             let age_days = (*now - dt).num_seconds().max(0) as f64 / 86400.0;
@@ -325,7 +335,10 @@ mod tests {
         let past = now - chrono::Duration::days(3650);
         let ts = past.to_rfc3339();
         let bonus = recency_bonus(&ts, &now);
-        assert!(bonus < W_RECENCY * 0.1, "very old doc should get negligible bonus");
+        assert!(
+            bonus < W_RECENCY * 0.1,
+            "very old doc should get negligible bonus"
+        );
     }
 
     #[test]

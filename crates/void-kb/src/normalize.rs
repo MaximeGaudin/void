@@ -89,18 +89,12 @@ mod tests {
     #[test]
     fn punctuation_collapsed() {
         assert_eq!(normalize_for_search("hello, world!"), "hello world");
-        assert_eq!(
-            normalize_for_search("a...b---c"),
-            "a b c"
-        );
+        assert_eq!(normalize_for_search("a...b---c"), "a b c");
     }
 
     #[test]
     fn mixed_accents_and_case() {
-        assert_eq!(
-            normalize_for_search("CRÈME BRÛLÉE"),
-            "creme brulee"
-        );
+        assert_eq!(normalize_for_search("CRÈME BRÛLÉE"), "creme brulee");
     }
 
     #[test]

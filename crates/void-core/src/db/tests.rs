@@ -1138,9 +1138,7 @@ fn senders_missing_avatar_returns_distinct_ids() {
     m3.sender_avatar_url = Some("https://example.com/u2.jpg".into());
     db.upsert_message(&m3).unwrap();
 
-    let missing = db
-        .senders_missing_avatar("test-slack", "slack")
-        .unwrap();
+    let missing = db.senders_missing_avatar("test-slack", "slack").unwrap();
     assert_eq!(missing, vec!["U001".to_string()]);
 }
 
@@ -1155,9 +1153,7 @@ fn senders_missing_avatar_empty_when_all_set() {
     m1.sender_avatar_url = Some("https://example.com/u1.jpg".into());
     db.upsert_message(&m1).unwrap();
 
-    let missing = db
-        .senders_missing_avatar("test-slack", "slack")
-        .unwrap();
+    let missing = db.senders_missing_avatar("test-slack", "slack").unwrap();
     assert!(missing.is_empty());
 }
 
@@ -1181,13 +1177,19 @@ fn list_contacts_includes_avatar_url() {
     let contacts = db.list_contacts(None, None, None, 100).unwrap();
     assert_eq!(contacts.len(), 2);
 
-    let alice = contacts.iter().find(|c| c.sender == "alice@test.com").unwrap();
+    let alice = contacts
+        .iter()
+        .find(|c| c.sender == "alice@test.com")
+        .unwrap();
     assert_eq!(
         alice.avatar_url.as_deref(),
         Some("https://example.com/alice.jpg")
     );
 
-    let bob = contacts.iter().find(|c| c.sender == "bob@test.com").unwrap();
+    let bob = contacts
+        .iter()
+        .find(|c| c.sender == "bob@test.com")
+        .unwrap();
     assert!(bob.avatar_url.is_none());
 }
 
@@ -1238,20 +1240,36 @@ fn dedup_context_keeps_most_recent_per_group() {
     db.upsert_conversation(&conv).unwrap();
 
     db.upsert_message(&make_message_with_context(
-        "m1", "c1", "test-slack", "old ctx msg", 1_000, Some("ctx-A"),
+        "m1",
+        "c1",
+        "test-slack",
+        "old ctx msg",
+        1_000,
+        Some("ctx-A"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m2", "c1", "test-slack", "new ctx msg", 2_000, Some("ctx-A"),
+        "m2",
+        "c1",
+        "test-slack",
+        "new ctx msg",
+        2_000,
+        Some("ctx-A"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m3", "c1", "test-slack", "standalone", 3_000, None,
+        "m3",
+        "c1",
+        "test-slack",
+        "standalone",
+        3_000,
+        None,
     ))
     .unwrap();
 
-    let (rows, total) =
-        db.recent_messages_paginated(None, None, 50, 0, true, true, true).unwrap();
+    let (rows, total) = db
+        .recent_messages_paginated(None, None, 50, 0, true, true, true)
+        .unwrap();
     assert_eq!(total, 2, "count should collapse ctx-A group to 1");
     assert_eq!(rows.len(), 2);
     let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
@@ -1267,16 +1285,27 @@ fn dedup_context_disabled_returns_all() {
     db.upsert_conversation(&conv).unwrap();
 
     db.upsert_message(&make_message_with_context(
-        "m1", "c1", "test-slack", "old", 1_000, Some("ctx-A"),
+        "m1",
+        "c1",
+        "test-slack",
+        "old",
+        1_000,
+        Some("ctx-A"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m2", "c1", "test-slack", "new", 2_000, Some("ctx-A"),
+        "m2",
+        "c1",
+        "test-slack",
+        "new",
+        2_000,
+        Some("ctx-A"),
     ))
     .unwrap();
 
-    let (rows, total) =
-        db.recent_messages_paginated(None, None, 50, 0, true, true, false).unwrap();
+    let (rows, total) = db
+        .recent_messages_paginated(None, None, 50, 0, true, true, false)
+        .unwrap();
     assert_eq!(total, 2);
     assert_eq!(rows.len(), 2);
 }
@@ -1299,22 +1328,33 @@ fn dedup_context_pagination_metadata_matches_data() {
         ("m8", 8_000, None),
     ] {
         db.upsert_message(&make_message_with_context(
-            id, "c1", "test-slack", "body", ts, ctx,
+            id,
+            "c1",
+            "test-slack",
+            "body",
+            ts,
+            ctx,
         ))
         .unwrap();
     }
 
-    let (page1, total1) =
-        db.recent_messages_paginated(None, None, 3, 0, true, true, true).unwrap();
-    let (page2, total2) =
-        db.recent_messages_paginated(None, None, 3, 3, true, true, true).unwrap();
+    let (page1, total1) = db
+        .recent_messages_paginated(None, None, 3, 0, true, true, true)
+        .unwrap();
+    let (page2, total2) = db
+        .recent_messages_paginated(None, None, 3, 3, true, true, true)
+        .unwrap();
 
     assert_eq!(total1, 5, "total should reflect deduped count");
     assert_eq!(total2, 5);
     assert_eq!(page1.len(), 3);
     assert_eq!(page2.len(), 2);
 
-    let all_ids: Vec<&str> = page1.iter().chain(page2.iter()).map(|m| m.id.as_str()).collect();
+    let all_ids: Vec<&str> = page1
+        .iter()
+        .chain(page2.iter())
+        .map(|m| m.id.as_str())
+        .collect();
     assert!(!all_ids.contains(&"m1"), "older ctx-A removed");
     assert!(!all_ids.contains(&"m3"), "older ctx-B removed");
     assert!(!all_ids.contains(&"m5"), "older ctx-C removed");
@@ -1327,20 +1367,36 @@ fn dedup_context_conversation_messages() {
     db.upsert_conversation(&conv).unwrap();
 
     db.upsert_message(&make_message_with_context(
-        "m1", "c1", "test-slack", "older", 1_000, Some("ctx-X"),
+        "m1",
+        "c1",
+        "test-slack",
+        "older",
+        1_000,
+        Some("ctx-X"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m2", "c1", "test-slack", "newer", 2_000, Some("ctx-X"),
+        "m2",
+        "c1",
+        "test-slack",
+        "newer",
+        2_000,
+        Some("ctx-X"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m3", "c1", "test-slack", "solo", 3_000, None,
+        "m3",
+        "c1",
+        "test-slack",
+        "solo",
+        3_000,
+        None,
     ))
     .unwrap();
 
-    let (rows, total) =
-        db.list_messages_paginated("c1", 50, 0, None, None, true).unwrap();
+    let (rows, total) = db
+        .list_messages_paginated("c1", 50, 0, None, None, true)
+        .unwrap();
     assert_eq!(total, 2);
     assert_eq!(rows.len(), 2);
     let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
@@ -1355,20 +1411,36 @@ fn dedup_context_search_messages() {
     db.upsert_conversation(&conv).unwrap();
 
     db.upsert_message(&make_message_with_context(
-        "m1", "c1", "test-slack", "meeting old", 1_000, Some("ctx-Y"),
+        "m1",
+        "c1",
+        "test-slack",
+        "meeting old",
+        1_000,
+        Some("ctx-Y"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m2", "c1", "test-slack", "meeting new", 2_000, Some("ctx-Y"),
+        "m2",
+        "c1",
+        "test-slack",
+        "meeting new",
+        2_000,
+        Some("ctx-Y"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m3", "c1", "test-slack", "meeting solo", 3_000, None,
+        "m3",
+        "c1",
+        "test-slack",
+        "meeting solo",
+        3_000,
+        None,
     ))
     .unwrap();
 
-    let (rows, total) =
-        db.search_messages_paginated("meeting", None, None, 50, 0, true, true).unwrap();
+    let (rows, total) = db
+        .search_messages_paginated("meeting", None, None, 50, 0, true, true)
+        .unwrap();
     assert_eq!(total, 2);
     assert_eq!(rows.len(), 2);
     let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
@@ -1383,16 +1455,27 @@ fn dedup_context_same_timestamp_uses_id_tiebreak() {
     db.upsert_conversation(&conv).unwrap();
 
     db.upsert_message(&make_message_with_context(
-        "m-aaa", "c1", "test-slack", "first", 1_000, Some("ctx-T"),
+        "m-aaa",
+        "c1",
+        "test-slack",
+        "first",
+        1_000,
+        Some("ctx-T"),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m-zzz", "c1", "test-slack", "second", 1_000, Some("ctx-T"),
+        "m-zzz",
+        "c1",
+        "test-slack",
+        "second",
+        1_000,
+        Some("ctx-T"),
     ))
     .unwrap();
 
-    let (rows, total) =
-        db.recent_messages_paginated(None, None, 50, 0, true, true, true).unwrap();
+    let (rows, total) = db
+        .recent_messages_paginated(None, None, 50, 0, true, true, true)
+        .unwrap();
     assert_eq!(total, 1);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "m-zzz", "highest id wins on timestamp tie");
@@ -1412,7 +1495,9 @@ fn auto_mute_matches_by_name() {
     db.upsert_conversation(&c2).unwrap();
 
     let patterns = vec!["family".to_string()];
-    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    let muted = db
+        .auto_mute_matching_conversations("my-wa", &patterns)
+        .unwrap();
     assert_eq!(muted, 1);
 
     let loaded = db.get_conversation("c1").unwrap().unwrap();
@@ -1429,7 +1514,9 @@ fn auto_mute_matches_by_external_id() {
     db.upsert_conversation(&c1).unwrap();
 
     let patterns = vec!["spam-group".to_string()];
-    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    let muted = db
+        .auto_mute_matching_conversations("my-wa", &patterns)
+        .unwrap();
     assert_eq!(muted, 1);
 
     let loaded = db.get_conversation("c1").unwrap().unwrap();
@@ -1444,7 +1531,9 @@ fn auto_mute_case_insensitive() {
     db.upsert_conversation(&c1).unwrap();
 
     let patterns = vec!["noisy".to_string()];
-    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    let muted = db
+        .auto_mute_matching_conversations("my-wa", &patterns)
+        .unwrap();
     assert_eq!(muted, 1);
 }
 
@@ -1457,7 +1546,9 @@ fn auto_mute_skips_already_muted() {
     db.update_conversation_mute("c1", true).unwrap();
 
     let patterns = vec!["spam".to_string()];
-    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    let muted = db
+        .auto_mute_matching_conversations("my-wa", &patterns)
+        .unwrap();
     assert_eq!(muted, 0, "already-muted conversation should not be counted");
 }
 
@@ -1473,7 +1564,9 @@ fn auto_mute_scoped_to_connection() {
     db.upsert_conversation(&c2).unwrap();
 
     let patterns = vec!["random".to_string()];
-    let muted = db.auto_mute_matching_conversations("wa-1", &patterns).unwrap();
+    let muted = db
+        .auto_mute_matching_conversations("wa-1", &patterns)
+        .unwrap();
     assert_eq!(muted, 1);
 
     let loaded1 = db.get_conversation("c1").unwrap().unwrap();
@@ -1499,7 +1592,9 @@ fn auto_mute_multiple_patterns() {
     db.upsert_conversation(&c3).unwrap();
 
     let patterns = vec!["random".to_string(), "social".to_string()];
-    let muted = db.auto_mute_matching_conversations("my-wa", &patterns).unwrap();
+    let muted = db
+        .auto_mute_matching_conversations("my-wa", &patterns)
+        .unwrap();
     assert_eq!(muted, 2);
 
     assert!(db.get_conversation("c1").unwrap().unwrap().is_muted);

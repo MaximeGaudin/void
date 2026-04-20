@@ -21,7 +21,13 @@ fn map_conversation_dm() {
         updated: None,
     };
     let mut cache = HashMap::new();
-    cache.insert("U456".to_string(), CachedUser { name: "Alice".to_string(), avatar_url: None });
+    cache.insert(
+        "U456".to_string(),
+        CachedUser {
+            name: "Alice".to_string(),
+            avatar_url: None,
+        },
+    );
     let result = map_conversation(&conv, "work-slack", &cache);
     assert_eq!(result.kind, ConversationKind::Dm);
     assert_eq!(result.connector, "slack");
@@ -101,7 +107,13 @@ fn build_metadata_dm_with_reactions() {
         },
     ];
     let mut cache = HashMap::new();
-    cache.insert("U456".to_string(), CachedUser { name: "Bob".to_string(), avatar_url: None });
+    cache.insert(
+        "U456".to_string(),
+        CachedUser {
+            name: "Bob".to_string(),
+            avatar_url: None,
+        },
+    );
     let meta = build_metadata(&conv, &reactions, &cache).unwrap();
     assert_eq!(meta["channel_id"], "D123");
     assert_eq!(meta["channel_name"], "Bob");

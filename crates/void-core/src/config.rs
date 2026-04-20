@@ -730,7 +730,10 @@ type = "whatsapp"
 ignore_conversations = ["noisy-group@g.us", "spam"]
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.connections[0].ignore_conversations, vec!["noisy-group@g.us", "spam"]);
+        assert_eq!(
+            config.connections[0].ignore_conversations,
+            vec!["noisy-group@g.us", "spam"]
+        );
     }
 
     #[test]
@@ -755,6 +758,9 @@ user_token = "xoxp-test"
 ignore_conversations = ["random", "social"]
 "#;
         let config: VoidConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.connections[0].ignore_conversations, vec!["random", "social"]);
+        assert_eq!(
+            config.connections[0].ignore_conversations,
+            vec!["random", "social"]
+        );
     }
 }

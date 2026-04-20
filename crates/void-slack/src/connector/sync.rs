@@ -252,8 +252,12 @@ impl SlackConnector {
         }
         if !resolved.is_empty() {
             match db.backfill_avatar_urls(&self.connection_id, "slack", &resolved) {
-                Ok(n) => info!(connection_id = %self.connection_id, resolved = resolved.len(), updated = n, "resolved unknown sender avatars"),
-                Err(e) => warn!(connection_id = %self.connection_id, error = %e, "failed to store resolved avatars"),
+                Ok(n) => {
+                    info!(connection_id = %self.connection_id, resolved = resolved.len(), updated = n, "resolved unknown sender avatars")
+                }
+                Err(e) => {
+                    warn!(connection_id = %self.connection_id, error = %e, "failed to store resolved avatars")
+                }
             }
         }
     }

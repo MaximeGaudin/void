@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use rig::agent::Agent;
+use rig::agent::{Agent, PromptResponse};
 use rig::client::CompletionClient;
 use rig::completion::message::Message;
 use rig::completion::{CompletionModel, Prompt};
@@ -279,16 +279,20 @@ async fn run_rig_loop<M: CompletionModel + 'static>(
             continue;
         }
 
-        let response: Result<String, _> = agent
+        let response: Result<PromptResponse, _> = agent
             .prompt(&current_input)
-            .with_history(&mut history)
+            .with_history(history.iter())
             .max_turns(max_turns)
             .with_hook(hook.clone())
+            .extended_details()
             .await;
 
         match response {
-            Ok(text) => {
-                println!("\n{}\n", text);
+            Ok(resp) => {
+                println!("\n{}\n", resp.output);
+                if let Some(msgs) = resp.messages {
+                    history.extend(msgs);
+                }
             }
             Err(e) => {
                 eprintln!("\n\x1b[31mError: {}\x1b[0m\n", e);

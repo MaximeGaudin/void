@@ -175,8 +175,16 @@ mod tests {
     #[test]
     fn parse_gmail_forward_with_comment_and_connection() {
         let cli = parse(&[
-            "void", "gmail", "forward", "msg1", "--to", "x@y.com", "--comment", "FYI",
-            "--connection", "work",
+            "void",
+            "gmail",
+            "forward",
+            "msg1",
+            "--to",
+            "x@y.com",
+            "--comment",
+            "FYI",
+            "--connection",
+            "work",
         ]);
         match cli.command {
             Some(Command::Gmail(ref g)) => match &g.command {
@@ -228,8 +236,16 @@ mod tests {
     #[test]
     fn parse_slack_forward_with_comment_and_connection() {
         let cli = parse(&[
-            "void", "slack", "forward", "msg1", "--to", "C999", "--comment", "check this",
-            "--connection", "acme",
+            "void",
+            "slack",
+            "forward",
+            "msg1",
+            "--to",
+            "C999",
+            "--comment",
+            "check this",
+            "--connection",
+            "acme",
         ]);
         match cli.command {
             Some(Command::Slack(ref s)) => match &s.command {
@@ -281,8 +297,16 @@ mod tests {
     #[test]
     fn parse_telegram_forward_with_comment_and_connection() {
         let cli = parse(&[
-            "void", "telegram", "forward", "m1", "--to", "chat1", "--comment", "note",
-            "--connection", "personal",
+            "void",
+            "telegram",
+            "forward",
+            "m1",
+            "--to",
+            "chat1",
+            "--comment",
+            "note",
+            "--connection",
+            "personal",
         ]);
         match cli.command {
             Some(Command::Telegram(ref t)) => match &t.command {
@@ -343,20 +367,29 @@ mod tests {
     fn help_gmail_lists_forward_subcommand() {
         let err = Cli::try_parse_from(["void", "gmail", "help"]).unwrap_err();
         let help = err.to_string();
-        assert!(help.contains("forward"), "Gmail help should list 'forward': {help}");
+        assert!(
+            help.contains("forward"),
+            "Gmail help should list 'forward': {help}"
+        );
     }
 
     #[test]
     fn help_slack_lists_forward_subcommand() {
         let err = Cli::try_parse_from(["void", "slack", "help"]).unwrap_err();
         let help = err.to_string();
-        assert!(help.contains("forward"), "Slack help should list 'forward': {help}");
+        assert!(
+            help.contains("forward"),
+            "Slack help should list 'forward': {help}"
+        );
     }
 
     #[test]
     fn help_telegram_lists_forward_subcommand() {
         let err = Cli::try_parse_from(["void", "telegram", "help"]).unwrap_err();
         let help = err.to_string();
-        assert!(help.contains("forward"), "Telegram help should list 'forward': {help}");
+        assert!(
+            help.contains("forward"),
+            "Telegram help should list 'forward': {help}"
+        );
     }
 }

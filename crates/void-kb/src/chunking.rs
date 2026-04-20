@@ -145,7 +145,10 @@ fn split_paragraphs(text: &str) -> Vec<(String, usize)> {
     for part in text.split("\n\n") {
         let trimmed = part.trim();
         if !trimmed.is_empty() {
-            let offset = text[start..].find(trimmed).map(|i| start + i).unwrap_or(start);
+            let offset = text[start..]
+                .find(trimmed)
+                .map(|i| start + i)
+                .unwrap_or(start);
             result.push((trimmed.to_string(), offset));
         }
         start += part.len() + 2; // +2 for the "\n\n"
@@ -223,9 +226,7 @@ fn split_sentences(text: &str) -> Vec<(String, usize)> {
                     result.push((sentence, start));
                 }
                 start = end;
-                while start < text.len()
-                    && text.as_bytes().get(start).copied() == Some(b' ')
-                {
+                while start < text.len() && text.as_bytes().get(start).copied() == Some(b' ') {
                     start += 1;
                 }
                 pos = start;
@@ -250,10 +251,7 @@ fn split_sentences(text: &str) -> Vec<(String, usize)> {
 
 /// Returns the byte length of the UTF-8 character starting at `byte_pos`.
 fn next_char_len(text: &str, byte_pos: usize) -> usize {
-    text[byte_pos..]
-        .chars()
-        .next()
-        .map_or(1, |c| c.len_utf8())
+    text[byte_pos..].chars().next().map_or(1, |c| c.len_utf8())
 }
 
 fn split_by_words(
@@ -339,7 +337,11 @@ mod tests {
             max_chunks: 100,
         };
         let chunks = chunk_text(&text, &config);
-        assert!(chunks.len() > 1, "expected multiple chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks, got {}",
+            chunks.len()
+        );
     }
 
     #[test]
@@ -359,7 +361,14 @@ mod tests {
         for pair in chunks.windows(2) {
             let a_end = &pair[0].text;
             let b_start = &pair[1].text;
-            let a_tail: String = a_end.chars().rev().take(30).collect::<String>().chars().rev().collect();
+            let a_tail: String = a_end
+                .chars()
+                .rev()
+                .take(30)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
             assert!(
                 b_start.contains(&a_tail) || pair[1].start_byte < pair[0].end_byte,
                 "chunks should overlap"
