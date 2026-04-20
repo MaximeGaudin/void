@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
 use void_core::config::{self, ConnectionSettings, VoidConfig};
+use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::ConnectorType;
 
@@ -14,6 +15,23 @@ pub struct TelegramArgs {
 pub enum TelegramCommand {
     /// Download media from a Telegram message
     Download(DownloadArgs),
+    /// Forward a message to another chat
+    Forward(ForwardArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ForwardArgs {
+    /// Message ID (void internal ID or external ID)
+    pub message_id: String,
+    /// Target chat ID, phone number, or username
+    #[arg(long)]
+    pub to: String,
+    /// Optional comment (note: currently ignored by Telegram forwarding)
+    #[arg(long)]
+    pub comment: Option<String>,
+    /// Telegram connection to use
+    #[arg(long)]
+    pub connection: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -31,6 +49,7 @@ pub struct DownloadArgs {
 pub async fn run(args: &TelegramArgs) -> anyhow::Result<()> {
     match &args.command {
         TelegramCommand::Download(a) => run_download(a).await,
+        TelegramCommand::Forward(a) => run_forward(a).await,
     }
 }
 
@@ -85,6 +104,60 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
+    let config_path = config::default_config_path();
+    let cfg = VoidConfig::load(&config_path)
+        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+
+    let db = Database::open(&cfg.db_path())?;
+
+    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
+
+    check_forward_connector(&args.message_id, &msg.connector, "telegram")?;
+
+    let conv = db
+        .get_conversation(&msg.conversation_id)?
+        .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
+
+    let conn_id = resolve_forward_connection(args.connection.as_deref(), &msg.connection_id);
+    let connector = build_tg_connector(Some(conn_id), &cfg)?;
+
+    let fwd_id = connector
+        .forward(
+            &msg.external_id,
+            &conv.external_id,
+            &args.to,
+            args.comment.as_deref(),
+        )
+        .await?;
+
+    eprintln!("Message forwarded (id: {fwd_id})");
+    Ok(())
+}
+
+fn resolve_forward_connection<'a>(
+    explicit: Option<&'a str>,
+    message_connection: &'a str,
+) -> &'a str {
+    explicit.unwrap_or(message_connection)
+}
+
+fn check_forward_connector(
+    message_id: &str,
+    actual: &str,
+    expected: &str,
+) -> anyhow::Result<()> {
+    if actual != expected {
+        anyhow::bail!(
+            "Message {} is from connector '{}', not {}.",
+            message_id,
+            actual,
+            expected
+        );
+    }
+    Ok(())
+}
+
 fn build_tg_connector(
     connection_filter: Option<&str>,
     cfg: &VoidConfig,
@@ -115,4 +188,44 @@ fn build_tg_connector(
         api_id,
         api_hash.as_deref(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forward_connection_prefers_explicit_connection() {
+        assert_eq!(
+            resolve_forward_connection(Some("explicit-conn"), "msg-conn"),
+            "explicit-conn"
+        );
+    }
+
+    #[test]
+    fn forward_connection_defaults_to_message_connection() {
+        assert_eq!(resolve_forward_connection(None, "msg-conn"), "msg-conn");
+    }
+
+    #[test]
+    fn forward_connector_guard_accepts_telegram() {
+        assert!(check_forward_connector("id1", "telegram", "telegram").is_ok());
+    }
+
+    #[test]
+    fn forward_connector_guard_rejects_non_telegram() {
+        assert!(check_forward_connector("id1", "gmail", "telegram").is_err());
+    }
+
+    #[test]
+    fn forward_connector_guard_error_mentions_actual_connector() {
+        let err = check_forward_connector("id1", "slack", "telegram")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("slack"), "error should mention 'slack': {err}");
+        assert!(
+            err.contains("telegram"),
+            "error should mention 'telegram': {err}"
+        );
+    }
 }

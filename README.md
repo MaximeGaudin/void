@@ -29,10 +29,13 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │  ├── void channels       ├── void mute              │
 │  ├── void messages       ├── void calendar create   │
 │  ├── void conversations  ├── void gmail draft ...   │
-│                          ├── void slack react/edit  │
-│  AI & Automation         ├── void slack schedule     │
-│  ├── void agent          ├── void drive download    │
-│  └── void hook           ├── void whatsapp download │
+│                          ├── void gmail forward     │
+│  AI & Automation         ├── void slack react/edit  │
+│  ├── void agent          ├── void slack schedule     │
+│  └── void hook           ├── void slack forward     │
+│                          ├── void telegram forward  │
+│                          ├── void drive download    │
+│                          ├── void whatsapp download │
 │                          └── void telegram download │
 │                                                     │
 │  Sync daemon                                        │
@@ -128,12 +131,15 @@ void calendar
 | `void gmail draft update <id>` | Update an existing draft |
 | `void gmail draft delete <id>` | Delete a draft |
 | `void gmail attachment` | Download an attachment |
+| `void gmail forward <id>` | Forward a Gmail message to another recipient |
 | `void slack react <id>` | Add an emoji reaction |
 | `void slack edit <id>` | Edit a Slack message |
 | `void slack schedule` | Schedule a message for later |
 | `void slack open` | Open a group DM with multiple users |
+| `void slack forward <id>` | Forward a Slack message to another channel/user |
 | `void whatsapp download <id>` | Download WhatsApp media |
 | `void telegram download <id>` | Download Telegram media |
+| `void telegram forward <id>` | Forward a Telegram message to another chat |
 | `void calendar create` | Create a calendar event |
 | `void calendar search` | Search calendar events |
 | `void calendar respond <id>` | Accept/decline/tentative an invite |

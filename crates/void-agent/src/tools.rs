@@ -61,7 +61,8 @@ impl Tool for VoidCommandTool {
                 SENDING:\n\
                 - send --via <slack|gmail|telegram> --to \"<recipient>\" --message \"<text>\" [--file <path>] [--at \"<time>\"]\n\
                   (Note: hackernews is read-only — no send/reply)\n\
-                - reply <message-id> --message \"<text>\" [--in-thread] [--file <path>] [--at \"<time>\"]\n\n\
+                - reply <message-id> --message \"<text>\" [--in-thread] [--file <path>] [--at \"<time>\"]\n\
+                - forward <message-id> --to \"<recipient>\" [--comment \"<text>\"]\n\n\
                 GMAIL:\n\
                 - gmail search '<query>' [--max <n>] [--connection <email>]\n\
                 - gmail thread <threadId> [--connection <email>]\n\
@@ -73,12 +74,17 @@ impl Tool for VoidCommandTool {
                 - gmail draft update <draftId> --to \"<email>\" --subject \"<s>\" --body \"<b>\" [--connection <email>]\n\
                 - gmail draft delete <draftId> [--connection <email>]\n\
                 - gmail attachment <messageId> <attachmentId> --out <path> [--connection <email>]\n\
-                - gmail batch-modify <id1> [<id2>...] --add <label> [--remove <label>] [--connection <email>]\n\n\
+                - gmail batch-modify <id1> [<id2>...] --add <label> [--remove <label>] [--connection <email>]\n\
+                - gmail forward <message-id> --to \"<email>\" [--comment \"<text>\"] [--connection <email>]\n\n\
                 SLACK:\n\
                 - slack react <message-id> --emoji <name>\n\
                 - slack edit <message-id> --message \"<text>\"\n\
                 - slack schedule --channel \"<ch>\" --message \"<text>\" --at \"<time>\" [--thread <ts>]\n\
-                - slack open --users <uid1>,<uid2>\n\n\
+                - slack open --users <uid1>,<uid2>\n\
+                - slack forward <message-id> --to \"<channel-or-user-id>\" [--comment \"<text>\"] [--connection <id>]\n\n\
+                TELEGRAM:\n\
+                - telegram download <message-id> --out <path> [--connection <id>]\n\
+                - telegram forward <message-id> --to \"<chat-id-or-username>\" [--comment \"<text>\"] [--connection <id>]\n\n\
                 CALENDAR:\n\
                 - calendar [--day today|tomorrow|<date>] [--from <date> --to <date>] [--connection <id>]\n\
                 - calendar week [--connection <id>]\n\
@@ -221,6 +227,65 @@ impl Tool for ShellCommandTool {
             ))
         } else {
             Ok(combined)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rig::tool::Tool;
+
+    async fn tool_description() -> String {
+        let tool = VoidCommandTool;
+        let def = tool.definition(String::new()).await;
+        def.description
+    }
+
+    #[tokio::test]
+    async fn void_command_tool_definition_lists_gmail_forward() {
+        let desc = tool_description().await;
+        assert!(
+            desc.contains("gmail forward"),
+            "Tool definition should list 'gmail forward'"
+        );
+    }
+
+    #[tokio::test]
+    async fn void_command_tool_definition_lists_slack_forward() {
+        let desc = tool_description().await;
+        assert!(
+            desc.contains("slack forward"),
+            "Tool definition should list 'slack forward'"
+        );
+    }
+
+    #[tokio::test]
+    async fn void_command_tool_definition_lists_telegram_forward() {
+        let desc = tool_description().await;
+        assert!(
+            desc.contains("telegram forward"),
+            "Tool definition should list 'telegram forward'"
+        );
+    }
+
+    #[tokio::test]
+    async fn void_command_tool_definition_still_lists_global_forward() {
+        let desc = tool_description().await;
+        assert!(
+            desc.contains("forward <message-id> --to"),
+            "Tool definition should still list global forward"
+        );
+    }
+
+    #[tokio::test]
+    async fn void_command_tool_definition_keeps_existing_command_sections() {
+        let desc = tool_description().await;
+        for section in ["INBOX & MESSAGES:", "SENDING:", "GMAIL:", "SLACK:", "CALENDAR:", "OTHER:"] {
+            assert!(
+                desc.contains(section),
+                "Tool definition should still contain section '{section}'"
+            );
         }
     }
 }

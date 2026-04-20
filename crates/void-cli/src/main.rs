@@ -53,15 +53,15 @@ enum Command {
     Archive(commands::archive::ArchiveArgs),
     /// Mute or unmute conversations/channels (hides from inbox)
     Mute(commands::mute::MuteArgs),
-    /// Gmail-specific operations (search, threads, drafts, labels, attachments)
+    /// Gmail-specific operations (search, threads, drafts, labels, attachments, forward)
     Gmail(commands::gmail::GmailArgs),
     /// Hacker News configuration (keywords, min-score)
     Hn(commands::hackernews::HackerNewsArgs),
-    /// Slack-specific operations (react, edit)
+    /// Slack-specific operations (react, edit, schedule, open, forward)
     Slack(commands::slack::SlackArgs),
     /// WhatsApp-specific operations (media download)
     Whatsapp(commands::whatsapp::WhatsAppArgs),
-    /// Telegram-specific operations (media download)
+    /// Telegram-specific operations (media download, forward)
     Telegram(commands::telegram::TelegramArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
@@ -137,5 +137,226 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
             commands::status::run();
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from(args).expect("should parse")
+    }
+
+    fn parse_err(args: &[&str]) -> clap::Error {
+        Cli::try_parse_from(args).expect_err("should fail to parse")
+    }
+
+    // --- Gmail forward parsing ---
+
+    #[test]
+    fn parse_gmail_forward_minimal() {
+        let cli = parse(&["void", "gmail", "forward", "msg123", "--to", "a@b.com"]);
+        match cli.command {
+            Some(Command::Gmail(ref g)) => match &g.command {
+                commands::gmail::GmailCommand::Forward(f) => {
+                    assert_eq!(f.message_id, "msg123");
+                    assert_eq!(f.to, "a@b.com");
+                    assert!(f.comment.is_none());
+                    assert!(f.connection.is_none());
+                }
+                other => panic!("expected Forward, got {other:?}"),
+            },
+            other => panic!("expected Gmail, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_gmail_forward_with_comment_and_connection() {
+        let cli = parse(&[
+            "void", "gmail", "forward", "msg1", "--to", "x@y.com", "--comment", "FYI",
+            "--connection", "work",
+        ]);
+        match cli.command {
+            Some(Command::Gmail(ref g)) => match &g.command {
+                commands::gmail::GmailCommand::Forward(f) => {
+                    assert_eq!(f.comment.as_deref(), Some("FYI"));
+                    assert_eq!(f.connection.as_deref(), Some("work"));
+                }
+                other => panic!("expected Forward, got {other:?}"),
+            },
+            other => panic!("expected Gmail, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_gmail_forward_maps_to_gmail_subcommand() {
+        let cli = parse(&["void", "gmail", "forward", "m1", "--to", "a@b.com"]);
+        assert!(matches!(cli.command, Some(Command::Gmail(_))));
+    }
+
+    #[test]
+    fn parse_gmail_forward_requires_to() {
+        parse_err(&["void", "gmail", "forward", "msg123"]);
+    }
+
+    #[test]
+    fn parse_gmail_forward_requires_message_id() {
+        parse_err(&["void", "gmail", "forward", "--to", "a@b.com"]);
+    }
+
+    // --- Slack forward parsing ---
+
+    #[test]
+    fn parse_slack_forward_minimal() {
+        let cli = parse(&["void", "slack", "forward", "msg456", "--to", "C12345"]);
+        match cli.command {
+            Some(Command::Slack(ref s)) => match &s.command {
+                commands::slack::SlackCommand::Forward(f) => {
+                    assert_eq!(f.message_id, "msg456");
+                    assert_eq!(f.to, "C12345");
+                    assert!(f.comment.is_none());
+                    assert!(f.connection.is_none());
+                }
+                other => panic!("expected Forward, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_forward_with_comment_and_connection() {
+        let cli = parse(&[
+            "void", "slack", "forward", "msg1", "--to", "C999", "--comment", "check this",
+            "--connection", "acme",
+        ]);
+        match cli.command {
+            Some(Command::Slack(ref s)) => match &s.command {
+                commands::slack::SlackCommand::Forward(f) => {
+                    assert_eq!(f.comment.as_deref(), Some("check this"));
+                    assert_eq!(f.connection.as_deref(), Some("acme"));
+                }
+                other => panic!("expected Forward, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_forward_maps_to_slack_subcommand() {
+        let cli = parse(&["void", "slack", "forward", "m1", "--to", "C1"]);
+        assert!(matches!(cli.command, Some(Command::Slack(_))));
+    }
+
+    #[test]
+    fn parse_slack_forward_requires_to() {
+        parse_err(&["void", "slack", "forward", "msg456"]);
+    }
+
+    #[test]
+    fn parse_slack_forward_requires_message_id() {
+        parse_err(&["void", "slack", "forward", "--to", "C12345"]);
+    }
+
+    // --- Telegram forward parsing ---
+
+    #[test]
+    fn parse_telegram_forward_minimal() {
+        let cli = parse(&["void", "telegram", "forward", "msg789", "--to", "chat42"]);
+        match cli.command {
+            Some(Command::Telegram(ref t)) => match &t.command {
+                commands::telegram::TelegramCommand::Forward(f) => {
+                    assert_eq!(f.message_id, "msg789");
+                    assert_eq!(f.to, "chat42");
+                    assert!(f.comment.is_none());
+                    assert!(f.connection.is_none());
+                }
+                other => panic!("expected Forward, got {other:?}"),
+            },
+            other => panic!("expected Telegram, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_telegram_forward_with_comment_and_connection() {
+        let cli = parse(&[
+            "void", "telegram", "forward", "m1", "--to", "chat1", "--comment", "note",
+            "--connection", "personal",
+        ]);
+        match cli.command {
+            Some(Command::Telegram(ref t)) => match &t.command {
+                commands::telegram::TelegramCommand::Forward(f) => {
+                    assert_eq!(f.comment.as_deref(), Some("note"));
+                    assert_eq!(f.connection.as_deref(), Some("personal"));
+                }
+                other => panic!("expected Forward, got {other:?}"),
+            },
+            other => panic!("expected Telegram, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_telegram_forward_maps_to_telegram_subcommand() {
+        let cli = parse(&["void", "telegram", "forward", "m1", "--to", "c1"]);
+        assert!(matches!(cli.command, Some(Command::Telegram(_))));
+    }
+
+    #[test]
+    fn parse_telegram_forward_requires_to() {
+        parse_err(&["void", "telegram", "forward", "msg789"]);
+    }
+
+    #[test]
+    fn parse_telegram_forward_requires_message_id() {
+        parse_err(&["void", "telegram", "forward", "--to", "chat42"]);
+    }
+
+    // --- Global forward regression ---
+
+    #[test]
+    fn parse_global_forward_still_works() {
+        let cli = parse(&["void", "forward", "msg1", "--to", "someone"]);
+        assert!(matches!(cli.command, Some(Command::Forward(_))));
+    }
+
+    // --- Unsupported connector forward rejection ---
+
+    #[test]
+    fn parse_whatsapp_forward_is_rejected() {
+        parse_err(&["void", "whatsapp", "forward", "msg1", "--to", "dest"]);
+    }
+
+    #[test]
+    fn parse_calendar_forward_is_rejected() {
+        parse_err(&["void", "calendar", "forward", "msg1", "--to", "dest"]);
+    }
+
+    #[test]
+    fn parse_hn_forward_is_rejected() {
+        parse_err(&["void", "hn", "forward", "msg1", "--to", "dest"]);
+    }
+
+    // --- Help surface tests ---
+
+    #[test]
+    fn help_gmail_lists_forward_subcommand() {
+        let err = Cli::try_parse_from(["void", "gmail", "help"]).unwrap_err();
+        let help = err.to_string();
+        assert!(help.contains("forward"), "Gmail help should list 'forward': {help}");
+    }
+
+    #[test]
+    fn help_slack_lists_forward_subcommand() {
+        let err = Cli::try_parse_from(["void", "slack", "help"]).unwrap_err();
+        let help = err.to_string();
+        assert!(help.contains("forward"), "Slack help should list 'forward': {help}");
+    }
+
+    #[test]
+    fn help_telegram_lists_forward_subcommand() {
+        let err = Cli::try_parse_from(["void", "telegram", "help"]).unwrap_err();
+        let help = err.to_string();
+        assert!(help.contains("forward"), "Telegram help should list 'forward': {help}");
     }
 }
