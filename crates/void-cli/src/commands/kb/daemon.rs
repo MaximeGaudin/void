@@ -87,10 +87,8 @@ fn run_kb_sync_cycle(kb_path: &Path, _store_path: &Path) {
                     );
                 }
             }
-            SyncEvent::FileDone { path, ok, .. } => {
-                if !ok {
-                    tracing::warn!(path, "KB sync failed to index file");
-                }
+            SyncEvent::FileDone { path, ok: false, .. } => {
+                tracing::warn!(path, "KB sync failed to index file");
             }
             _ => {}
         };
