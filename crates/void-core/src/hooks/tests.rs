@@ -7,8 +7,7 @@ use crate::models::Message;
 
 #[test]
 fn load_hooks_returns_empty_for_nonexistent_dir() {
-    let dir =
-        std::env::temp_dir().join(format!("void-hooks-nonexistent-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("void-hooks-nonexistent-{}", uuid::Uuid::new_v4()));
     assert!(!dir.exists(), "dir should not exist");
     let hooks = load_hooks(&dir);
     assert!(hooks.is_empty());
@@ -27,6 +26,7 @@ fn hook_roundtrip() {
         name: "Test Hook".into(),
         enabled: true,
         max_turns: 5,
+        agent: "claude".into(),
         trigger: Trigger::NewMessage {
             connector: Some("gmail".into()),
         },
@@ -49,6 +49,7 @@ fn schedule_hook_roundtrip() {
         name: "Daily Digest".into(),
         enabled: true,
         max_turns: 10,
+        agent: "claude".into(),
         trigger: Trigger::Schedule {
             cron: "0 9 * * 1-5".into(),
         },
@@ -70,8 +71,10 @@ fn expand_placeholders_no_message() {
 
 #[test]
 fn expand_placeholders_keeps_message_tokens_when_no_message() {
-    let result =
-        expand_placeholders("before {message_id} after {connector} {connection_id}", None);
+    let result = expand_placeholders(
+        "before {message_id} after {connector} {connection_id}",
+        None,
+    );
     assert_eq!(
         result, "before {message_id} after {connector} {connection_id}",
         "message placeholders must remain literal when no Message is supplied"
@@ -110,6 +113,7 @@ fn save_and_load_hook() {
         name: "My Test Hook".into(),
         enabled: true,
         max_turns: 3,
+        agent: "claude".into(),
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "test".into(),
@@ -129,6 +133,7 @@ fn delete_hook_works() {
         name: "To Delete".into(),
         enabled: true,
         max_turns: 3,
+        agent: "claude".into(),
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "test".into(),
@@ -148,6 +153,7 @@ fn find_hook_works() {
         name: "Find Me".into(),
         enabled: true,
         max_turns: 2,
+        agent: "claude".into(),
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "prompt".into(),
@@ -167,6 +173,7 @@ fn update_hook_enabled_toggles() {
         name: "Toggle Test".into(),
         enabled: true,
         max_turns: 1,
+        agent: "claude".into(),
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig { text: "x".into() },
     };

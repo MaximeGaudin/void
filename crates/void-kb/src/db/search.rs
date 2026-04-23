@@ -1,7 +1,7 @@
 use zerocopy::IntoBytes;
 
-use crate::normalize::normalize_for_search;
 use super::KbDatabase;
+use crate::normalize::normalize_for_search;
 
 impl KbDatabase {
     /// Semantic KNN search. Returns (chunk_id, document_id, content, distance).

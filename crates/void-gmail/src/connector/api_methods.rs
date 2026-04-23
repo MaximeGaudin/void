@@ -3,7 +3,6 @@ use base64::Engine;
 use tracing::debug;
 use tracing::warn;
 
-
 use crate::api::GmailApiClient;
 use crate::auth;
 

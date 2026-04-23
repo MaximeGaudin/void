@@ -35,6 +35,7 @@ impl HookRunner {
             let hook_name = hook.name.clone();
             let msg_id = msg.id.clone();
             let connector = msg.connector.clone();
+            let agent = hook.agent.clone();
             let sem = Arc::clone(&sem);
             let db = self.db.clone();
 
@@ -52,9 +53,10 @@ impl HookRunner {
                 let started_at = chrono::Utc::now().timestamp();
                 let start = std::time::Instant::now();
 
-                let outcome =
-                    tokio::task::spawn_blocking(move || execute_hook_blocking(&prompt, max_turns))
-                        .await;
+                let outcome = tokio::task::spawn_blocking(move || {
+                    execute_hook_blocking(&agent, &prompt, max_turns)
+                })
+                .await;
 
                 let duration_ms = start.elapsed().as_millis() as i64;
 

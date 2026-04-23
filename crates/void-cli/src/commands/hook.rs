@@ -36,6 +36,9 @@ pub enum HookCommand {
         /// Max agent turns
         #[arg(long, default_value = "3")]
         max_turns: usize,
+        /// The agent to execute the hook (e.g. "claude", "cursor")
+        #[arg(long, default_value = "claude")]
+        agent: String,
     },
     /// Show a hook's full configuration
     Show {
@@ -92,6 +95,7 @@ pub fn run(args: &HookArgs) -> anyhow::Result<()> {
             prompt,
             prompt_file,
             max_turns,
+            agent,
         } => cmd_create(
             &dir,
             name,
@@ -101,6 +105,7 @@ pub fn run(args: &HookArgs) -> anyhow::Result<()> {
             prompt.as_deref(),
             prompt_file.as_deref(),
             *max_turns,
+            agent,
         ),
         HookCommand::Show { name } => cmd_show(&dir, name),
         HookCommand::Delete { name } => cmd_delete(&dir, name),
@@ -128,6 +133,7 @@ fn cmd_create(
     prompt: Option<&str>,
     prompt_file: Option<&str>,
     max_turns: usize,
+    agent: &str,
 ) -> anyhow::Result<()> {
     let prompt_text = match (prompt, prompt_file) {
         (Some(text), _) => text.to_string(),
@@ -162,6 +168,7 @@ fn cmd_create(
         name: name.to_string(),
         enabled: true,
         max_turns,
+        agent: agent.to_string(),
         trigger,
         prompt: PromptConfig { text: prompt_text },
     };
@@ -220,11 +227,11 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
 
     let prompt = hooks::expand_placeholders_public(&hook.prompt.text, msg.as_ref());
     eprintln!(
-        "Executing hook '{}' (max_turns: {})...\n",
-        hook.name, hook.max_turns
+        "Executing hook '{}' (agent: {}, max_turns: {})...\n",
+        hook.name, hook.agent, hook.max_turns
     );
 
-    let exec = hooks::execute_hook_public(&prompt, hook.max_turns)?;
+    let exec = hooks::execute_hook_public(&hook.agent, &prompt, hook.max_turns)?;
     if exec.success {
         println!("{}", exec.result_summary);
     } else {

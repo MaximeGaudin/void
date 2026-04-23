@@ -423,7 +423,13 @@ fn parse_email_name_with_brackets() {
 
 #[test]
 fn compose_rfc2822_basic() {
-    let raw = compose_rfc2822("alice@example.com", "Test Subject", "Hello, Alice!", None, None);
+    let raw = compose_rfc2822(
+        "alice@example.com",
+        "Test Subject",
+        "Hello, Alice!",
+        None,
+        None,
+    );
     assert!(raw.contains("To: alice@example.com"));
     assert!(raw.contains("Subject: Test Subject"));
     // "Hello, Alice!" in Base64

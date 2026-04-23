@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 
-use crate::models::*;
 use super::KbDatabase;
+use crate::models::*;
 
 impl KbDatabase {
     pub fn insert_document(&self, doc: &Document) -> anyhow::Result<()> {

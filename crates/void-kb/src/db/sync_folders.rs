@@ -1,5 +1,5 @@
-use crate::models::SyncFolder;
 use super::KbDatabase;
+use crate::models::SyncFolder;
 
 impl KbDatabase {
     /// List all synced document source paths with their hashes.

@@ -37,6 +37,8 @@ pub struct Hook {
     pub enabled: bool,
     #[serde(default = "default_max_turns")]
     pub max_turns: usize,
+    #[serde(default = "default_agent")]
+    pub agent: String,
     pub trigger: Trigger,
     pub prompt: PromptConfig,
 }
@@ -64,4 +66,8 @@ pub(crate) fn default_true() -> bool {
 
 pub(crate) fn default_max_turns() -> usize {
     3
+}
+
+pub(crate) fn default_agent() -> String {
+    "claude".to_string()
 }

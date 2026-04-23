@@ -1,7 +1,7 @@
-mod model;
-mod hook_fs;
-mod placeholders;
 mod execute;
+mod hook_fs;
+mod model;
+mod placeholders;
 mod runner;
 
 #[cfg(test)]

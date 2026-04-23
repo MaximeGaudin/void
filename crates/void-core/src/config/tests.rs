@@ -43,14 +43,8 @@ calendar_ids = ["primary", "holidays"]
         config.connections[0].connector_type,
         ConnectorType::WhatsApp
     );
-    assert_eq!(
-        config.connections[1].connector_type,
-        ConnectorType::Slack
-    );
-    assert_eq!(
-        config.connections[2].connector_type,
-        ConnectorType::Gmail
-    );
+    assert_eq!(config.connections[1].connector_type, ConnectorType::Slack);
+    assert_eq!(config.connections[2].connector_type, ConnectorType::Gmail);
     assert_eq!(
         config.connections[3].connector_type,
         ConnectorType::Calendar

@@ -167,4 +167,3 @@ fn build_tg_connector(
         api_hash.as_deref(),
     ))
 }
-

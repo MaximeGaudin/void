@@ -1,5 +1,5 @@
-use crate::models::KbStatus;
 use super::KbDatabase;
+use crate::models::KbStatus;
 
 impl KbDatabase {
     pub fn status(&self) -> anyhow::Result<KbStatus> {

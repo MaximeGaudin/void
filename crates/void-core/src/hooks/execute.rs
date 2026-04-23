@@ -7,12 +7,20 @@ pub struct HookExecResult {
     pub error: Option<String>,
 }
 
-pub fn execute_hook_public(prompt: &str, max_turns: usize) -> anyhow::Result<HookExecResult> {
-    execute_hook_blocking(prompt, max_turns)
+pub fn execute_hook_public(
+    agent: &str,
+    prompt: &str,
+    max_turns: usize,
+) -> anyhow::Result<HookExecResult> {
+    execute_hook_blocking(agent, prompt, max_turns)
 }
 
-pub(crate) fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::Result<HookExecResult> {
-    let mut cmd = std::process::Command::new("claude");
+pub(crate) fn execute_hook_blocking(
+    agent: &str,
+    prompt: &str,
+    max_turns: usize,
+) -> anyhow::Result<HookExecResult> {
+    let mut cmd = std::process::Command::new(agent);
     cmd.args(["-p", prompt]);
     cmd.args(["--verbose"]);
     cmd.args(["--output-format", "stream-json"]);
@@ -27,6 +35,7 @@ pub(crate) fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::R
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
+        let error_msg = format!("{} exited with {}: {}", agent, output.status, stderr.trim());
         return Ok(HookExecResult {
             input_prompt: prompt.to_string(),
             raw_output: if stdout.is_empty() {
@@ -36,11 +45,7 @@ pub(crate) fn execute_hook_blocking(prompt: &str, max_turns: usize) -> anyhow::R
             },
             result_summary: String::new(),
             success: false,
-            error: Some(format!(
-                "claude exited with {}: {}",
-                output.status,
-                stderr.trim()
-            )),
+            error: Some(error_msg),
         });
     }
 

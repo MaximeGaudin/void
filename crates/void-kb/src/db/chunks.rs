@@ -1,7 +1,7 @@
 use zerocopy::IntoBytes;
 
-use crate::normalize::normalize_for_search;
 use super::KbDatabase;
+use crate::normalize::normalize_for_search;
 
 impl KbDatabase {
     pub fn insert_chunks_with_embeddings(

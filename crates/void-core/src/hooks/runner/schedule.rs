@@ -75,6 +75,7 @@ impl HookRunner {
                     let prompt = expand_placeholders(&hook.prompt.text, None);
                     let max_turns = hook.max_turns;
                     let name = hook_name.clone();
+                    let agent = hook.agent.clone();
 
                     eprintln!("[hook] ▶ {} (scheduled) executing", name);
                     info!(hook = %name, "executing scheduled hook");
@@ -82,7 +83,7 @@ impl HookRunner {
                     let start = std::time::Instant::now();
 
                     let outcome = tokio::task::spawn_blocking(move || {
-                        execute_hook_blocking(&prompt, max_turns)
+                        execute_hook_blocking(&agent, &prompt, max_turns)
                     })
                     .await;
 

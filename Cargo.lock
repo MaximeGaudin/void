@@ -4491,7 +4491,7 @@ checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 
 [[package]]
 name = "void-agent"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -4506,7 +4506,7 @@ dependencies = [
 
 [[package]]
 name = "void-calendar"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4526,7 +4526,7 @@ dependencies = [
 
 [[package]]
 name = "void-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4555,7 +4555,7 @@ dependencies = [
 
 [[package]]
 name = "void-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4576,7 +4576,7 @@ dependencies = [
 
 [[package]]
 name = "void-gdrive"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4594,7 +4594,7 @@ dependencies = [
 
 [[package]]
 name = "void-gmail"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4618,7 +4618,7 @@ dependencies = [
 
 [[package]]
 name = "void-hackernews"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4635,7 +4635,7 @@ dependencies = [
 
 [[package]]
 name = "void-kb"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4654,7 +4654,7 @@ dependencies = [
 
 [[package]]
 name = "void-slack"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4674,7 +4674,7 @@ dependencies = [
 
 [[package]]
 name = "void-telegram"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4696,7 +4696,7 @@ dependencies = [
 
 [[package]]
 name = "void-whatsapp"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
