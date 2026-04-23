@@ -1,0 +1,10 @@
+# Pin the Rust toolchain so every developer and CI use the same rustc/clippy.
+# Prevents "works locally, fails in CI" surprises caused by clippy lints that
+# get upgraded or added between stable releases.
+#
+# To upgrade: run `rustup update stable`, then bump the channel below if you
+# want to pin a specific version (e.g. "1.93.0") instead of tracking stable.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

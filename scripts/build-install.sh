@@ -1,8 +1,32 @@
 #!/usr/bin/env bash
+# Build and install the release binary.
+#
+# Usage:
+#   ./scripts/build-install.sh                    # run pre-flight checks, then build+install
+#   ./scripts/build-install.sh --skip-checks      # skip pre-flight checks (fast path)
+#   ./scripts/build-install.sh /custom/dir        # install to a custom directory
 set -euo pipefail
 
-INSTALL_DIR="${1:-$HOME/bin}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+SKIP_CHECKS=0
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --skip-checks) SKIP_CHECKS=1 ;;
+    *) POSITIONAL+=("$arg") ;;
+  esac
+done
+
+INSTALL_DIR="${POSITIONAL[0]:-$HOME/bin}"
 BIN_NAME="void"
+
+if [ "$SKIP_CHECKS" -eq 0 ]; then
+  echo "==> Running pre-flight checks (fmt/clippy/test)…"
+  "$SCRIPT_DIR/check.sh"
+else
+  echo "==> Skipping pre-flight checks (--skip-checks)"
+fi
 
 echo "==> Building release binary…"
 cargo build --release

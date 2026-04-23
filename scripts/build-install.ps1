@@ -1,12 +1,22 @@
 param(
-    [string]$InstallDir = "$HOME\bin"
+    [string]$InstallDir = "$HOME\bin",
+    [switch]$SkipChecks
 )
 
 $ErrorActionPreference = "Stop"
 
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BinName = "void.exe"
 $Src = Join-Path "target\release" $BinName
 $Dest = Join-Path $InstallDir $BinName
+
+if (-not $SkipChecks) {
+    Write-Host "==> Running pre-flight checks (fmt/clippy/test)..."
+    & (Join-Path $ScriptDir "check.ps1")
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} else {
+    Write-Host "==> Skipping pre-flight checks (-SkipChecks)"
+}
 
 Write-Host "==> Building release binary..."
 cargo build --release
