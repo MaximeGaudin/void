@@ -78,14 +78,12 @@ fn run_kb_sync_cycle(kb_path: &Path, _store_path: &Path) {
                 to_update,
                 to_delete,
                 ..
-            } => {
-                if *to_add + *to_update + *to_delete > 0 {
-                    info!(
-                        folder = %folder.folder_path,
-                        to_add, to_update, to_delete,
-                        "KB sync found changes"
-                    );
-                }
+            } if *to_add + *to_update + *to_delete > 0 => {
+                info!(
+                    folder = %folder.folder_path,
+                    to_add, to_update, to_delete,
+                    "KB sync found changes"
+                );
             }
             SyncEvent::FileDone {
                 path, ok: false, ..
