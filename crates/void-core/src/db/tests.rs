@@ -765,6 +765,107 @@ fn find_message_by_external_id_nonexistent_returns_none() {
     assert!(found.is_none());
 }
 
+// ---- Slack permalink resolution ----
+
+/// The Slack workspace subdomain in a permalink does NOT have to match the
+/// void connection_id (connections are user-named in config.toml). The
+/// resolver must route by the Slack-native (channel_id, message_ts) pair.
+#[test]
+fn find_slack_message_by_link_ignores_connection_naming() {
+    let db = test_db();
+
+    let conv = Conversation {
+        id: "slack-C08UDH5JE57".into(),
+        connection_id: "slack".into(),
+        connector: "slack".into(),
+        external_id: "C08UDH5JE57".into(),
+        name: Some("tech-platform-engineering".into()),
+        kind: ConversationKind::Channel,
+        last_message_at: Some(1_776_936_528),
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    };
+    db.upsert_conversation(&conv).unwrap();
+
+    let msg = Message {
+        id: "slack-1776936528.857609".into(),
+        conversation_id: "slack-C08UDH5JE57".into(),
+        connection_id: "slack".into(),
+        connector: "slack".into(),
+        external_id: "1776936528.857609".into(),
+        sender: "U1".into(),
+        sender_name: Some("Alice".into()),
+        sender_avatar_url: None,
+        body: Some("hello thread".into()),
+        timestamp: 1_776_936_528,
+        synced_at: None,
+        is_archived: false,
+        reply_to_id: None,
+        media_type: None,
+        metadata: None,
+        context_id: None,
+        context: None,
+    };
+    db.upsert_message(&msg).unwrap();
+
+    let found = db
+        .find_slack_message_by_link("C08UDH5JE57", "1776936528.857609")
+        .unwrap()
+        .expect("message should be found via Slack-native IDs");
+    assert_eq!(found.id, "slack-1776936528.857609");
+    assert_eq!(found.connection_id, "slack");
+    assert_eq!(found.body.as_deref(), Some("hello thread"));
+}
+
+#[test]
+fn find_slack_message_by_link_returns_none_when_channel_mismatches() {
+    let db = test_db();
+    // Same ts but different channel — must not match.
+    let conv = make_conversation("slack-CAAA", "slack", "CAAA");
+    db.upsert_conversation(&conv).unwrap();
+    let mut msg = make_message("m1", "slack-CAAA", "slack", "body", 1);
+    msg.external_id = "1776936528.857609".into();
+    db.upsert_message(&msg).unwrap();
+
+    let found = db
+        .find_slack_message_by_link("CBBB", "1776936528.857609")
+        .unwrap();
+    assert!(found.is_none(), "ts must be scoped to its channel");
+}
+
+#[test]
+fn find_slack_message_by_link_skips_other_connectors() {
+    let db = test_db();
+    // An imaginary non-slack row with the same ids should be ignored.
+    let mut conv = make_conversation("gmail-X", "gmail-acct", "CX");
+    conv.connector = "gmail".into();
+    db.upsert_conversation(&conv).unwrap();
+    let mut msg = make_message("m1", "gmail-X", "gmail-acct", "body", 1);
+    msg.connector = "gmail".into();
+    msg.external_id = "1776936528.857609".into();
+    db.upsert_message(&msg).unwrap();
+
+    let found = db
+        .find_slack_message_by_link("CX", "1776936528.857609")
+        .unwrap();
+    assert!(found.is_none());
+}
+
+#[test]
+fn find_slack_conversation_by_link_resolves_across_connections() {
+    let db = test_db();
+    let conv = make_conversation("weird-name-C1", "weird-name", "C08UDH5JE57");
+    db.upsert_conversation(&conv).unwrap();
+
+    let found = db
+        .find_slack_conversation_by_link("C08UDH5JE57")
+        .unwrap()
+        .expect("should resolve channel by its Slack external_id");
+    assert_eq!(found.id, "weird-name-C1");
+    assert_eq!(found.connection_id, "weird-name");
+}
+
 #[test]
 fn update_message_metadata_merges_json() {
     let db = test_db();

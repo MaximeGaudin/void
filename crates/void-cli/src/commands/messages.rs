@@ -31,23 +31,29 @@ pub fn run(args: &MessagesArgs, enrich_context: bool) -> anyhow::Result<()> {
     let db = Database::open(&cfg.db_path())?;
     let formatter = OutputFormatter::new();
 
-    match resolve_messages_target(&args.target) {
+    match resolve_messages_target(&db, &args.target)? {
         MessagesTarget::Link {
             message_id,
-            conversation_id,
+            conversation_id: _,
         } => {
             let msg = db
                 .get_message(&message_id)?
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Message not found for link (id: {message_id}, conversation: {conversation_id})"
-                    )
-                })?;
+                .ok_or_else(|| anyhow::anyhow!("Message vanished after lookup: {message_id}"))?;
             let mut messages = vec![msg];
             if enrich_context {
                 db.enrich_with_context(&mut messages)?;
             }
             formatter.print_messages(&messages)
+        }
+        MessagesTarget::UnresolvedSlackLink {
+            channel_id,
+            message_ts,
+            workspace,
+        } => {
+            anyhow::bail!(
+                "Slack message not found locally for link (workspace: {workspace}, channel: {channel_id}, ts: {message_ts}). \
+                The channel may not be synced yet, or the specific message hasn't been fetched — try `void sync` first."
+            )
         }
         MessagesTarget::ConversationId(conv_id) => {
             let since = args.since.as_deref().and_then(parse_date_to_ts);

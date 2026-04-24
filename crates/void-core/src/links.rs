@@ -1,13 +1,23 @@
 /// Parsed components from a Slack message permalink.
 ///
 /// URL format: `https://{workspace}.slack.com/archives/{channel_id}/p{ts_no_dot}`
+///
+/// NOTE: `workspace` is the Slack workspace subdomain from the URL. It is
+/// **not** safe to assume this matches the void `connection_id` — the
+/// connection is user-named in `config.toml` and routinely differs (e.g.
+/// `slack`, `work-slack`). To resolve a link to a stored message, look up
+/// the (channel_id, message_ts) pair via
+/// `Database::find_slack_message_by_link` rather than constructing IDs from
+/// the subdomain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlackLink {
-    /// Workspace subdomain, which typically matches the void connection_id.
+    /// Workspace subdomain — informational only, do not use for DB keys.
     pub workspace: String,
-    /// Slack channel / conversation ID (e.g. `D09R63ASNEL`).
+    /// Slack channel / conversation ID (e.g. `D09R63ASNEL`). This is the
+    /// value stored in `conversations.external_id`.
     pub channel_id: String,
     /// Slack message timestamp in dot notation (e.g. `1773903727.112369`).
+    /// This is the value stored in `messages.external_id`.
     pub message_ts: String,
 }
 
@@ -34,7 +44,6 @@ impl SlackLink {
         }
 
         let ts_raw = ts_part.strip_prefix('p')?;
-        // Strip query string / fragment if present
         let ts_raw = ts_raw.split(&['?', '#'][..]).next().unwrap_or(ts_raw);
         let message_ts = slack_ts_to_dot(ts_raw)?;
 
@@ -43,16 +52,6 @@ impl SlackLink {
             channel_id: channel_id.to_string(),
             message_ts,
         })
-    }
-
-    /// The void internal message ID: `{workspace}-{message_ts}`.
-    pub fn to_message_id(&self) -> String {
-        format!("{}-{}", self.workspace, self.message_ts)
-    }
-
-    /// The void conversation ID: `{workspace}-{channel_id}`.
-    pub fn to_conversation_id(&self) -> String {
-        format!("{}-{}", self.workspace, self.channel_id)
     }
 }
 
@@ -89,8 +88,19 @@ mod tests {
         assert_eq!(link.workspace, "gladiaio");
         assert_eq!(link.channel_id, "D09R63ASNEL");
         assert_eq!(link.message_ts, "1773903727.112369");
-        assert_eq!(link.to_message_id(), "gladiaio-1773903727.112369");
-        assert_eq!(link.to_conversation_id(), "gladiaio-D09R63ASNEL");
+    }
+
+    #[test]
+    fn parse_link_with_thread_ts_query() {
+        // Real-world URL style: message inside a thread, with `thread_ts` and
+        // `cid` query parameters. Must still resolve to the reply's own ts.
+        let link = SlackLink::parse(
+            "https://gladiaio.slack.com/archives/C08UDH5JE57/p1776936528857609?thread_ts=1776932503.025469&cid=C08UDH5JE57",
+        )
+        .unwrap();
+        assert_eq!(link.workspace, "gladiaio");
+        assert_eq!(link.channel_id, "C08UDH5JE57");
+        assert_eq!(link.message_ts, "1776936528.857609");
     }
 
     #[test]

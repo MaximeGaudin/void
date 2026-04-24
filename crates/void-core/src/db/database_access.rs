@@ -243,6 +243,29 @@ impl Database {
         messages::find_by_external_id(&*self.conn()?, connection_id, external_id)
     }
 
+    /// Resolve a Slack permalink to a stored message.
+    ///
+    /// Looks up by the Slack-native `(channel external_id, message ts)` pair,
+    /// which is globally unique and independent of the void connection ID.
+    /// This is necessary because the Slack workspace subdomain from the URL
+    /// does not have to match the configured `connection_id`.
+    pub fn find_slack_message_by_link(
+        &self,
+        channel_external_id: &str,
+        message_ts: &str,
+    ) -> Result<Option<Message>, DbError> {
+        messages::find_by_slack_link(&*self.conn()?, channel_external_id, message_ts)
+    }
+
+    /// Resolve a Slack channel/DM from its native `external_id`, searching
+    /// across all Slack connections.
+    pub fn find_slack_conversation_by_link(
+        &self,
+        channel_external_id: &str,
+    ) -> Result<Option<Conversation>, DbError> {
+        messages::find_slack_conversation_by_external_id(&*self.conn()?, channel_external_id)
+    }
+
     /// Populate the `context` field on each message by fetching all messages sharing the same `context_id`.
     pub fn enrich_with_context(&self, messages: &mut [Message]) -> Result<(), DbError> {
         messages::enrich_with_context(&*self.conn()?, messages)
