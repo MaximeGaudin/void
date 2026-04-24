@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Hooks** — Added per-hook `allowed_tools` (custom `--allowedTools` list) and `dangerously_skip_permissions` (pass `--dangerously-skip-permissions`) fields so hooks can run commands beyond the built-in `Bash(void *),Bash(date *),Bash(echo *)` allow-list. Defaults remain unchanged.
 
+### Fixed
+
+- **Hooks** — When an agent exits non-zero with an empty stderr (e.g. Claude rate-limit rejections), the error surfaced on the console and in logs was blank. The executor now parses the stream-json stdout and extracts the final `result` / `rate_limit_event` record, so failures show something like `claude exited with exit status: 1: [HTTP 429, rate_limit=five_hour] You've hit your limit …`.
+
 ## [0.6.0] - 2026-04-23
 
 ### Added

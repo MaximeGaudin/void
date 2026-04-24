@@ -1,3 +1,4 @@
+use crate::hooks::execute::extract_error_from_stream;
 use crate::hooks::hook_fs::{
     delete_hook, find_hook, load_hooks, save_hook, slugify, update_hook_enabled,
 };
@@ -87,6 +88,44 @@ fn hook_permissions_roundtrip() {
         Some(&["Bash(curl *)".to_string(), "Bash(void *)".to_string()][..])
     );
     assert!(parsed.dangerously_skip_permissions);
+}
+
+#[test]
+fn extract_error_from_stream_rate_limit_result() {
+    let stream = r#"{"type":"system","subtype":"init"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour"}}
+{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"result":"You've hit your limit · resets 6:20pm","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour"}}
+"#;
+    let err = extract_error_from_stream(stream).expect("should extract error");
+    assert!(err.contains("HTTP 429"), "missing status tag: {err}");
+    assert!(
+        err.contains("rate_limit=five_hour"),
+        "missing rate_limit tag: {err}"
+    );
+    assert!(err.contains("resets 6:20pm"), "missing body: {err}");
+}
+
+#[test]
+fn extract_error_from_stream_no_error() {
+    let stream = r#"{"type":"system","subtype":"init"}
+{"type":"result","subtype":"success","is_error":false,"result":"all good"}
+"#;
+    assert!(extract_error_from_stream(stream).is_none());
+}
+
+#[test]
+fn extract_error_from_stream_rate_limit_event_fallback() {
+    let stream = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour"}}
+"#;
+    let err = extract_error_from_stream(stream).expect("should extract fallback");
+    assert!(err.contains("rate limited"), "missing prefix: {err}");
+    assert!(err.contains("five_hour"), "missing type: {err}");
+}
+
+#[test]
+fn extract_error_from_stream_empty() {
+    assert!(extract_error_from_stream("").is_none());
+    assert!(extract_error_from_stream("not json\n").is_none());
 }
 
 #[test]
