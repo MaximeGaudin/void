@@ -4,7 +4,7 @@ use tracing::{error, info};
 
 use crate::models::Message;
 
-use super::super::execute::execute_hook_blocking;
+use super::super::execute::{execute_hook_blocking, HookExecOptions};
 use super::super::model::{HookLogInsert, Trigger};
 use super::super::placeholders::expand_placeholders;
 use super::HookRunner;
@@ -36,6 +36,10 @@ impl HookRunner {
             let msg_id = msg.id.clone();
             let connector = msg.connector.clone();
             let agent = hook.agent.clone();
+            let exec_opts = HookExecOptions {
+                allowed_tools: hook.allowed_tools.clone(),
+                dangerously_skip_permissions: hook.dangerously_skip_permissions,
+            };
             let sem = Arc::clone(&sem);
             let db = self.db.clone();
 
@@ -54,7 +58,7 @@ impl HookRunner {
                 let start = std::time::Instant::now();
 
                 let outcome = tokio::task::spawn_blocking(move || {
-                    execute_hook_blocking(&agent, &prompt, max_turns)
+                    execute_hook_blocking(&agent, &prompt, max_turns, &exec_opts)
                 })
                 .await;
 

@@ -169,6 +169,8 @@ fn cmd_create(
         enabled: true,
         max_turns,
         agent: agent.to_string(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
         trigger,
         prompt: PromptConfig { text: prompt_text },
     };
@@ -231,7 +233,11 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
         hook.name, hook.agent, hook.max_turns
     );
 
-    let exec = hooks::execute_hook_public(&hook.agent, &prompt, hook.max_turns)?;
+    let exec_opts = hooks::HookExecOptions {
+        allowed_tools: hook.allowed_tools.clone(),
+        dangerously_skip_permissions: hook.dangerously_skip_permissions,
+    };
+    let exec = hooks::execute_hook_public(&hook.agent, &prompt, hook.max_turns, &exec_opts)?;
     if exec.success {
         println!("{}", exec.result_summary);
     } else {

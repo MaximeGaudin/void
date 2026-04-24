@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hooks** — Added per-hook `allowed_tools` (custom `--allowedTools` list) and `dangerously_skip_permissions` (pass `--dangerously-skip-permissions`) fields so hooks can run commands beyond the built-in `Bash(void *),Bash(date *),Bash(echo *)` allow-list. Defaults remain unchanged.
+
 ## [0.6.0] - 2026-04-23
 
 ### Added

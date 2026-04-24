@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use super::super::execute::execute_hook_blocking;
+use super::super::execute::{execute_hook_blocking, HookExecOptions};
 use super::super::model::{HookLogInsert, Trigger};
 use super::super::placeholders::expand_placeholders;
 use super::HookRunner;
@@ -76,6 +76,10 @@ impl HookRunner {
                     let max_turns = hook.max_turns;
                     let name = hook_name.clone();
                     let agent = hook.agent.clone();
+                    let exec_opts = HookExecOptions {
+                        allowed_tools: hook.allowed_tools.clone(),
+                        dangerously_skip_permissions: hook.dangerously_skip_permissions,
+                    };
 
                     eprintln!("[hook] ▶ {} (scheduled) executing", name);
                     info!(hook = %name, "executing scheduled hook");
@@ -83,7 +87,7 @@ impl HookRunner {
                     let start = std::time::Instant::now();
 
                     let outcome = tokio::task::spawn_blocking(move || {
-                        execute_hook_blocking(&agent, &prompt, max_turns)
+                        execute_hook_blocking(&agent, &prompt, max_turns, &exec_opts)
                     })
                     .await;
 

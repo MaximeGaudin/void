@@ -39,6 +39,17 @@ pub struct Hook {
     pub max_turns: usize,
     #[serde(default = "default_agent")]
     pub agent: String,
+    /// Custom `--allowedTools` list passed to the agent CLI. When `None`, the
+    /// built-in safe default (`Bash(void *),Bash(date *),Bash(echo *)`) is
+    /// used. Each entry is forwarded verbatim (e.g. `Bash(curl *)`, `Read`,
+    /// `Write`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    /// When true, pass `--dangerously-skip-permissions` to the agent so the
+    /// hook can run any command without prompting. Use only for trusted
+    /// prompts you fully control.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dangerously_skip_permissions: bool,
     pub trigger: Trigger,
     pub prompt: PromptConfig,
 }
@@ -62,6 +73,10 @@ pub struct PromptConfig {
 
 pub(crate) fn default_true() -> bool {
     true
+}
+
+pub(crate) fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 pub(crate) fn default_max_turns() -> usize {

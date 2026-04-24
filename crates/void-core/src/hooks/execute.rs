@@ -7,25 +7,52 @@ pub struct HookExecResult {
     pub error: Option<String>,
 }
 
+/// Runtime configuration for a single hook execution.
+#[derive(Debug, Clone, Default)]
+pub struct HookExecOptions {
+    /// Custom `--allowedTools` entries. When `None`, the built-in safe default
+    /// is used. Ignored when `dangerously_skip_permissions` is true.
+    pub allowed_tools: Option<Vec<String>>,
+    /// When true, pass `--dangerously-skip-permissions` and omit `--allowedTools`.
+    pub dangerously_skip_permissions: bool,
+}
+
+/// Default allow-list when a hook does not override it.
+const DEFAULT_ALLOWED_TOOLS: &str = "Bash(void *),Bash(date *),Bash(echo *)";
+
 pub fn execute_hook_public(
     agent: &str,
     prompt: &str,
     max_turns: usize,
+    opts: &HookExecOptions,
 ) -> anyhow::Result<HookExecResult> {
-    execute_hook_blocking(agent, prompt, max_turns)
+    execute_hook_blocking(agent, prompt, max_turns, opts)
 }
 
 pub(crate) fn execute_hook_blocking(
     agent: &str,
     prompt: &str,
     max_turns: usize,
+    opts: &HookExecOptions,
 ) -> anyhow::Result<HookExecResult> {
     let mut cmd = std::process::Command::new(agent);
     cmd.args(["-p", prompt]);
     cmd.args(["--verbose"]);
     cmd.args(["--output-format", "stream-json"]);
     cmd.args(["--max-turns", &max_turns.to_string()]);
-    cmd.args(["--allowedTools", "Bash(void *),Bash(date *),Bash(echo *)"]);
+
+    if opts.dangerously_skip_permissions {
+        cmd.arg("--dangerously-skip-permissions");
+    } else {
+        let allowed = opts
+            .allowed_tools
+            .as_ref()
+            .filter(|list| !list.is_empty())
+            .map(|list| list.join(","))
+            .unwrap_or_else(|| DEFAULT_ALLOWED_TOOLS.to_string());
+        cmd.args(["--allowedTools", &allowed]);
+    }
+
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());

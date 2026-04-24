@@ -27,6 +27,8 @@ fn hook_roundtrip() {
         enabled: true,
         max_turns: 5,
         agent: "claude".into(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage {
             connector: Some("gmail".into()),
         },
@@ -41,6 +43,8 @@ fn hook_roundtrip() {
     assert!(
         matches!(parsed.trigger, Trigger::NewMessage { connector: Some(ref c) } if c == "gmail")
     );
+    assert!(parsed.allowed_tools.is_none());
+    assert!(!parsed.dangerously_skip_permissions);
 }
 
 #[test]
@@ -50,6 +54,8 @@ fn schedule_hook_roundtrip() {
         enabled: true,
         max_turns: 10,
         agent: "claude".into(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
         trigger: Trigger::Schedule {
             cron: "0 9 * * 1-5".into(),
         },
@@ -60,6 +66,50 @@ fn schedule_hook_roundtrip() {
     let toml_str = toml::to_string_pretty(&hook).unwrap();
     let parsed: Hook = toml::from_str(&toml_str).unwrap();
     assert!(matches!(parsed.trigger, Trigger::Schedule { ref cron } if cron == "0 9 * * 1-5"));
+}
+
+#[test]
+fn hook_permissions_roundtrip() {
+    let hook = Hook {
+        name: "Permissive".into(),
+        enabled: true,
+        max_turns: 3,
+        agent: "claude".into(),
+        allowed_tools: Some(vec!["Bash(curl *)".into(), "Bash(void *)".into()]),
+        dangerously_skip_permissions: true,
+        trigger: Trigger::NewMessage { connector: None },
+        prompt: PromptConfig { text: "x".into() },
+    };
+    let toml_str = toml::to_string_pretty(&hook).unwrap();
+    let parsed: Hook = toml::from_str(&toml_str).unwrap();
+    assert_eq!(
+        parsed.allowed_tools.as_deref(),
+        Some(&["Bash(curl *)".to_string(), "Bash(void *)".to_string()][..])
+    );
+    assert!(parsed.dangerously_skip_permissions);
+}
+
+#[test]
+fn hook_permissions_default_omitted_in_toml() {
+    let hook = Hook {
+        name: "Default".into(),
+        enabled: true,
+        max_turns: 1,
+        agent: "claude".into(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
+        trigger: Trigger::NewMessage { connector: None },
+        prompt: PromptConfig { text: "x".into() },
+    };
+    let toml_str = toml::to_string_pretty(&hook).unwrap();
+    assert!(
+        !toml_str.contains("allowed_tools"),
+        "expected allowed_tools to be omitted when None, got:\n{toml_str}"
+    );
+    assert!(
+        !toml_str.contains("dangerously_skip_permissions"),
+        "expected dangerously_skip_permissions to be omitted when false, got:\n{toml_str}"
+    );
 }
 
 #[test]
@@ -114,6 +164,8 @@ fn save_and_load_hook() {
         enabled: true,
         max_turns: 3,
         agent: "claude".into(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "test".into(),
@@ -134,6 +186,8 @@ fn delete_hook_works() {
         enabled: true,
         max_turns: 3,
         agent: "claude".into(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "test".into(),
@@ -154,6 +208,8 @@ fn find_hook_works() {
         enabled: true,
         max_turns: 2,
         agent: "claude".into(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "prompt".into(),
@@ -174,6 +230,8 @@ fn update_hook_enabled_toggles() {
         enabled: true,
         max_turns: 1,
         agent: "claude".into(),
+        allowed_tools: None,
+        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig { text: "x".into() },
     };
