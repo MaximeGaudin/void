@@ -189,6 +189,31 @@ impl SlackApiClient {
         .await
     }
 
+    /// Fetch replies for a single thread.  Slack returns the parent message
+    /// first, followed by all replies. Pagination via `cursor` is supported.
+    pub async fn conversations_replies(
+        &self,
+        channel_id: &str,
+        thread_ts: &str,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<ConversationsHistoryResponse, SlackError> {
+        let mut params: Vec<(&str, String)> = vec![
+            ("channel", channel_id.to_string()),
+            ("ts", thread_ts.to_string()),
+            ("limit", limit.to_string()),
+        ];
+        if let Some(c) = cursor {
+            params.push(("cursor", c.to_string()));
+        }
+        self.get_with_retry(
+            &format!("{}/conversations.replies", self.base_url),
+            &params,
+            "conversations.replies",
+        )
+        .await
+    }
+
     pub async fn get_single_message(
         &self,
         channel_id: &str,
@@ -600,12 +625,27 @@ pub struct SlackMessage {
     #[serde(rename = "type")]
     pub msg_type: Option<String>,
     pub subtype: Option<String>,
+    /// Number of thread replies. Present (and > 0) on thread parents when
+    /// returned by `conversations.history`. Absent on replies themselves.
+    #[serde(default)]
+    pub reply_count: Option<u32>,
     #[serde(default)]
     pub reactions: Vec<SlackReaction>,
     #[serde(default)]
     pub files: Vec<SlackFile>,
     #[serde(default)]
     pub attachments: Vec<SlackAttachment>,
+}
+
+impl SlackMessage {
+    /// `true` iff this message is the head of a thread with replies.
+    /// `conversations.history` returns thread parents with
+    /// `thread_ts == ts` and `reply_count > 0`; the replies themselves are
+    /// only exposed via `conversations.replies`.
+    pub fn is_thread_parent_with_replies(&self) -> bool {
+        matches!(self.thread_ts.as_deref(), Some(tts) if tts == self.ts)
+            && self.reply_count.unwrap_or(0) > 0
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

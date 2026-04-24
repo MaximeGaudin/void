@@ -164,6 +164,56 @@ impl SlackConnector {
             }
 
             if !all_messages.is_empty() {
+                // For every thread parent with replies, pull the replies too.
+                // `conversations.history` returns only the parent; without
+                // this step, messages like `p...ts...` deep inside threads
+                // would never land in the local DB.
+                let thread_parents: Vec<String> = all_messages
+                    .iter()
+                    .filter(|m| m.is_thread_parent_with_replies())
+                    .map(|m| m.ts.clone())
+                    .collect();
+                for thread_ts in &thread_parents {
+                    let mut reply_cursor: Option<String> = None;
+                    let mut reply_page = 0;
+                    let reply_max_pages = 10;
+                    loop {
+                        match self
+                            .api
+                            .conversations_replies(
+                                &conv.id,
+                                thread_ts,
+                                200,
+                                reply_cursor.as_deref(),
+                            )
+                            .await
+                        {
+                            Ok(resp) => {
+                                // Skip the parent (already in `all_messages`).
+                                for msg in resp.messages.into_iter().filter(|m| m.ts != *thread_ts)
+                                {
+                                    all_messages.push(msg);
+                                }
+                                reply_page += 1;
+                                reply_cursor = resp
+                                    .response_metadata
+                                    .and_then(|m| m.next_cursor)
+                                    .filter(|c| !c.is_empty());
+                                if reply_cursor.is_none()
+                                    || !resp.has_more.unwrap_or(false)
+                                    || reply_page >= reply_max_pages
+                                {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                warn!(channel_id = %conv.id, thread_ts, "{label}: failed to fetch replies: {e}");
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 let mut mapped: Vec<Message> = all_messages
                     .iter()
                     .filter_map(|msg| {

@@ -227,6 +227,253 @@ async fn backfill_stores_conversations_and_messages() {
 }
 
 #[tokio::test]
+async fn backfill_fetches_thread_replies() {
+    // Regression: `conversations.history` only returns thread parents.
+    // Thread replies must be fetched separately via `conversations.replies`
+    // or they'll never make it into the local DB, and permalinks to them
+    // (like `https://ws.slack.com/archives/C1/p<reply_ts>`) won't resolve.
+    let server = wiremock::MockServer::start().await;
+
+    let users = serde_json::json!({"ok": true, "members": []});
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/users.list"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+        .mount(&server)
+        .await;
+
+    let channels = serde_json::json!({
+        "ok": true,
+        "channels": [
+            {
+                "id": "C1",
+                "name": "general",
+                "is_channel": true,
+                "is_group": false,
+                "is_im": false,
+                "is_mpim": false,
+                "is_private": false
+            }
+        ]
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.list"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channels))
+        .mount(&server)
+        .await;
+
+    // History returns a parent with `reply_count > 0` — reply ts is NOT in
+    // this response.
+    let history = serde_json::json!({
+        "ok": true,
+        "messages": [
+            {
+                "ts": "1776932503.025469",
+                "user": "U1",
+                "text": "thread parent",
+                "thread_ts": "1776932503.025469",
+                "reply_count": 2
+            }
+        ]
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.history"))
+        .and(wiremock::matchers::query_param("channel", "C1"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+        .mount(&server)
+        .await;
+
+    let replies = serde_json::json!({
+        "ok": true,
+        "messages": [
+            {
+                "ts": "1776932503.025469",
+                "user": "U1",
+                "text": "thread parent",
+                "thread_ts": "1776932503.025469",
+                "reply_count": 2
+            },
+            {
+                "ts": "1776936528.857609",
+                "user": "U2",
+                "text": "reply one",
+                "thread_ts": "1776932503.025469"
+            },
+            {
+                "ts": "1776937000.111111",
+                "user": "U2",
+                "text": "reply two",
+                "thread_ts": "1776932503.025469"
+            }
+        ]
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.replies"))
+        .and(wiremock::matchers::query_param("channel", "C1"))
+        .and(wiremock::matchers::query_param("ts", "1776932503.025469"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(replies))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let connector = SlackConnector {
+        connection_id: "test-slack".to_string(),
+        api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
+        app_token: "xapp-test".to_string(),
+        app_id: None,
+        store_path: std::env::temp_dir(),
+    };
+
+    let db = void_core::db::Database::open_in_memory().unwrap();
+    connector.backfill(&db).await.unwrap();
+
+    // Both the parent and the replies should be persisted.
+    assert!(
+        db.get_message("test-slack-1776932503.025469")
+            .unwrap()
+            .is_some(),
+        "parent should be stored"
+    );
+    let reply1 = db
+        .get_message("test-slack-1776936528.857609")
+        .unwrap()
+        .expect("thread reply must be fetched via conversations.replies");
+    assert_eq!(reply1.body.as_deref(), Some("reply one"));
+    assert!(db
+        .get_message("test-slack-1776937000.111111")
+        .unwrap()
+        .is_some());
+
+    // And the URL resolver should now find the reply by Slack-native IDs.
+    let msg = db
+        .find_slack_message_by_link("C1", "1776936528.857609")
+        .unwrap()
+        .expect("link-based lookup should resolve the reply");
+    assert_eq!(msg.id, "test-slack-1776936528.857609");
+}
+
+#[tokio::test]
+async fn backfill_skips_replies_fetch_when_no_thread_parents() {
+    // Messages without replies must not trigger any conversations.replies
+    // call (wasteful API usage + rate-limit risk).
+    let server = wiremock::MockServer::start().await;
+
+    let users = serde_json::json!({"ok": true, "members": []});
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/users.list"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+        .mount(&server)
+        .await;
+
+    let channels = serde_json::json!({
+        "ok": true,
+        "channels": [
+            {"id": "C1", "name": "g", "is_channel": true, "is_group": false,
+             "is_im": false, "is_mpim": false, "is_private": false}
+        ]
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.list"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channels))
+        .mount(&server)
+        .await;
+
+    // One flat message, no replies.
+    let history = serde_json::json!({
+        "ok": true,
+        "messages": [
+            {"ts": "1700000000.000100", "user": "U1", "text": "flat"}
+        ]
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.history"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+        .mount(&server)
+        .await;
+
+    // conversations.replies must NOT be hit.
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.replies"))
+        .respond_with(wiremock::ResponseTemplate::new(500))
+        .expect(0)
+        .named("no replies call")
+        .mount(&server)
+        .await;
+
+    let connector = SlackConnector {
+        connection_id: "test-slack".to_string(),
+        api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
+        app_token: "xapp-test".to_string(),
+        app_id: None,
+        store_path: std::env::temp_dir(),
+    };
+
+    let db = void_core::db::Database::open_in_memory().unwrap();
+    connector.backfill(&db).await.unwrap();
+}
+
+#[test]
+fn slack_message_detects_thread_parent() {
+    let parent = crate::api::SlackMessage {
+        ts: "123.456".into(),
+        user: None,
+        text: None,
+        thread_ts: Some("123.456".into()),
+        msg_type: None,
+        subtype: None,
+        reply_count: Some(3),
+        reactions: vec![],
+        files: vec![],
+        attachments: vec![],
+    };
+    assert!(parent.is_thread_parent_with_replies());
+
+    let reply = crate::api::SlackMessage {
+        ts: "124.001".into(),
+        user: None,
+        text: None,
+        thread_ts: Some("123.456".into()),
+        msg_type: None,
+        subtype: None,
+        reply_count: None,
+        reactions: vec![],
+        files: vec![],
+        attachments: vec![],
+    };
+    assert!(
+        !reply.is_thread_parent_with_replies(),
+        "replies have thread_ts != ts"
+    );
+
+    let flat = crate::api::SlackMessage {
+        ts: "200.000".into(),
+        user: None,
+        text: None,
+        thread_ts: None,
+        msg_type: None,
+        subtype: None,
+        reply_count: None,
+        reactions: vec![],
+        files: vec![],
+        attachments: vec![],
+    };
+    assert!(!flat.is_thread_parent_with_replies());
+
+    let zero_replies = crate::api::SlackMessage {
+        ts: "300.000".into(),
+        user: None,
+        text: None,
+        thread_ts: Some("300.000".into()),
+        msg_type: None,
+        subtype: None,
+        reply_count: Some(0),
+        reactions: vec![],
+        files: vec![],
+        attachments: vec![],
+    };
+    assert!(!zero_replies.is_thread_parent_with_replies());
+}
+
+#[tokio::test]
 async fn backfill_saves_done_state() {
     let server = wiremock::MockServer::start().await;
 
