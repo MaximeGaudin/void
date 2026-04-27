@@ -10,9 +10,13 @@ pub struct HookExecResult {
 /// Runtime configuration for a single hook execution.
 #[derive(Debug, Clone, Default)]
 pub struct HookExecOptions {
-    /// Override the agent's default model via `--model <name>`. When `None`,
-    /// no `--model` flag is passed and the agent picks its own default.
-    pub model: Option<String>,
+    /// Extra CLI arguments forwarded verbatim to the agent process, inserted
+    /// after the framework-managed flags (`-p`, `--verbose`, `--output-format`,
+    /// `--max-turns`) and before any permissions handling. Use this to pass
+    /// agent-specific flags such as `--model sonnet` for Claude. Each entry
+    /// is appended as a single argv slot (no shell splitting), so a flag
+    /// with a value becomes two entries: `["--model", "sonnet"]`.
+    pub extra_args: Vec<String>,
     /// Custom `--allowedTools` entries. When `None`, the built-in safe default
     /// is used. Ignored when `dangerously_skip_permissions` is true.
     pub allowed_tools: Option<Vec<String>>,
@@ -44,8 +48,8 @@ pub(crate) fn execute_hook_blocking(
     cmd.args(["--output-format", "stream-json"]);
     cmd.args(["--max-turns", &max_turns.to_string()]);
 
-    if let Some(model) = opts.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
-        cmd.args(["--model", model]);
+    if !opts.extra_args.is_empty() {
+        cmd.args(&opts.extra_args);
     }
 
     if opts.dangerously_skip_permissions {

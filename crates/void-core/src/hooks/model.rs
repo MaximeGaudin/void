@@ -39,13 +39,17 @@ pub struct Hook {
     pub max_turns: usize,
     #[serde(default = "default_agent")]
     pub agent: String,
-    /// Override the agent's default model via `--model <name>` (e.g.
-    /// `sonnet`, `opus`, or a full slug). When `None`, the agent picks its
-    /// own default — for Claude that is currently Opus with the 1M context,
-    /// which is heavily rate-limited. Setting this to `sonnet` is usually
-    /// enough for short triage hooks.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+    /// Extra CLI arguments forwarded verbatim to the agent process. Each
+    /// entry is appended as a single argv slot (no shell splitting), so a
+    /// flag with a value becomes two entries.
+    ///
+    /// Example (Claude): `extra_args = ["--model", "sonnet"]` to pin a
+    /// cheaper, less rate-limited model than the agent default.
+    ///
+    /// Flag spellings are agent-specific — `void` does not interpret these
+    /// arguments, it just forwards them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_args: Vec<String>,
     /// Custom `--allowedTools` list passed to the agent CLI. When `None`, the
     /// built-in safe default (`Bash(void *),Bash(date *),Bash(echo *)`) is
     /// used. Each entry is forwarded verbatim (e.g. `Bash(curl *)`, `Read`,
