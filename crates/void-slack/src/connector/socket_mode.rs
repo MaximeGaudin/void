@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use void_core::db::Database;
-use void_core::models::Message;
+use void_core::models::{Conversation, ConversationKind, Message};
 
 use crate::connector::mapping::{map_conversation, parse_ts, CachedUser};
 use crate::connector::SlackConnector;
@@ -334,13 +334,13 @@ impl SlackConnector {
 
         let conv_id = format!("{}-{}", self.connection_id, channel_id);
 
-        if self
+        let conv = match self
             .ensure_conversation_exists(db, channel_id, &conv_id, user_cache)
             .await
-            .is_err()
         {
-            return;
-        }
+            Ok(c) => c,
+            Err(_) => return,
+        };
 
         let thread_ts = event.get("thread_ts").and_then(|v| v.as_str());
         let context_id = thread_ts.map(|tts| format!("{}-thread-{tts}", self.connection_id));
@@ -353,12 +353,16 @@ impl SlackConnector {
 
         let timestamp = parse_ts(ts).unwrap_or(0);
 
-        let metadata = file_metadata.map(|files| {
-            serde_json::json!({
-                "channel_id": channel_id,
-                "files": files,
-            })
-        });
+        // Build full metadata so downstream consumers (CLI, hooks) always see
+        // `channel_name` / `channel_kind` regardless of whether the message
+        // arrived via real-time WebSocket or backfill. Files (when present)
+        // are merged into the same object.
+        let metadata = Some(build_socket_metadata(
+            &conv,
+            channel_id,
+            thread_ts,
+            file_metadata,
+        ));
 
         let mut message = Message {
             id: format!("{}-{}", self.connection_id, ts),
@@ -385,11 +389,9 @@ impl SlackConnector {
 
         match db.upsert_message(&message) {
             Ok(_) => {
-                let conv_name = db
-                    .get_conversation(&conv_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|c| c.name)
+                let conv_name = conv
+                    .name
+                    .clone()
                     .unwrap_or_else(|| channel_id.to_string());
                 let time = chrono::DateTime::from_timestamp(timestamp, 0)
                     .map(|utc| utc.with_timezone(&chrono::Local))
@@ -416,15 +418,20 @@ impl SlackConnector {
         }
     }
 
+    /// Ensure the conversation row exists locally and return it.
+    ///
+    /// Callers need the local Conversation (name + kind) to build message
+    /// metadata, so we always read it back from the DB whether or not we had
+    /// to fetch from Slack first.
     async fn ensure_conversation_exists(
         &self,
         db: &Database,
         channel_id: &str,
         conv_id: &str,
         user_cache: &HashMap<String, CachedUser>,
-    ) -> anyhow::Result<()> {
-        if db.get_conversation(conv_id)?.is_some() {
-            return Ok(());
+    ) -> anyhow::Result<Conversation> {
+        if let Some(existing) = db.get_conversation(conv_id)? {
+            return Ok(existing);
         }
 
         debug!(
@@ -436,7 +443,7 @@ impl SlackConnector {
                 let conversation = map_conversation(&slack_conv, &self.connection_id, user_cache);
                 db.upsert_conversation(&conversation)?;
                 debug!(conv_id, "created conversation from Socket Mode event");
-                Ok(())
+                Ok(conversation)
             }
             Err(e) => {
                 eprintln!(
@@ -447,4 +454,35 @@ impl SlackConnector {
             }
         }
     }
+}
+
+/// Build the metadata JSON attached to a message ingested via the WebSocket
+/// path. Always populates `channel_id`, `channel_name`, and `channel_kind`,
+/// merges `thread_ts` when the message is part of a thread, and embeds any
+/// file metadata when present.
+pub(crate) fn build_socket_metadata(
+    conv: &Conversation,
+    channel_id: &str,
+    thread_ts: Option<&str>,
+    files: Option<Vec<serde_json::Value>>,
+) -> serde_json::Value {
+    let channel_kind = match conv.kind {
+        ConversationKind::Dm => "dm",
+        ConversationKind::Group => "group_dm",
+        ConversationKind::Channel => "channel",
+        ConversationKind::Thread => "thread",
+    };
+    let channel_name = conv.name.as_deref().unwrap_or(channel_id);
+    let mut meta = serde_json::json!({
+        "channel_id": channel_id,
+        "channel_name": channel_name,
+        "channel_kind": channel_kind,
+    });
+    if let Some(tts) = thread_ts {
+        meta["thread_ts"] = serde_json::Value::String(tts.to_string());
+    }
+    if let Some(f) = files {
+        meta["files"] = serde_json::Value::Array(f);
+    }
+    meta
 }

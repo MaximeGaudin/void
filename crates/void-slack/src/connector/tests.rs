@@ -995,3 +995,90 @@ async fn start_sync_runs_catch_up_when_backfill_done() {
         .unwrap();
     assert_eq!(new_msg.body.as_deref(), Some("New message after restart"));
 }
+
+// ---- socket_mode metadata builder ----
+
+#[test]
+fn build_socket_metadata_channel_minimal() {
+    let conv = Conversation {
+        id: "slack-C1".into(),
+        connection_id: "slack".into(),
+        connector: "slack".into(),
+        external_id: "C1".into(),
+        name: Some("general".into()),
+        kind: ConversationKind::Channel,
+        last_message_at: None,
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    };
+    let meta = super::socket_mode::build_socket_metadata(&conv, "C1", None, None);
+    assert_eq!(meta["channel_id"], "C1");
+    assert_eq!(meta["channel_name"], "general");
+    assert_eq!(meta["channel_kind"], "channel");
+    assert!(meta.get("thread_ts").is_none());
+    assert!(meta.get("files").is_none());
+}
+
+#[test]
+fn build_socket_metadata_dm_with_thread() {
+    let conv = Conversation {
+        id: "slack-D1".into(),
+        connection_id: "slack".into(),
+        connector: "slack".into(),
+        external_id: "D1".into(),
+        name: Some("Alice".into()),
+        kind: ConversationKind::Dm,
+        last_message_at: None,
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    };
+    let meta = super::socket_mode::build_socket_metadata(
+        &conv,
+        "D1",
+        Some("1777282559.000100"),
+        None,
+    );
+    assert_eq!(meta["channel_kind"], "dm");
+    assert_eq!(meta["channel_name"], "Alice");
+    assert_eq!(meta["thread_ts"], "1777282559.000100");
+}
+
+#[test]
+fn build_socket_metadata_group_with_files() {
+    let conv = Conversation {
+        id: "slack-G1".into(),
+        connection_id: "slack".into(),
+        connector: "slack".into(),
+        external_id: "G1".into(),
+        name: Some("Squad".into()),
+        kind: ConversationKind::Group,
+        last_message_at: None,
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    };
+    let files = vec![serde_json::json!({"id": "F1", "name": "report.pdf"})];
+    let meta = super::socket_mode::build_socket_metadata(&conv, "G1", None, Some(files));
+    assert_eq!(meta["channel_kind"], "group_dm");
+    assert_eq!(meta["files"][0]["name"], "report.pdf");
+}
+
+#[test]
+fn build_socket_metadata_falls_back_to_channel_id_when_unnamed() {
+    let conv = Conversation {
+        id: "slack-C2".into(),
+        connection_id: "slack".into(),
+        connector: "slack".into(),
+        external_id: "C2".into(),
+        name: None,
+        kind: ConversationKind::Channel,
+        last_message_at: None,
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    };
+    let meta = super::socket_mode::build_socket_metadata(&conv, "C2", None, None);
+    assert_eq!(meta["channel_name"], "C2");
+}
