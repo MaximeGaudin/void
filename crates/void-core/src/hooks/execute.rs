@@ -10,22 +10,13 @@ pub struct HookExecResult {
 /// Runtime configuration for a single hook execution.
 #[derive(Debug, Clone, Default)]
 pub struct HookExecOptions {
-    /// Extra CLI arguments forwarded verbatim to the agent process, inserted
+    /// Extra CLI arguments forwarded verbatim to the agent process, appended
     /// after the framework-managed flags (`-p`, `--verbose`, `--output-format`,
-    /// `--max-turns`) and before any permissions handling. Use this to pass
-    /// agent-specific flags such as `--model sonnet` for Claude. Each entry
-    /// is appended as a single argv slot (no shell splitting), so a flag
-    /// with a value becomes two entries: `["--model", "sonnet"]`.
+    /// `--max-turns`). Each entry becomes a single argv slot (no shell
+    /// splitting). Use this to pass agent-specific flags — `void` does not
+    /// interpret the contents.
     pub extra_args: Vec<String>,
-    /// Custom `--allowedTools` entries. When `None`, the built-in safe default
-    /// is used. Ignored when `dangerously_skip_permissions` is true.
-    pub allowed_tools: Option<Vec<String>>,
-    /// When true, pass `--dangerously-skip-permissions` and omit `--allowedTools`.
-    pub dangerously_skip_permissions: bool,
 }
-
-/// Default allow-list when a hook does not override it.
-const DEFAULT_ALLOWED_TOOLS: &str = "Bash(void *),Bash(date *),Bash(echo *)";
 
 pub fn execute_hook_public(
     agent: &str,
@@ -50,18 +41,6 @@ pub(crate) fn execute_hook_blocking(
 
     if !opts.extra_args.is_empty() {
         cmd.args(&opts.extra_args);
-    }
-
-    if opts.dangerously_skip_permissions {
-        cmd.arg("--dangerously-skip-permissions");
-    } else {
-        let allowed = opts
-            .allowed_tools
-            .as_ref()
-            .filter(|list| !list.is_empty())
-            .map(|list| list.join(","))
-            .unwrap_or_else(|| DEFAULT_ALLOWED_TOOLS.to_string());
-        cmd.args(["--allowedTools", &allowed]);
     }
 
     cmd.stdin(std::process::Stdio::null());

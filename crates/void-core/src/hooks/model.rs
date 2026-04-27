@@ -43,24 +43,14 @@ pub struct Hook {
     /// entry is appended as a single argv slot (no shell splitting), so a
     /// flag with a value becomes two entries.
     ///
-    /// Example (Claude): `extra_args = ["--model", "sonnet"]` to pin a
-    /// cheaper, less rate-limited model than the agent default.
+    /// `void` does not interpret the contents — the hook author is expected
+    /// to know the target agent's CLI. Common examples for Claude:
     ///
-    /// Flag spellings are agent-specific — `void` does not interpret these
-    /// arguments, it just forwards them.
+    /// - `["--model", "sonnet"]` — pin a cheaper, less rate-limited model.
+    /// - `["--allowedTools", "Bash(void *),Bash(curl *)"]` — custom tool whitelist.
+    /// - `["--dangerously-skip-permissions"]` — skip all permission checks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_args: Vec<String>,
-    /// Custom `--allowedTools` list passed to the agent CLI. When `None`, the
-    /// built-in safe default (`Bash(void *),Bash(date *),Bash(echo *)`) is
-    /// used. Each entry is forwarded verbatim (e.g. `Bash(curl *)`, `Read`,
-    /// `Write`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allowed_tools: Option<Vec<String>>,
-    /// When true, pass `--dangerously-skip-permissions` to the agent so the
-    /// hook can run any command without prompting. Use only for trusted
-    /// prompts you fully control.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub dangerously_skip_permissions: bool,
     pub trigger: Trigger,
     pub prompt: PromptConfig,
 }
@@ -84,10 +74,6 @@ pub struct PromptConfig {
 
 pub(crate) fn default_true() -> bool {
     true
-}
-
-pub(crate) fn is_false(b: &bool) -> bool {
-    !*b
 }
 
 pub(crate) fn default_max_turns() -> usize {

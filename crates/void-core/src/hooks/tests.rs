@@ -29,8 +29,6 @@ fn hook_roundtrip() {
         max_turns: 5,
         agent: "claude".into(),
         extra_args: Vec::new(),
-        allowed_tools: None,
-        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage {
             connector: Some("gmail".into()),
         },
@@ -45,8 +43,7 @@ fn hook_roundtrip() {
     assert!(
         matches!(parsed.trigger, Trigger::NewMessage { connector: Some(ref c) } if c == "gmail")
     );
-    assert!(parsed.allowed_tools.is_none());
-    assert!(!parsed.dangerously_skip_permissions);
+    assert!(parsed.extra_args.is_empty());
 }
 
 #[test]
@@ -57,8 +54,6 @@ fn schedule_hook_roundtrip() {
         max_turns: 10,
         agent: "claude".into(),
         extra_args: Vec::new(),
-        allowed_tools: None,
-        dangerously_skip_permissions: false,
         trigger: Trigger::Schedule {
             cron: "0 9 * * 1-5".into(),
         },
@@ -72,28 +67,30 @@ fn schedule_hook_roundtrip() {
 }
 
 #[test]
-fn hook_permissions_roundtrip() {
+fn hook_extra_args_roundtrip() {
     let hook = Hook {
-        name: "Permissive".into(),
+        name: "WithArgs".into(),
         enabled: true,
         max_turns: 3,
         agent: "claude".into(),
-        extra_args: vec!["--model".into(), "sonnet".into()],
-        allowed_tools: Some(vec!["Bash(curl *)".into(), "Bash(void *)".into()]),
-        dangerously_skip_permissions: true,
+        extra_args: vec![
+            "--model".into(),
+            "sonnet".into(),
+            "--dangerously-skip-permissions".into(),
+        ],
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig { text: "x".into() },
     };
     let toml_str = toml::to_string_pretty(&hook).unwrap();
+    assert!(toml_str.contains("extra_args"), "extra_args must be present:\n{toml_str}");
     let parsed: Hook = toml::from_str(&toml_str).unwrap();
     assert_eq!(
-        parsed.allowed_tools.as_deref(),
-        Some(&["Bash(curl *)".to_string(), "Bash(void *)".to_string()][..])
-    );
-    assert!(parsed.dangerously_skip_permissions);
-    assert_eq!(
         parsed.extra_args,
-        vec!["--model".to_string(), "sonnet".to_string()]
+        vec![
+            "--model".to_string(),
+            "sonnet".to_string(),
+            "--dangerously-skip-permissions".to_string(),
+        ]
     );
 }
 
@@ -136,27 +133,17 @@ fn extract_error_from_stream_empty() {
 }
 
 #[test]
-fn hook_permissions_default_omitted_in_toml() {
+fn hook_extra_args_omitted_when_empty() {
     let hook = Hook {
         name: "Default".into(),
         enabled: true,
         max_turns: 1,
         agent: "claude".into(),
         extra_args: Vec::new(),
-        allowed_tools: None,
-        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig { text: "x".into() },
     };
     let toml_str = toml::to_string_pretty(&hook).unwrap();
-    assert!(
-        !toml_str.contains("allowed_tools"),
-        "expected allowed_tools to be omitted when None, got:\n{toml_str}"
-    );
-    assert!(
-        !toml_str.contains("dangerously_skip_permissions"),
-        "expected dangerously_skip_permissions to be omitted when false, got:\n{toml_str}"
-    );
     assert!(
         !toml_str.contains("extra_args"),
         "expected extra_args to be omitted when empty, got:\n{toml_str}"
@@ -216,8 +203,6 @@ fn save_and_load_hook() {
         max_turns: 3,
         agent: "claude".into(),
         extra_args: Vec::new(),
-        allowed_tools: None,
-        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "test".into(),
@@ -239,8 +224,6 @@ fn delete_hook_works() {
         max_turns: 3,
         agent: "claude".into(),
         extra_args: Vec::new(),
-        allowed_tools: None,
-        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "test".into(),
@@ -262,8 +245,6 @@ fn find_hook_works() {
         max_turns: 2,
         agent: "claude".into(),
         extra_args: Vec::new(),
-        allowed_tools: None,
-        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig {
             text: "prompt".into(),
@@ -285,8 +266,6 @@ fn update_hook_enabled_toggles() {
         max_turns: 1,
         agent: "claude".into(),
         extra_args: Vec::new(),
-        allowed_tools: None,
-        dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
         prompt: PromptConfig { text: "x".into() },
     };
