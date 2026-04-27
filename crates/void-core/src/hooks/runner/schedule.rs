@@ -77,6 +77,7 @@ impl HookRunner {
                     let name = hook_name.clone();
                     let agent = hook.agent.clone();
                     let exec_opts = HookExecOptions {
+                        model: hook.model.clone(),
                         allowed_tools: hook.allowed_tools.clone(),
                         dangerously_skip_permissions: hook.dangerously_skip_permissions,
                     };

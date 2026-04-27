@@ -169,6 +169,7 @@ fn cmd_create(
         enabled: true,
         max_turns,
         agent: agent.to_string(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger,
@@ -234,6 +235,7 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
     );
 
     let exec_opts = hooks::HookExecOptions {
+        model: hook.model.clone(),
         allowed_tools: hook.allowed_tools.clone(),
         dangerously_skip_permissions: hook.dangerously_skip_permissions,
     };

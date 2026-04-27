@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Hooks** — Added per-hook `allowed_tools` (custom `--allowedTools` list) and `dangerously_skip_permissions` (pass `--dangerously-skip-permissions`) fields so hooks can run commands beyond the built-in `Bash(void *),Bash(date *),Bash(echo *)` allow-list. Defaults remain unchanged.
+- **Hooks** — Added per-hook `model` field that maps to the agent's `--model` flag (e.g. `model = "sonnet"`), letting individual hooks opt out of the agent's default model (Claude Opus 1M is heavily rate-limited; Sonnet is plenty for short triage hooks).
 
 ### Fixed
 

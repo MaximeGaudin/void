@@ -28,6 +28,7 @@ fn hook_roundtrip() {
         enabled: true,
         max_turns: 5,
         agent: "claude".into(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage {
@@ -55,6 +56,7 @@ fn schedule_hook_roundtrip() {
         enabled: true,
         max_turns: 10,
         agent: "claude".into(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger: Trigger::Schedule {
@@ -76,6 +78,7 @@ fn hook_permissions_roundtrip() {
         enabled: true,
         max_turns: 3,
         agent: "claude".into(),
+        model: Some("sonnet".into()),
         allowed_tools: Some(vec!["Bash(curl *)".into(), "Bash(void *)".into()]),
         dangerously_skip_permissions: true,
         trigger: Trigger::NewMessage { connector: None },
@@ -88,6 +91,7 @@ fn hook_permissions_roundtrip() {
         Some(&["Bash(curl *)".to_string(), "Bash(void *)".to_string()][..])
     );
     assert!(parsed.dangerously_skip_permissions);
+    assert_eq!(parsed.model.as_deref(), Some("sonnet"));
 }
 
 #[test]
@@ -135,6 +139,7 @@ fn hook_permissions_default_omitted_in_toml() {
         enabled: true,
         max_turns: 1,
         agent: "claude".into(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
@@ -148,6 +153,10 @@ fn hook_permissions_default_omitted_in_toml() {
     assert!(
         !toml_str.contains("dangerously_skip_permissions"),
         "expected dangerously_skip_permissions to be omitted when false, got:\n{toml_str}"
+    );
+    assert!(
+        !toml_str.contains("model"),
+        "expected model to be omitted when None, got:\n{toml_str}"
     );
 }
 
@@ -203,6 +212,7 @@ fn save_and_load_hook() {
         enabled: true,
         max_turns: 3,
         agent: "claude".into(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
@@ -225,6 +235,7 @@ fn delete_hook_works() {
         enabled: true,
         max_turns: 3,
         agent: "claude".into(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
@@ -247,6 +258,7 @@ fn find_hook_works() {
         enabled: true,
         max_turns: 2,
         agent: "claude".into(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
@@ -269,6 +281,7 @@ fn update_hook_enabled_toggles() {
         enabled: true,
         max_turns: 1,
         agent: "claude".into(),
+        model: None,
         allowed_tools: None,
         dangerously_skip_permissions: false,
         trigger: Trigger::NewMessage { connector: None },
