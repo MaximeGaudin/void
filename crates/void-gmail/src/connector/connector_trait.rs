@@ -70,7 +70,7 @@ impl Connector for GmailConnector {
                             idle_secs = elapsed.as_secs(),
                             "Gmail sync was idle, refreshing inbox"
                         );
-                        eprintln!(
+                        void_core::status!(
                             "[gmail:{}] sync idle for {}s, refreshing inbox",
                             self.config_id,
                             elapsed.as_secs(),

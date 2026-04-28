@@ -80,7 +80,7 @@ impl HookRunner {
                         extra_args: hook.extra_args.clone(),
                     };
 
-                    eprintln!("[hook] ▶ {} (scheduled) executing", name);
+                    crate::status!("[hook] ▶ {} (scheduled) executing", name);
                     info!(hook = %name, "executing scheduled hook");
                     let started_at = chrono::Utc::now().timestamp();
                     let start = std::time::Instant::now();
@@ -96,7 +96,7 @@ impl HookRunner {
                         Ok(Ok(ref exec)) => {
                             let summary: String = exec.result_summary.chars().take(200).collect();
                             if exec.success {
-                                eprintln!(
+                                crate::status!(
                                     "[hook] ✓ {} completed in {:.1}s — {}",
                                     hook_name,
                                     duration_ms as f64 / 1000.0,
@@ -105,7 +105,7 @@ impl HookRunner {
                                 info!(hook = %hook_name, duration_ms, "scheduled hook completed: {summary}");
                             } else {
                                 let err = exec.error.as_deref().unwrap_or("unknown error");
-                                eprintln!(
+                                crate::status!(
                                     "[hook] ✗ {} failed in {:.1}s — {}",
                                     hook_name,
                                     duration_ms as f64 / 1000.0,
@@ -130,7 +130,7 @@ impl HookRunner {
                             }
                         }
                         Ok(Err(ref e)) => {
-                            eprintln!("[hook] ✗ {} crashed — {}", hook_name, e);
+                            crate::status!("[hook] ✗ {} crashed — {}", hook_name, e);
                             error!(hook = %hook_name, "scheduled hook error: {e}");
                             if let Some(ref db) = db {
                                 let err_str = e.to_string();
@@ -150,7 +150,7 @@ impl HookRunner {
                             }
                         }
                         Err(ref e) => {
-                            eprintln!("[hook] ✗ {} panicked — {}", hook_name, e);
+                            crate::status!("[hook] ✗ {} panicked — {}", hook_name, e);
                             error!(hook = %hook_name, "scheduled hook panicked: {e}");
                             if let Some(ref db) = db {
                                 let err_str = e.to_string();

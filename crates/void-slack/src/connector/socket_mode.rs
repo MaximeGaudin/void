@@ -60,7 +60,7 @@ impl SlackConnector {
                 }
             };
 
-            eprintln!("[slack:{}] Socket Mode connected", self.connection_id);
+            void_core::status!("[slack:{}] Socket Mode connected", self.connection_id);
             let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
             let mut last_activity = SystemTime::now();
@@ -82,7 +82,7 @@ impl SlackConnector {
                                     idle_secs = elapsed.as_secs(),
                                     "no WebSocket activity, forcing reconnect"
                                 );
-                                eprintln!(
+                                void_core::status!(
                                     "[slack:{}] no activity for {}s, forcing reconnect",
                                     self.connection_id,
                                     elapsed.as_secs(),
@@ -99,7 +99,7 @@ impl SlackConnector {
                                 let envelope: serde_json::Value = match serde_json::from_str(&text) {
                                     Ok(v) => v,
                                     Err(e) => {
-                                        eprintln!("[slack:{}] failed to parse frame: {}", self.connection_id, e);
+                                        void_core::status!("[slack:{}] failed to parse frame: {}", self.connection_id, e);
                                         continue;
                                     }
                                 };
@@ -109,17 +109,17 @@ impl SlackConnector {
                                 if let Some(envelope_id) = envelope.get("envelope_id").and_then(|v| v.as_str()) {
                                     let ack = serde_json::json!({"envelope_id": envelope_id});
                                     if let Err(e) = ws_tx.send(tungstenite::Message::Text(ack.to_string().into())).await {
-                                        eprintln!("[slack:{}] failed to send ack: {}", self.connection_id, e);
+                                        void_core::status!("[slack:{}] failed to send ack: {}", self.connection_id, e);
                                     }
                                 }
 
                                 match msg_type {
                                     "hello" => {
-                                        eprintln!("[slack:{}] Socket Mode handshake OK", self.connection_id);
+                                        void_core::status!("[slack:{}] Socket Mode handshake OK", self.connection_id);
                                     }
                                     "disconnect" => {
                                         let reason = envelope.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
-                                        eprintln!("[slack:{}] disconnect requested: {}", self.connection_id, reason);
+                                        void_core::status!("[slack:{}] disconnect requested: {}", self.connection_id, reason);
                                         break true;
                                     }
                                     "events_api" => {
@@ -128,7 +128,7 @@ impl SlackConnector {
                                         }
                                     }
                                     other => {
-                                        eprintln!("[slack:{}] unhandled envelope type: {}", self.connection_id, other);
+                                        void_core::status!("[slack:{}] unhandled envelope type: {}", self.connection_id, other);
                                     }
                                 }
                             }
@@ -136,15 +136,15 @@ impl SlackConnector {
                                 let _ = ws_tx.send(tungstenite::Message::Pong(_data)).await;
                             }
                             Some(Ok(tungstenite::Message::Close(reason))) => {
-                                eprintln!("[slack:{}] WebSocket closed by server: {:?}", self.connection_id, reason);
+                                void_core::status!("[slack:{}] WebSocket closed by server: {:?}", self.connection_id, reason);
                                 break true;
                             }
                             Some(Err(e)) => {
-                                eprintln!("[slack:{}] WebSocket error: {}", self.connection_id, e);
+                                void_core::status!("[slack:{}] WebSocket error: {}", self.connection_id, e);
                                 break true;
                             }
                             None => {
-                                eprintln!("[slack:{}] WebSocket stream ended", self.connection_id);
+                                void_core::status!("[slack:{}] WebSocket stream ended", self.connection_id);
                                 break true;
                             }
                             _ => {}
@@ -159,21 +159,21 @@ impl SlackConnector {
 
             if idle_timeout_triggered {
                 self.repair_event_subscriptions().await;
-
-                eprintln!(
-                    "[slack:{}] catching up missed messages during disconnection",
-                    self.connection_id
-                );
-                if let Err(e) = self.catch_up(db).await {
-                    warn!(
-                        connection_id = %self.connection_id,
-                        error = %e,
-                        "catch-up after stale connection failed"
-                    );
-                }
             }
 
-            eprintln!(
+            void_core::status!(
+                "[slack:{}] catching up missed messages before reconnecting",
+                self.connection_id
+            );
+            if let Err(e) = self.catch_up(db).await {
+                warn!(
+                    connection_id = %self.connection_id,
+                    error = %e,
+                    "catch-up after reconnect failed"
+                );
+            }
+
+            void_core::status!(
                 "[slack:{}] reconnecting Socket Mode in 2s...",
                 self.connection_id
             );
@@ -187,7 +187,7 @@ impl SlackConnector {
         if !token_path.exists() {
             return;
         }
-        eprintln!(
+        void_core::status!(
             "[slack:{}] re-verifying event subscriptions after stale connection",
             self.connection_id
         );
@@ -200,7 +200,7 @@ impl SlackConnector {
                 error = %e,
                 "event subscription repair failed after stale connection"
             );
-            eprintln!(
+            void_core::status!(
                 "[slack:{}] event subscription repair failed: {e}",
                 self.connection_id
             );
@@ -216,7 +216,7 @@ impl SlackConnector {
         let event = match payload.get("event") {
             Some(e) => e,
             None => {
-                eprintln!(
+                void_core::status!(
                     "[slack:{}] event payload has no 'event' field",
                     self.connection_id
                 );
@@ -226,9 +226,10 @@ impl SlackConnector {
 
         let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
         if event_type != "message" {
-            eprintln!(
+            void_core::status!(
                 "[slack:{}] event type '{}' (not message, skipping)",
-                self.connection_id, event_type
+                self.connection_id,
+                event_type
             );
             return;
         }
@@ -389,10 +390,7 @@ impl SlackConnector {
 
         match db.upsert_message(&message) {
             Ok(_) => {
-                let conv_name = conv
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| channel_id.to_string());
+                let conv_name = conv.name.clone().unwrap_or_else(|| channel_id.to_string());
                 let time = chrono::DateTime::from_timestamp(timestamp, 0)
                     .map(|utc| utc.with_timezone(&chrono::Local))
                     .map(|local| local.format("%Y-%m-%d %H:%M:%S %Z").to_string())
@@ -404,15 +402,21 @@ impl SlackConnector {
                     .chars()
                     .take(80)
                     .collect();
-                eprintln!(
+                void_core::status!(
                     "[slack:{}] {} {} — {}: {}",
-                    self.connection_id, time, conv_name, sender_name, preview
+                    self.connection_id,
+                    time,
+                    conv_name,
+                    sender_name,
+                    preview
                 );
             }
             Err(e) => {
-                eprintln!(
+                void_core::status!(
                     "[slack:{}] error storing message {}: {}",
-                    self.connection_id, ts, e
+                    self.connection_id,
+                    ts,
+                    e
                 );
             }
         }
@@ -446,9 +450,11 @@ impl SlackConnector {
                 Ok(conversation)
             }
             Err(e) => {
-                eprintln!(
+                void_core::status!(
                     "[slack:{}] failed to fetch conversation {}: {}",
-                    self.connection_id, channel_id, e
+                    self.connection_id,
+                    channel_id,
+                    e
                 );
                 Err(e.into())
             }

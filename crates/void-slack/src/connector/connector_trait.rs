@@ -50,7 +50,7 @@ impl Connector for SlackConnector {
                         error = %e,
                         "event subscription check failed (non-fatal, continuing sync)"
                     );
-                    eprintln!(
+                    void_core::status!(
                         "[slack:{}] Warning: event subscription check failed: {e}",
                         self.connection_id
                     );

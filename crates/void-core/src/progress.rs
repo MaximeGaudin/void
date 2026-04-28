@@ -105,7 +105,7 @@ impl BackfillProgress {
         }
 
         let body = parts.join(" · ");
-        eprintln!("[{}] {body}", self.connector);
+        crate::status!("[{}] {body}", self.connector);
     }
 
     fn estimate_remaining(&self, elapsed: f64) -> Option<f64> {
@@ -142,7 +142,7 @@ impl BackfillProgress {
         parts.push(format!("in {}", format_duration(elapsed)));
 
         let body = parts.join(" · ");
-        eprintln!("[{}] done · {body}", self.connector);
+        crate::status!("[{}] done · {body}", self.connector);
     }
 }
 

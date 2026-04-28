@@ -67,7 +67,7 @@ impl HookRunner {
                     Ok(Ok(ref exec)) => {
                         let summary: String = exec.result_summary.chars().take(200).collect();
                         if exec.success {
-                            eprintln!(
+                            crate::status!(
                                 "[hook] ✓ {} completed in {:.1}s — {}",
                                 hook_name,
                                 duration_ms as f64 / 1000.0,
@@ -76,7 +76,7 @@ impl HookRunner {
                             info!(hook = %hook_name, duration_ms, "hook completed: {summary}");
                         } else {
                             let err = exec.error.as_deref().unwrap_or("unknown error");
-                            eprintln!(
+                            crate::status!(
                                 "[hook] ✗ {} failed in {:.1}s — {}",
                                 hook_name,
                                 duration_ms as f64 / 1000.0,
@@ -101,7 +101,7 @@ impl HookRunner {
                         }
                     }
                     Ok(Err(ref e)) => {
-                        eprintln!("[hook] ✗ {} crashed — {}", hook_name, e);
+                        crate::status!("[hook] ✗ {} crashed — {}", hook_name, e);
                         error!(hook = %hook_name, "hook execution error: {e}");
                         if let Some(ref db) = db {
                             let err_str = e.to_string();
@@ -121,7 +121,7 @@ impl HookRunner {
                         }
                     }
                     Err(ref e) => {
-                        eprintln!("[hook] ✗ {} panicked — {}", hook_name, e);
+                        crate::status!("[hook] ✗ {} panicked — {}", hook_name, e);
                         error!(hook = %hook_name, "hook task panicked: {e}");
                         if let Some(ref db) = db {
                             let err_str = e.to_string();

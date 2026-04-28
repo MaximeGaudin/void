@@ -108,7 +108,7 @@ impl SlackConnector {
             .filter(|c| c.updated.map_or(true, |u| u >= oldest_secs))
             .collect();
 
-        eprintln!(
+        void_core::status!(
             "[slack:{}] {} — {}/{} conversations active since {}, fetching…",
             self.connection_id,
             label,

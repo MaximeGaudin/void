@@ -274,7 +274,7 @@ pub async fn ensure_event_subscriptions(
     update_manifest(&http, &rotated.token, app_id, &manifest).await?;
 
     if events_present {
-        eprintln!(
+        void_core::status!(
             "[slack:{connection_id}] Event subscriptions enforced (were present in manifest)"
         );
         info!(
@@ -282,7 +282,7 @@ pub async fn ensure_event_subscriptions(
             "event subscriptions enforced via manifest update"
         );
     } else {
-        eprintln!(
+        void_core::status!(
             "[slack:{connection_id}] Event subscriptions restored (were missing from manifest)"
         );
         info!(

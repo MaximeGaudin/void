@@ -40,7 +40,7 @@ pub(super) async fn run_sync(
         if let Err(e) = backfill_dialogs(client, db, connection_id).await {
             warn!(connection_id, error = %e, "telegram backfill failed");
         }
-        eprintln!("[telegram:{connection_id}] listening for new messages");
+        void_core::status!("[telegram:{connection_id}] listening for new messages");
     };
 
     let updates_task = async {
@@ -227,7 +227,7 @@ async fn handle_new_message(
         .format("%Y-%m-%d %H:%M:%S %Z")
         .to_string();
     let direction = if msg.outgoing() { "sent" } else { "new" };
-    eprintln!(
+    void_core::status!(
         "[telegram:{connection_id}] {time} ({direction}) {conv_name} — {sender_name}: {preview}"
     );
 

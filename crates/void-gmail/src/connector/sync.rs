@@ -182,7 +182,7 @@ impl GmailConnector {
                                     .map(|local| local.format("%Y-%m-%d %H:%M:%S %Z").to_string())
                                     .unwrap_or_default();
                                 let direction = if is_sent { "sent" } else { "new" };
-                                eprintln!(
+                                void_core::status!(
                                     "[gmail:{}] {} ({direction}) {subject} — {sender}",
                                     self.display_connection_id(),
                                     time,

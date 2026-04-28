@@ -185,13 +185,13 @@ fn apply_ignore_rules(db: &Database, rules: &[(String, Vec<String>)]) {
     for (connection_id, patterns) in rules {
         match db.auto_mute_matching_conversations(connection_id, patterns) {
             Ok(n) if n > 0 => {
-                eprintln!(
+                void_core::status!(
                     "[{connection_id}] auto-muted {n} conversation(s) matching ignore patterns"
                 );
                 info!(connection_id, count = n, "auto-muted conversations");
             }
             Err(e) => {
-                eprintln!("[{connection_id}] failed to apply ignore patterns: {e}");
+                void_core::status!("[{connection_id}] failed to apply ignore patterns: {e}");
             }
             _ => {}
         }
