@@ -11,7 +11,7 @@
 #[macro_export]
 macro_rules! status {
     ($($arg:tt)*) => {{
-        let __ts = chrono::Utc::now().format("%H:%M:%S");
+        let __ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
         eprintln!("{__ts}  {}", format_args!($($arg)*));
     }};
 }
