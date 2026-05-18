@@ -94,6 +94,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     }
 
     let mut connectors: Vec<Arc<dyn void_core::connector::Connector>> = Vec::new();
+    let mut broken: Vec<String> = Vec::new();
 
     for connection in &cfg.connections {
         if let Some(ref filter) = connector_filter {
@@ -107,25 +108,44 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
             Ok(conn) => match conn.health_check().await {
                 Ok(status) if status.ok => connectors.push(conn),
                 Ok(status) => {
-                    eprintln!(
-                        "[warn] Skipping connection '{}' ({}): {}. Run `void setup` to authenticate.",
+                    let msg = format!(
+                        "Connection '{}' ({}) is broken: {}. Run `void setup` to fix.",
                         connection.id, connection.connector_type, status.message
                     );
+                    broken.push(msg);
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[warn] Skipping connection '{}' ({}): {e}. Run `void setup` to authenticate.",
+                    let msg = format!(
+                        "Connection '{}' ({}) is broken: {e}. Run `void setup` to fix.",
                         connection.id, connection.connector_type
                     );
+                    broken.push(msg);
                 }
             },
             Err(e) => {
-                eprintln!(
-                    "[warn] Skipping connection '{}' ({}): {e}",
+                let msg = format!(
+                    "Connection '{}' ({}) failed to build: {e}",
                     connection.id, connection.connector_type
                 );
+                broken.push(msg);
             }
         }
+    }
+
+    if !broken.is_empty() {
+        for msg in &broken {
+            eprintln!("[error] {msg}");
+        }
+        if !args.allow_broken {
+            anyhow::bail!(
+                "{} connector(s) failed health checks. Fix them with `void setup`, or pass --allow-broken to skip.",
+                broken.len()
+            );
+        }
+        eprintln!(
+            "[warn] --allow-broken: skipping {} broken connector(s)",
+            broken.len()
+        );
     }
 
     if connectors.is_empty() {

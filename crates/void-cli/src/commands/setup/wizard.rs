@@ -58,6 +58,7 @@ pub(crate) async fn exit_setup(cfg: &VoidConfig) -> anyhow::Result<()> {
                 restart: false,
                 clear: false,
                 clear_connector: None,
+                allow_broken: false,
                 stop: false,
                 status: false,
                 daemon_inner: false,

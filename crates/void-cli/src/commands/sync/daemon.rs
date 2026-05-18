@@ -144,6 +144,9 @@ pub fn daemonize(args: &super::SyncArgs, verbose: bool) -> anyhow::Result<()> {
     if let Some(ref clear_connector) = args.clear_connector {
         cmd.arg("--clear-connector").arg(clear_connector);
     }
+    if args.allow_broken {
+        cmd.arg("--allow-broken");
+    }
 
     cmd.current_dir(&store_path)
         .stdin(Stdio::null())
@@ -181,6 +184,7 @@ pub fn run_daemon_inner(args: &super::SyncArgs, verbose: bool) -> anyhow::Result
     let connectors = args.connectors.clone();
     let clear = args.clear;
     let clear_connector = args.clear_connector.clone();
+    let allow_broken = args.allow_broken;
 
     rt.block_on(async move {
         let log_level = if verbose { "debug" } else { "info" };
@@ -199,6 +203,7 @@ pub fn run_daemon_inner(args: &super::SyncArgs, verbose: bool) -> anyhow::Result
             restart: false,
             clear,
             clear_connector,
+            allow_broken,
             stop: false,
             status: false,
             daemon_inner: false,

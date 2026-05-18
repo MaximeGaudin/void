@@ -23,6 +23,9 @@ pub struct SyncArgs {
     /// Show sync daemon status and per-connector sync info
     #[arg(long)]
     pub status: bool,
+    /// Allow sync to skip broken connectors instead of failing
+    #[arg(long)]
+    pub allow_broken: bool,
     /// Internal: run sync process as detached child.
     #[arg(long, hide = true)]
     pub daemon_inner: bool,
