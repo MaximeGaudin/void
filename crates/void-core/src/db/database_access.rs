@@ -67,6 +67,14 @@ impl Database {
         conversations::find_by_name(&*self.conn()?, name, connector)
     }
 
+    pub fn find_conversations_by_name_contains(
+        &self,
+        name_substring: &str,
+        connector_filter: Option<&str>,
+    ) -> Result<Vec<Conversation>, DbError> {
+        conversations::find_by_name_contains(&*self.conn()?, name_substring, connector_filter)
+    }
+
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>, DbError> {
         conversations::get(&*self.conn()?, id)
     }

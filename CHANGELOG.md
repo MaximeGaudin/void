@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-19
+
+### Added
+
+- **LinkedIn** — New connector via the Unipile API: sync direct messages, send, reply, and download attachments (`void linkedin download`).
+- **LinkedIn** — Setup wizard and config fields (`api_key`, `dsn`, `account_id`); sync tuning via `linkedin_poll_interval_secs` and `linkedin_backfill_days` (default 15-day backfill).
+- **LinkedIn** — Resolved sender display names, profile URLs, and avatars from Unipile user/attendee APIs.
+- **CLI** — `void messages linkedin` / `void messages li` lists recent LinkedIn messages; contact names resolve to a conversation when unambiguous.
+- **Agent** — Void Agent prompt and tools updated for LinkedIn inbox, send, reply, and media download.
+
+### Fixed
+
+- **Search** — Full-text search no longer deduplicates by conversation context, so older messages in a thread remain findable after a newer reply.
+- **Search** — Conversation display names are included in search results alongside message body and sender name.
+
 ## [0.7.0] - 2026-05-18
 
 ### Added

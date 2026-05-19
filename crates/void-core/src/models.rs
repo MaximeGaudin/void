@@ -89,6 +89,7 @@ pub enum ConnectorType {
     Calendar,
     Telegram,
     HackerNews,
+    LinkedIn,
 }
 
 impl std::fmt::Display for ConnectorType {
@@ -100,6 +101,7 @@ impl std::fmt::Display for ConnectorType {
             Self::Calendar => write!(f, "calendar"),
             Self::Telegram => write!(f, "telegram"),
             Self::HackerNews => write!(f, "hackernews"),
+            Self::LinkedIn => write!(f, "linkedin"),
         }
     }
 }
@@ -114,6 +116,7 @@ impl ConnectorType {
             Self::Calendar => "CA",
             Self::Telegram => "TG",
             Self::HackerNews => "HN",
+            Self::LinkedIn => "LI",
         }
     }
 }
@@ -299,6 +302,7 @@ mod tests {
         assert_eq!(ConnectorType::Calendar.to_string(), "calendar");
         assert_eq!(ConnectorType::Telegram.to_string(), "telegram");
         assert_eq!(ConnectorType::HackerNews.to_string(), "hackernews");
+        assert_eq!(ConnectorType::LinkedIn.to_string(), "linkedin");
     }
 
     #[test]
@@ -309,6 +313,7 @@ mod tests {
         assert_eq!(ConnectorType::Calendar.badge(), "CA");
         assert_eq!(ConnectorType::Telegram.badge(), "TG");
         assert_eq!(ConnectorType::HackerNews.badge(), "HN");
+        assert_eq!(ConnectorType::LinkedIn.badge(), "LI");
     }
 
     #[test]

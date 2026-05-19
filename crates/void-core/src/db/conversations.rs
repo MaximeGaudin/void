@@ -127,6 +127,30 @@ pub(super) fn find_by_name(
     .map_err(Into::into)
 }
 
+pub(super) fn find_by_name_contains(
+    conn: &Connection,
+    name_substring: &str,
+    connector_filter: Option<&str>,
+) -> Result<Vec<Conversation>, DbError> {
+    let pattern = format!("%{}%", super::search::like_escape(name_substring));
+    let mut sql = String::from(
+        "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+         FROM conversations WHERE name LIKE ?1 ESCAPE '\\'",
+    );
+    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(pattern)];
+    if let Some(connector) = connector_filter {
+        sql.push_str(&format!(" AND connector = ?{}", param_values.len() + 1));
+        param_values.push(Box::new(connector.to_string()));
+    }
+    sql.push_str(" ORDER BY last_message_at DESC LIMIT 10");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(params_ref.as_slice(), row::row_to_conversation)?;
+    rows.collect::<Result<_, _>>().map_err(Into::into)
+}
+
 pub(super) fn get(conn: &Connection, id: &str) -> Result<Option<Conversation>, DbError> {
     conn.query_row(
         "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata

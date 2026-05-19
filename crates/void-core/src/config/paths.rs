@@ -66,6 +66,8 @@ path = "{}"
 gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
 hackernews_poll_interval_secs = 3600
+linkedin_poll_interval_secs = 1800
+linkedin_backfill_days = 15
 
 # Example connections (uncomment and fill in):
 #
@@ -103,6 +105,13 @@ hackernews_poll_interval_secs = 3600
 # type = "hackernews"
 # keywords = ["rust", "ai", "startup"]
 # min_score = 100
+#
+# [[connections]]
+# id = "linkedin"
+# type = "linkedin"
+# api_key = "your-unipile-api-key"
+# dsn = "https://api1.unipile.com:13111"
+# account_id = "your-unipile-account-id"
 "#,
         default_store_path_template()
     )

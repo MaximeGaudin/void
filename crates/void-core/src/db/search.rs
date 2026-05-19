@@ -25,6 +25,37 @@ pub fn fts5_escape(query: &str) -> String {
         .join(" ")
 }
 
+/// Escape `%`, `_`, and `\` for SQL `LIKE ... ESCAPE '\'` patterns.
+pub fn like_escape(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+/// Build `OR (conversation name contains every term)` for supplemental search.
+fn conversation_name_match_sql(terms: &[&str], next_param: usize) -> (String, Vec<String>) {
+    if terms.is_empty() {
+        return (String::new(), Vec::new());
+    }
+    let mut clause = String::from(" AND (");
+    for (i, _term) in terms.iter().enumerate() {
+        if i > 0 {
+            clause.push_str(" AND ");
+        }
+        clause.push_str(&format!(
+            "EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.name LIKE ?{} ESCAPE '\\')",
+            next_param + i
+        ));
+    }
+    clause.push(')');
+    let patterns = terms
+        .iter()
+        .map(|t| format!("%{}%", like_escape(t)))
+        .collect();
+    (clause, patterns)
+}
+
 impl Database {
     pub fn search_messages(
         &self,
@@ -57,6 +88,7 @@ impl Database {
         include_muted: bool,
         dedup_context: bool,
     ) -> Result<(Vec<Message>, i64), crate::error::DbError> {
+        let terms: Vec<&str> = query.split_whitespace().collect();
         let escaped = fts5_escape(query);
         let mut sql = String::from(
             "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.sender_avatar_url, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
@@ -101,23 +133,112 @@ impl Database {
             param_values.len() + 2
         ));
 
-        let conn = self.conn()?;
+        let (mut results, mut total) = {
+            let conn = self.conn()?;
 
+            let count_params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                param_values.iter().map(|p| p.as_ref()).collect();
+            let mut count_stmt = conn.prepare(&count_sql)?;
+            let total: i64 = count_stmt.query_row(count_params_ref.as_slice(), |row| row.get(0))?;
+            drop(count_stmt);
+
+            param_values.push(Box::new(limit));
+            param_values.push(Box::new(offset));
+
+            let mut stmt = conn.prepare(&sql)?;
+            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                param_values.iter().map(|p| p.as_ref()).collect();
+            let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
+            let results: Vec<Message> = rows.collect::<Result<_, _>>()?;
+            Ok::<_, crate::error::DbError>((results, total))
+        }?;
+
+        // FTS5 MATCH cannot be combined with OR in one WHERE clause; run a second
+        // query for conversation display names and merge (e.g. search "Aubin").
+        if !terms.is_empty() {
+            let (name_rows, name_total) = self.search_messages_by_conversation_name(
+                &terms,
+                connection_filter,
+                connector_filter,
+                include_muted,
+                dedup_context,
+            )?;
+            total += name_total;
+            let seen: std::collections::HashSet<String> =
+                results.iter().map(|m| m.id.clone()).collect();
+            for msg in name_rows {
+                if seen.contains(&msg.id) {
+                    continue;
+                }
+                results.push(msg);
+            }
+        }
+
+        debug!(query, result_count = results.len(), "search messages");
+        Ok((results, total))
+    }
+
+    /// Supplemental search: messages in conversations whose display name contains
+    /// every query term (case-sensitive `LIKE`).
+    fn search_messages_by_conversation_name(
+        &self,
+        terms: &[&str],
+        connection_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        include_muted: bool,
+        dedup_context: bool,
+    ) -> Result<(Vec<Message>, i64), crate::error::DbError> {
+        let (name_clause, name_patterns) = conversation_name_match_sql(terms, 1);
+        if name_clause.is_empty() {
+            return Ok((Vec::new(), 0));
+        }
+
+        let mut sql = format!(
+            "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.sender_avatar_url, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
+             FROM messages m
+             WHERE 1=1{name_clause}",
+        );
+        let mut count_sql = format!("SELECT COUNT(*) FROM messages m WHERE 1=1{name_clause}",);
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        for pattern in name_patterns {
+            param_values.push(Box::new(pattern));
+        }
+
+        if !include_muted {
+            let muted_clause = " AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.is_muted = 1)";
+            sql.push_str(muted_clause);
+            count_sql.push_str(muted_clause);
+        }
+        if dedup_context {
+            sql.push_str(DEDUP_CONTEXT_CLAUSE_ALIASED);
+            count_sql.push_str(DEDUP_CONTEXT_CLAUSE_ALIASED);
+        }
+        if let Some(acct) = connection_filter {
+            let pattern = format!("%{acct}%");
+            let clause = format!(" AND m.connection_id LIKE ?{}", param_values.len() + 1);
+            sql.push_str(&clause);
+            count_sql.push_str(&clause);
+            param_values.push(Box::new(pattern));
+        }
+        if let Some(conn_type) = connector_filter {
+            let clause = format!(" AND m.connector = ?{}", param_values.len() + 1);
+            sql.push_str(&clause);
+            count_sql.push_str(&clause);
+            param_values.push(Box::new(conn_type.to_string()));
+        }
+
+        let conn = self.conn()?;
         let count_params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         let mut count_stmt = conn.prepare(&count_sql)?;
         let total: i64 = count_stmt.query_row(count_params_ref.as_slice(), |row| row.get(0))?;
         drop(count_stmt);
 
-        param_values.push(Box::new(limit));
-        param_values.push(Box::new(offset));
-
         let mut stmt = conn.prepare(&sql)?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(params_ref.as_slice(), row::row_to_message)?;
         let results: Vec<Message> = rows.collect::<Result<_, _>>()?;
-        debug!(query, result_count = results.len(), "search messages");
         Ok((results, total))
     }
 }
@@ -248,5 +369,11 @@ mod tests {
     #[test]
     fn fts5_escape_preserves_multiple_spaces_as_single_separator() {
         assert_eq!(fts5_escape("hello    world"), "\"hello\" \"world\"");
+    }
+
+    #[test]
+    fn like_escape_wildcards() {
+        assert_eq!(like_escape("100%"), "100\\%");
+        assert_eq!(like_escape("a_b"), "a\\_b");
     }
 }

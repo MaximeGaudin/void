@@ -2,6 +2,8 @@ use void_core::db::Database;
 use void_core::links::SlackLink;
 use void_core::models::Message;
 
+use crate::output::resolve_connector_filter;
+
 /// Resolve a user-supplied identifier to a message.
 ///
 /// Accepts:
@@ -66,6 +68,8 @@ pub enum MessagesTarget {
     },
     /// A conversation to list messages from.
     ConversationId(String),
+    /// Recent messages for a connector (`void messages linkedin`, `void messages li`).
+    Connector { connector: String },
     /// A Slack permalink that could not be resolved (e.g. not yet synced, or
     /// the channel doesn't exist locally). Callers decide whether to fall
     /// back (list the channel) or surface an error.
@@ -94,7 +98,23 @@ pub fn resolve_messages_target(db: &Database, input: &str) -> anyhow::Result<Mes
         });
     }
 
-    Ok(MessagesTarget::ConversationId(input.to_string()))
+    if db.get_conversation(input)?.is_some() {
+        return Ok(MessagesTarget::ConversationId(input.to_string()));
+    }
+
+    if let Ok(Some(connector)) = resolve_connector_filter(Some(input)) {
+        return Ok(MessagesTarget::Connector { connector });
+    }
+
+    let matches = db.find_conversations_by_name_contains(input, None)?;
+    match matches.len() {
+        0 => Ok(MessagesTarget::ConversationId(input.to_string())),
+        1 => Ok(MessagesTarget::ConversationId(matches[0].id.clone())),
+        n => anyhow::bail!(
+            "Ambiguous conversation name \"{input}\" ({n} matches). Use the conversation id, e.g. {}",
+            matches[0].id
+        ),
+    }
 }
 
 #[cfg(test)]

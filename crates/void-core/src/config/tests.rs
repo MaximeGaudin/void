@@ -307,6 +307,42 @@ min_score = 50
 }
 
 #[test]
+fn sync_config_linkedin_defaults() {
+    let sync = SyncConfig::default();
+    assert_eq!(sync.linkedin_poll_interval_secs, 30 * 60);
+    assert_eq!(sync.linkedin_backfill_days, 15);
+}
+
+#[test]
+fn parse_linkedin_config() {
+    let toml = r#"
+[[connections]]
+id = "linkedin"
+type = "linkedin"
+api_key = "test-api-key"
+dsn = "https://api1.unipile.com:13111"
+account_id = "acc-123"
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    assert_eq!(
+        config.connections[0].connector_type,
+        ConnectorType::LinkedIn
+    );
+    match &config.connections[0].settings {
+        ConnectionSettings::LinkedIn {
+            api_key,
+            dsn,
+            account_id,
+        } => {
+            assert_eq!(api_key, "test-api-key");
+            assert_eq!(dsn, "https://api1.unipile.com:13111");
+            assert_eq!(account_id, "acc-123");
+        }
+        other => panic!("expected LinkedIn settings, got {other:?}"),
+    }
+}
+
+#[test]
 fn parse_hackernews_without_optional_fields() {
     let toml = r#"
 [[connections]]

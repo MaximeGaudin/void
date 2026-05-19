@@ -49,17 +49,17 @@ impl Tool for VoidCommandTool {
         ToolDefinition {
             name: "void_cli".to_string(),
             description: "Execute a void CLI command. Void is a unified communication CLI that \
-                manages Gmail, Slack, WhatsApp, Telegram, Google Calendar, and Hacker News. Pass the command WITHOUT \
+                manages Gmail, Slack, WhatsApp, Telegram, Google Calendar, LinkedIn, and Hacker News. Pass the command WITHOUT \
                 the 'void' prefix.\n\n\
                 AVAILABLE COMMANDS:\n\n\
                 INBOX & MESSAGES:\n\
-                - inbox [--connector gmail|slack|whatsapp|telegram|hackernews] [--connection <id>] [-n <max>] [--all] [--include-muted]\n\
+                - inbox [--connector gmail|slack|whatsapp|telegram|linkedin|hackernews] [--connection <id>] [-n <max>] [--all] [--include-muted]\n\
                 - messages <conversation-id> [-n <count>]\n\
                 - search \"<query>\" [--connector <c>] [-n <max>]\n\
                 - archive <id1> [<id2> ...]\n\
                 - mute <name> [--unmute] [--list]\n\n\
                 SENDING:\n\
-                - send --via <slack|gmail|telegram> --to \"<recipient>\" --message \"<text>\" [--file <path>] [--at \"<time>\"]\n\
+                - send --via <slack|gmail|telegram|linkedin> --to \"<recipient>\" --message \"<text>\" [--file <path>] [--at \"<time>\"]\n\
                   (Note: hackernews is read-only — no send/reply)\n\
                 - reply <message-id> --message \"<text>\" [--in-thread] [--file <path>] [--at \"<time>\"]\n\
                 - forward <message-id> --to \"<recipient>\" [--comment \"<text>\"]\n\n\
@@ -85,6 +85,8 @@ impl Tool for VoidCommandTool {
                 TELEGRAM:\n\
                 - telegram download <message-id> --out <path> [--connection <id>]\n\
                 - telegram forward <message-id> --to \"<chat-id-or-username>\" [--comment \"<text>\"] [--connection <id>]\n\n\
+                LINKEDIN:\n\
+                - linkedin download <message-id> --out <path> [--connection <id>]\n\n\
                 CALENDAR:\n\
                 - calendar [--day today|tomorrow|<date>] [--from <date> --to <date>] [--connection <id>]\n\
                 - calendar week [--connection <id>]\n\

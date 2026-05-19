@@ -3,7 +3,7 @@ pub mod output;
 
 use clap::{Parser, Subcommand};
 
-/// Void: unified communication CLI for WhatsApp, Telegram, Slack, Gmail, and Google Calendar
+/// Void: unified communication CLI for WhatsApp, Telegram, Slack, Gmail, Google Calendar, and LinkedIn
 #[derive(Debug, Parser)]
 #[command(name = "void", version, about)]
 struct Cli {
@@ -63,6 +63,8 @@ enum Command {
     Whatsapp(commands::whatsapp::WhatsAppArgs),
     /// Telegram-specific operations (media download, forward)
     Telegram(commands::telegram::TelegramArgs),
+    /// LinkedIn-specific operations (media download via Unipile)
+    Linkedin(commands::linkedin::LinkedInArgs),
     /// Calendar events
     Calendar(commands::calendar::CalendarArgs),
     /// Download files from Google Drive/Docs/Sheets/Slides
@@ -126,6 +128,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Slack(args)) => commands::slack::run(args).await,
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args).await,
         Some(Command::Telegram(args)) => commands::telegram::run(args).await,
+        Some(Command::Linkedin(args)) => commands::linkedin::run(args).await,
         Some(Command::Calendar(args)) => commands::calendar::run(args).await,
         Some(Command::Drive(args)) => commands::gdrive::run(args).await,
         Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,

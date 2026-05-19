@@ -148,5 +148,22 @@ fn build_reply_id(
         ConnectorType::Gmail => msg_external_id.to_string(),
         ConnectorType::Calendar => msg_external_id.to_string(),
         ConnectorType::HackerNews => msg_external_id.to_string(),
+        ConnectorType::LinkedIn => format!("{conv_external_id}:{msg_external_id}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_reply_id;
+    use void_core::models::ConnectorType;
+
+    #[test]
+    fn build_reply_id_linkedin_joins_conv_and_message_external_ids() {
+        let id = build_reply_id(
+            ConnectorType::LinkedIn,
+            "linkedin_linkedin_chat-abc",
+            "linkedin_linkedin_msg-xyz",
+        );
+        assert_eq!(id, "linkedin_linkedin_chat-abc:linkedin_linkedin_msg-xyz");
     }
 }

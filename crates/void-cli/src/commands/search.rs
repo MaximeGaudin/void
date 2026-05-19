@@ -34,6 +34,8 @@ pub fn run(args: &SearchArgs, enrich_context: bool) -> anyhow::Result<()> {
     let formatter = OutputFormatter::new();
     let offset = parse_page(args.size, args.page)?;
 
+    // Search must not dedupe by context_id: older thread matches would disappear
+    // once a newer reply exists (e.g. searching "trop bien" after you replied).
     let (mut messages, total_elements) = db.search_messages_paginated(
         &args.query,
         args.connection.as_deref(),
@@ -41,7 +43,7 @@ pub fn run(args: &SearchArgs, enrich_context: bool) -> anyhow::Result<()> {
         args.size,
         offset,
         args.include_muted,
-        enrich_context,
+        false,
     )?;
     if enrich_context {
         db.enrich_with_context(&mut messages)?;

@@ -91,6 +91,27 @@ pub fn build_connector(
                 ),
             ))
         }
+        (
+            ConnectorType::LinkedIn,
+            ConnectionSettings::LinkedIn {
+                api_key,
+                dsn,
+                account_id,
+            },
+        ) => {
+            let sync_cfg = void_core::config::VoidConfig::load_or_default(
+                &void_core::config::default_config_path(),
+            )
+            .sync;
+            Ok(Arc::new(void_linkedin::connector::LinkedInConnector::new(
+                &connection.id,
+                api_key,
+                dsn,
+                account_id,
+                sync_cfg.linkedin_poll_interval_secs,
+                sync_cfg.linkedin_backfill_days,
+            )))
+        }
         _ => anyhow::bail!(
             "Mismatched connector type and settings for '{}': type={}, settings don't match",
             connection.id,

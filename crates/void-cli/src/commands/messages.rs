@@ -74,6 +74,24 @@ pub fn run(args: &MessagesArgs, enrich_context: bool) -> anyhow::Result<()> {
             let meta = build_meta(args.page, args.size, total_elements);
             formatter.print_paginated(&messages, meta)
         }
+        MessagesTarget::Connector { connector } => {
+            let offset = parse_page(args.size, args.page)?;
+            let (mut messages, total_elements) = db.recent_messages_paginated(
+                None,
+                Some(&connector),
+                args.size,
+                offset,
+                true,
+                true,
+                enrich_context,
+            )?;
+            messages.reverse();
+            if enrich_context {
+                db.enrich_with_context(&mut messages)?;
+            }
+            let meta = build_meta(args.page, args.size, total_elements);
+            formatter.print_paginated(&messages, meta)
+        }
     }
 }
 

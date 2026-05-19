@@ -20,6 +20,14 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
         "  hackernews_poll_interval_secs = {}",
         cfg.sync.hackernews_poll_interval_secs
     );
+    eprintln!(
+        "  linkedin_poll_interval_secs   = {}",
+        cfg.sync.linkedin_poll_interval_secs
+    );
+    eprintln!(
+        "  linkedin_backfill_days        = {}",
+        cfg.sync.linkedin_backfill_days
+    );
     eprintln!();
 
     if cfg.connections.is_empty() {
@@ -71,6 +79,15 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                         eprintln!("    keywords:  {}", keywords.join(", "));
                     }
                     eprintln!("    min_score: {min_score}");
+                }
+                config::ConnectionSettings::LinkedIn {
+                    api_key,
+                    dsn,
+                    account_id,
+                } => {
+                    eprintln!("    api_key:    {}", config::redact_token(api_key));
+                    eprintln!("    dsn:        {dsn}");
+                    eprintln!("    account_id: {account_id}");
                 }
             }
         }

@@ -1550,6 +1550,63 @@ fn dedup_context_search_messages() {
 }
 
 #[test]
+fn search_without_dedup_returns_all_matching_context_messages() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message_with_context(
+        "m1",
+        "c1",
+        "test-slack",
+        "trop bien old",
+        1_000,
+        Some("ctx-Y"),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2",
+        "c1",
+        "test-slack",
+        "reply without phrase",
+        2_000,
+        Some("ctx-Y"),
+    ))
+    .unwrap();
+
+    let (rows, total) = db
+        .search_messages_paginated("trop bien", None, None, 50, 0, true, false)
+        .unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "m1");
+}
+
+#[test]
+fn search_matches_conversation_name() {
+    let db = test_db();
+    let mut conv = make_conversation("c1", "test-slack", "C123");
+    conv.name = Some("Aubin Rioufol".into());
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message_with_context(
+        "m1",
+        "c1",
+        "test-slack",
+        "see you soon",
+        1_000,
+        None,
+    ))
+    .unwrap();
+
+    let (rows, total) = db
+        .search_messages_paginated("Aubin", None, None, 50, 0, true, false)
+        .unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(rows[0].id, "m1");
+}
+
+#[test]
 fn dedup_context_same_timestamp_uses_id_tiebreak() {
     let db = test_db();
     let conv = make_conversation("c1", "test-slack", "C123");

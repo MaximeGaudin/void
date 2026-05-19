@@ -46,6 +46,17 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
                 keywords: raw.keywords.unwrap_or_default(),
                 min_score: raw.min_score.unwrap_or(0),
             },
+            ConnectorType::LinkedIn => ConnectionSettings::LinkedIn {
+                api_key: raw
+                    .api_key
+                    .ok_or_else(|| serde::de::Error::missing_field("api_key"))?,
+                dsn: raw
+                    .dsn
+                    .ok_or_else(|| serde::de::Error::missing_field("dsn"))?,
+                account_id: raw
+                    .account_id
+                    .ok_or_else(|| serde::de::Error::missing_field("account_id"))?,
+            },
         };
         Ok(ConnectionConfig {
             id: raw.id,
@@ -79,6 +90,12 @@ struct RawConnectionConfig {
     keywords: Option<Vec<String>>,
     #[serde(default)]
     min_score: Option<u32>,
+    #[serde(default)]
+    api_key: Option<String>,
+    #[serde(default)]
+    dsn: Option<String>,
+    #[serde(default)]
+    account_id: Option<String>,
     #[serde(default)]
     ignore_conversations: Option<Vec<String>>,
 }
@@ -114,5 +131,10 @@ pub enum ConnectionSettings {
         keywords: Vec<String>,
         #[serde(default)]
         min_score: u32,
+    },
+    LinkedIn {
+        api_key: String,
+        dsn: String,
+        account_id: String,
     },
 }

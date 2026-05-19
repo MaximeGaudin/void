@@ -7,6 +7,7 @@ pub(crate) mod connection_menu;
 mod gdrive;
 mod gmail;
 mod hackernews;
+mod linkedin;
 pub(crate) mod prompt;
 mod slack;
 mod telegram;

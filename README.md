@@ -1,6 +1,6 @@
 # Void CLI
 
-A unified command-line interface for interacting with WhatsApp, Telegram, Slack, Gmail, Google Calendar, Google Drive, and Hacker News from a single tool — plus an AI agent and LLM-powered hooks.
+A unified command-line interface for interacting with WhatsApp, Telegram, Slack, Gmail, Google Calendar, Google Drive, LinkedIn, and Hacker News from a single tool — plus an AI agent and LLM-powered hooks.
 
 ## Inbox Zero
 
@@ -36,7 +36,8 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │                          ├── void telegram forward  │
 │                          ├── void drive download    │
 │                          ├── void whatsapp download │
-│                          └── void telegram download │
+│                          ├── void telegram download │
+│                          └── void linkedin download │
 │                                                     │
 │  Sync daemon                                        │
 │  ├── WhatsApp (wa-rs WebSocket)                     │
@@ -44,6 +45,7 @@ Void runs a background sync daemon that continuously pulls messages and events f
 │  ├── Slack (Socket Mode WebSocket)                  │
 │  ├── Gmail (history.list polling)                   │
 │  ├── Calendar (syncToken polling)                   │
+│  ├── LinkedIn (Unipile API polling)                 │
 │  └── Hacker News (HN API polling)                   │
 └────────────────────────────────────────────────────┘
 ```
@@ -140,6 +142,7 @@ void calendar
 | `void whatsapp download <id>` | Download WhatsApp media |
 | `void telegram download <id>` | Download Telegram media |
 | `void telegram forward <id>` | Forward a Telegram message to another chat |
+| `void linkedin download <id>` | Download LinkedIn message media (via Unipile) |
 | `void calendar create` | Create a calendar event |
 | `void calendar search` | Search calendar events |
 | `void calendar respond <id>` | Accept/decline/tentative an invite |
@@ -184,7 +187,7 @@ void calendar
 
 | Flag | Description |
 |------|-------------|
-| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `hackernews` (alias: `hn`) |
+| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `linkedin` (alias: `li`), `hackernews` (alias: `hn`) |
 | `--connection <id>` | Filter by connection ID |
 | `-n` / `--size <N>` | Limit number of results (default: 50) |
 | `--all` | Include archived items |
@@ -211,6 +214,8 @@ path = "~/.local/share/void"
 gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
 hackernews_poll_interval_secs = 3600
+linkedin_poll_interval_secs = 1800
+linkedin_backfill_days = 15
 
 [[connections]]
 id = "whatsapp"
@@ -244,6 +249,13 @@ id = "hackernews"
 type = "hackernews"
 keywords = ["rust", "ai", "startup"]
 min_score = 100
+
+[[connections]]
+id = "linkedin"
+type = "linkedin"
+api_key = "your-unipile-api-key"
+dsn = "https://api1.unipile.com:13111"
+account_id = "your-unipile-account-id"
 ```
 
 ### `ignore_conversations`
@@ -282,6 +294,26 @@ Built-in OAuth2 credentials are included — no Google Cloud setup required:
 3. Complete the OAuth flow in your browser
 
 Gmail and Calendar share the same OAuth credentials.
+
+### LinkedIn (Unipile)
+
+LinkedIn messages are synced through the [Unipile](https://www.unipile.com/) API. You need a Unipile account with a connected LinkedIn profile.
+
+1. Sign up at [dashboard.unipile.com](https://dashboard.unipile.com)
+2. Connect your LinkedIn account in the Unipile dashboard
+3. Copy your **API key**, **DSN** (API base URL), and **account ID**
+4. Run `void setup`, select LinkedIn, and paste the credentials
+
+```toml
+[[connections]]
+id = "linkedin"
+type = "linkedin"
+api_key = "your-unipile-api-key"
+dsn = "https://api1.unipile.com:13111"
+account_id = "your-unipile-account-id"
+```
+
+Send messages with `void send --via linkedin --to <chat-id-or-linkedin-member-id> --message "..."`. For new conversations with a connection, use the recipient's LinkedIn provider ID (often starts with `ACo`). For existing chats, use the Unipile chat ID or void conversation external ID.
 
 ### Hacker News
 
@@ -333,6 +365,7 @@ crates/
   void-telegram/   # Telegram connector: grammers MTProto integration
   void-gdrive/     # Google Drive connector: download, export, metadata
   void-hackernews/ # Hacker News connector: keyword-filtered story monitoring
+  void-linkedin/  # LinkedIn connector: Unipile REST API integration
   void-agent/      # AI agent: LLM-powered interactive assistant with tool access
 ```
 
