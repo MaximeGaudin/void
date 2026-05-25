@@ -14,6 +14,13 @@ use crate::models::Message;
 const DEDUP_CONTEXT_CLAUSE: &str =
     " AND (context_id IS NULL OR id = (SELECT m2.id FROM messages m2 WHERE m2.context_id = messages.context_id ORDER BY m2.timestamp DESC, m2.id DESC LIMIT 1))";
 
+/// Variant that picks the latest *unarchived* message per thread. Without this,
+/// a thread whose newest message is archived becomes invisible in the inbox even
+/// if older unarchived messages exist (the global-latest wins dedup, then gets
+/// filtered out by `is_archived = 0`).
+const DEDUP_CONTEXT_CLAUSE_UNARCHIVED: &str =
+    " AND (context_id IS NULL OR id = (SELECT m2.id FROM messages m2 WHERE m2.context_id = messages.context_id AND m2.is_archived = 0 ORDER BY m2.timestamp DESC, m2.id DESC LIMIT 1))";
+
 /// Same clause but using `m.` alias (for JOINed queries like FTS search).
 pub(super) const DEDUP_CONTEXT_CLAUSE_ALIASED: &str =
     " AND (m.context_id IS NULL OR m.id = (SELECT m2.id FROM messages m2 WHERE m2.context_id = m.context_id ORDER BY m2.timestamp DESC, m2.id DESC LIMIT 1))";
@@ -203,7 +210,11 @@ pub(super) fn list_recent(
         );
     }
     if dedup_context {
-        sql.push_str(DEDUP_CONTEXT_CLAUSE);
+        if include_archived {
+            sql.push_str(DEDUP_CONTEXT_CLAUSE);
+        } else {
+            sql.push_str(DEDUP_CONTEXT_CLAUSE_UNARCHIVED);
+        }
     }
     if let Some(acct) = connection_filter {
         let pattern = format!("%{acct}%");
@@ -253,7 +264,11 @@ pub(super) fn count_recent(
         );
     }
     if dedup_context {
-        sql.push_str(DEDUP_CONTEXT_CLAUSE);
+        if include_archived {
+            sql.push_str(DEDUP_CONTEXT_CLAUSE);
+        } else {
+            sql.push_str(DEDUP_CONTEXT_CLAUSE_UNARCHIVED);
+        }
     }
     if let Some(acct) = connection_filter {
         let pattern = format!("%{acct}%");
