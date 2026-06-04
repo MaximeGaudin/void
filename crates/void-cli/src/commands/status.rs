@@ -1,26 +1,39 @@
-use void_core::config::{self, VoidConfig};
-use void_core::db::Database;
-
 pub fn run() {
     eprintln!("void v{}\n", env!("CARGO_PKG_VERSION"));
 
-    let config_path = config::default_config_path();
-    let cfg = match VoidConfig::load(&config_path) {
-        Ok(c) => c,
-        Err(_) => {
-            eprintln!("No config found. Run `void setup` to get started.");
-            eprintln!("Then add connections and run `void sync` to start syncing.\n");
-            eprintln!("Usage: void <command> [options]");
-            eprintln!("       void --help for all commands");
-            return;
+    let config_path = crate::context::client_config_path();
+    if !config_path.exists() {
+        eprintln!("No config found. Run `void setup` to get started.");
+        eprintln!("Then add connections and run `void sync` to start syncing.\n");
+        eprintln!("Usage: void <command> [options]");
+        eprintln!("       void --help for all commands");
+        return;
+    }
+
+    let cfg = crate::context::config();
+    let connections = cfg.connections.len();
+    let store_path = crate::context::store_path();
+    let mode = crate::context::mode_label();
+
+    let sync_label = if crate::context::is_remote() {
+        match crate::context::get().remote_status() {
+            Ok(status)
+                if status
+                    .get("remote_daemon_running")
+                    .and_then(|v| v.as_bool())
+                    == Some(true) =>
+            {
+                "running (remote)"
+            }
+            _ => "stopped (remote)",
         }
+    } else if store_path.join("LOCK").exists() {
+        "running"
+    } else {
+        "stopped"
     };
 
-    let connections = cfg.connections.len();
-    let store_path = cfg.store_path();
-    let lock_running = store_path.join("LOCK").exists();
-
-    if connections == 0 {
+    if connections == 0 && !crate::context::is_remote() {
         eprintln!(
             "No connections configured. Edit {} to add connections.",
             config_path.display()
@@ -28,13 +41,9 @@ pub fn run() {
         return;
     }
 
-    eprintln!(
-        "{} connection(s) | sync {}",
-        connections,
-        if lock_running { "running" } else { "stopped" }
-    );
+    eprintln!("store: {mode} | {connections} connection(s) | sync {sync_label}");
 
-    if let Ok(db) = Database::open(&cfg.db_path()) {
+    if let Ok(db) = crate::context::open_db() {
         let convs = db
             .list_conversations(None, None, 10000, true)
             .map(|c| c.len())
@@ -62,7 +71,9 @@ pub fn run() {
         }
     }
 
-    if !lock_running {
+    if !crate::context::is_remote() && !store_path.join("LOCK").exists() {
         eprintln!("\nRun `void sync` to start syncing messages.");
+    } else if crate::context::is_remote() {
+        eprintln!("\nUse `void remote status` for cache and SSH details.");
     }
 }

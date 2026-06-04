@@ -6,7 +6,7 @@ mod handlers;
 pub use args::*;
 
 use tracing::debug;
-use void_core::config::{self, expand_tilde, VoidConfig};
+use void_core::config::expand_tilde;
 use void_core::models::ConnectorType;
 
 pub async fn run(args: &GmailArgs) -> anyhow::Result<()> {
@@ -31,9 +31,7 @@ fn strip_void_id_prefix(id: &str) -> &str {
 fn build_gmail_connector(
     connection_filter: Option<&str>,
 ) -> anyhow::Result<void_gmail::connector::GmailConnector> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
     let connection = cfg
         .connections
@@ -58,7 +56,7 @@ fn build_gmail_connector(
     };
 
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     debug!(connection_id = %connection.id, "building Gmail connector for CLI");
     Ok(void_gmail::connector::GmailConnector::new(
         &connection.id,

@@ -22,8 +22,12 @@ pub enum ConfigError {
     TomlParse(#[from] toml::de::Error),
     #[error("TOML serialize error: {0}")]
     TomlSerialize(#[from] toml::ser::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("{0}")]
     Other(String),
+    #[error("Remote store error: {0}")]
+    Remote(String),
 }
 
 /// Hook errors

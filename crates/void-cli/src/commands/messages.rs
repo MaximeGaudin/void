@@ -1,7 +1,5 @@
 use clap::Args;
 use tracing::debug;
-use void_core::config::{self, VoidConfig};
-use void_core::db::Database;
 
 use super::pagination::{build_meta, parse_page};
 use super::resolve::{resolve_messages_target, MessagesTarget};
@@ -27,8 +25,8 @@ pub struct MessagesArgs {
 
 pub fn run(args: &MessagesArgs, enrich_context: bool) -> anyhow::Result<()> {
     debug!(target = %args.target, size = args.size, page = args.page, "messages");
-    let cfg = VoidConfig::load_or_default(&config::default_config_path());
-    let db = Database::open(&cfg.db_path())?;
+    let _cfg = crate::context::config();
+    let db = crate::context::open_db()?;
     let formatter = OutputFormatter::new();
 
     match resolve_messages_target(&db, &args.target)? {

@@ -465,8 +465,22 @@ impl Database {
         mute_sync::set_mute_by_external_id(&*self.conn()?, connection_id, external_id, is_muted)
     }
 
+    /// Sync conversation mute flags from config ignore patterns for one connection.
+    pub fn sync_ignore_conversations(
+        &self,
+        connection_id: &str,
+        patterns: &[String],
+    ) -> Result<(usize, usize), DbError> {
+        mute_sync::sync_ignore_conversations(&*self.conn()?, connection_id, patterns)
+    }
+
+    pub fn list_muted_conversations(&self) -> Result<Vec<crate::models::Conversation>, DbError> {
+        conversations::list_muted(&*self.conn()?)
+    }
+
     /// Auto-mute conversations matching the given patterns (case-insensitive
     /// substring on name or external_id). Returns number of newly muted conversations.
+    #[allow(dead_code)]
     pub fn auto_mute_matching_conversations(
         &self,
         connection_id: &str,

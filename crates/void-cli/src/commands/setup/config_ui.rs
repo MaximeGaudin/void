@@ -36,14 +36,24 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
         eprintln!("Connections ({}):", cfg.connections.len());
         for acc in &cfg.connections {
             eprintln!("  - {} ({})", acc.id, acc.connector_type);
+            if !acc.ignore_conversations.is_empty() {
+                eprintln!("    ignore_conversations: {:?}", acc.ignore_conversations);
+            }
             match &acc.settings {
                 config::ConnectionSettings::Slack {
                     app_token,
                     user_token,
-                    ..
+                    app_id,
+                    config_refresh_token,
                 } => {
                     eprintln!("    app_token:  {}", config::redact_token(app_token));
                     eprintln!("    user_token: {}", config::redact_token(user_token));
+                    if let Some(id) = app_id {
+                        eprintln!("    app_id:     {id}");
+                    }
+                    if let Some(token) = config_refresh_token {
+                        eprintln!("    config_refresh_token: {}", config::redact_token(token));
+                    }
                 }
                 config::ConnectionSettings::Gmail { credentials_file } => {
                     let label = credentials_file.as_deref().unwrap_or("(built-in)");

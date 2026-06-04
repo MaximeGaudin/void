@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use void_core::config::{self, VoidConfig};
 use void_core::db::Database;
 use void_core::hooks::{self, HookRunner};
 use void_core::sync::SyncEngine;
@@ -14,13 +13,7 @@ use crate::output::{resolve_connector_filter, resolve_connector_list};
 use super::SyncArgs;
 
 pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path).map_err(|e| {
-        anyhow::anyhow!(
-            "Cannot load config from {}: {e}\nRun `void setup` first.",
-            config_path.display()
-        )
-    })?;
+    let cfg = crate::context::config();
 
     if cfg.connections.is_empty() {
         anyhow::bail!("No connections configured. Add connections to your config.toml first.");
@@ -28,7 +21,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
 
     let connector_filter = resolve_connector_list(args.connectors.as_deref())?;
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     std::fs::create_dir_all(&store_path)?;
 
     if args.restart {
@@ -39,7 +32,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     }
 
     if args.clear {
-        let db_path = cfg.db_path();
+        let db_path = crate::context::store_path().join("void.db");
         if db_path.exists() {
             std::fs::remove_file(&db_path)?;
             eprintln!("Database cleared: {}", db_path.display());
@@ -47,7 +40,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         }
     }
 
-    let db = Arc::new(Database::open(&cfg.db_path())?);
+    let db = Arc::new(crate::context::open_db_writable()?);
 
     if let Some(ref connector_type) = args.clear_connector {
         let ct = resolve_connector_filter(Some(connector_type))?.ok_or_else(|| {
@@ -174,26 +167,23 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     let ignore_rules: Vec<(String, Vec<String>)> = cfg
         .connections
         .iter()
-        .filter(|c| !c.ignore_conversations.is_empty())
         .map(|c| (c.id.clone(), c.ignore_conversations.clone()))
         .collect();
 
-    if !ignore_rules.is_empty() {
-        apply_ignore_rules(&db, &ignore_rules);
+    apply_ignore_rules(&db, &ignore_rules);
 
-        let db_bg = Arc::clone(&db);
-        let cancel_bg = cancel.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(120));
-            interval.tick().await;
-            loop {
-                tokio::select! {
-                    _ = cancel_bg.cancelled() => break,
-                    _ = interval.tick() => apply_ignore_rules(&db_bg, &ignore_rules),
-                }
+    let db_bg = Arc::clone(&db);
+    let cancel_bg = cancel.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(120));
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                _ = cancel_bg.cancelled() => break,
+                _ = interval.tick() => apply_ignore_rules(&db_bg, &ignore_rules),
             }
-        });
-    }
+        }
+    });
 
     let engine = SyncEngine::new(connectors, db, &store_path, hook_runner);
     engine.run(cancel).await
@@ -201,12 +191,25 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
 
 fn apply_ignore_rules(db: &Database, rules: &[(String, Vec<String>)]) {
     for (connection_id, patterns) in rules {
-        match db.auto_mute_matching_conversations(connection_id, patterns) {
-            Ok(n) if n > 0 => {
-                void_core::status!(
-                    "[{connection_id}] auto-muted {n} conversation(s) matching ignore patterns"
+        match db.sync_ignore_conversations(connection_id, patterns) {
+            Ok((muted, unmuted)) if muted > 0 || unmuted > 0 => {
+                if muted > 0 && unmuted > 0 {
+                    void_core::status!(
+                        "[{connection_id}] synced mute list: {muted} muted, {unmuted} unmuted"
+                    );
+                } else if muted > 0 {
+                    void_core::status!(
+                        "[{connection_id}] synced mute list: {muted} conversation(s) muted"
+                    );
+                } else {
+                    void_core::status!(
+                        "[{connection_id}] synced mute list: {unmuted} conversation(s) unmuted"
+                    );
+                }
+                info!(
+                    connection_id,
+                    muted, unmuted, "synced conversation mute flags from config"
                 );
-                info!(connection_id, count = n, "auto-muted conversations");
             }
             Err(e) => {
                 void_core::status!("[{connection_id}] failed to apply ignore patterns: {e}");

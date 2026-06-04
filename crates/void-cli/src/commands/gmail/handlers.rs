@@ -1,6 +1,4 @@
-use void_core::config::{self, VoidConfig};
 use void_core::connector::Connector;
-use void_core::db::Database;
 
 use super::{
     build_gmail_connector, strip_void_id_prefix, AttachmentArgs, BatchModifyArgs, DraftAction,
@@ -267,11 +265,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
 }
 
 async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
-
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
 
     let msg = crate::commands::resolve::resolve_message(&db, &args.message_id)?;
     crate::commands::resolve::check_forward_connector(&args.message_id, &msg.connector, "gmail")?;

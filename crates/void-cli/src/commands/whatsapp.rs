@@ -1,7 +1,6 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, VoidConfig};
-use void_core::db::Database;
+use void_core::config::VoidConfig;
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -35,11 +34,9 @@ pub async fn run(args: &WhatsAppArgs) -> anyhow::Result<()> {
 }
 
 async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -73,7 +70,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("No media_type in metadata."))?;
 
-    let connector = build_wa_connector(args.connection.as_deref(), &cfg)?;
+    let connector = build_wa_connector(args.connection.as_deref(), cfg)?;
 
     eprintln!(
         "Downloading {} ({} bytes) from WhatsApp...",
@@ -112,7 +109,7 @@ fn build_wa_connector(
             anyhow::anyhow!("No WhatsApp connection found in config. Run `void setup` to add one.")
         })?;
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let session_db = store_path.join(format!("whatsapp-{}.db", connection.id));
     debug!(connection_id = %connection.id, "building WhatsApp connector for CLI");
     Ok(void_whatsapp::connector::WhatsAppConnector::new(

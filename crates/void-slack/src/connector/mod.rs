@@ -1,8 +1,11 @@
 //! Slack connector: struct, Connector trait impl, action methods.
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use anyhow::Context;
+
+use void_core::config::{default_config_path, ConnectionSettings, VoidConfig};
 
 use crate::api::SlackApiClient;
 use crate::error::SlackError;
@@ -24,7 +27,16 @@ pub struct SlackConnector {
     pub(crate) api: SlackApiClient,
     pub(crate) app_token: String,
     pub(crate) app_id: Option<String>,
+    pub(crate) config_refresh_token: Mutex<Option<String>>,
+    pub(crate) config_path: Option<PathBuf>,
     pub(crate) store_path: PathBuf,
+}
+
+fn is_invalid_refresh_token_err(result: &anyhow::Result<()>) -> bool {
+    result
+        .as_ref()
+        .err()
+        .is_some_and(|e| e.to_string().contains("invalid_refresh_token"))
 }
 
 impl SlackConnector {
@@ -33,20 +45,109 @@ impl SlackConnector {
         user_token: &str,
         app_token: &str,
         app_id: Option<&str>,
+        config_refresh_token: Option<&str>,
         store_path: &Path,
+        config_path: Option<&Path>,
     ) -> Result<Self, SlackError> {
         Ok(Self {
             connection_id: connection_id.to_string(),
             api: SlackApiClient::new(user_token)?,
             app_token: app_token.to_string(),
             app_id: app_id.map(|s| s.to_string()),
+            config_refresh_token: Mutex::new(config_refresh_token.map(|token| token.to_string())),
+            config_path: config_path.map(Path::to_path_buf),
             store_path: store_path.to_path_buf(),
         })
     }
 
-    pub(crate) fn config_token_path(&self) -> PathBuf {
-        self.store_path
-            .join(format!("slack-config-token-{}.json", self.connection_id))
+    pub(crate) async fn run_event_subscription_check(&self) -> anyhow::Result<()> {
+        let Some(app_id) = &self.app_id else {
+            return Ok(());
+        };
+
+        self.reload_config_refresh_token_from_disk();
+        let result = self.try_event_subscription_check(app_id).await;
+        if result.is_err() && is_invalid_refresh_token_err(&result) {
+            self.reload_config_refresh_token_from_disk();
+            return self.try_event_subscription_check(app_id).await;
+        }
+        result
+    }
+
+    async fn try_event_subscription_check(&self, app_id: &str) -> anyhow::Result<()> {
+        let mut token = self
+            .config_refresh_token
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Slack config refresh token lock poisoned"))?
+            .clone();
+        if token.is_none() {
+            return Ok(());
+        }
+
+        let used = token.clone();
+        let result =
+            crate::manifest::ensure_event_subscriptions(&mut token, app_id, &self.connection_id)
+                .await;
+
+        match &result {
+            Ok(()) if token.as_deref() != used.as_deref() => {
+                if let Some(new_token) = token {
+                    *self.config_refresh_token.lock().map_err(|_| {
+                        anyhow::anyhow!("Slack config refresh token lock poisoned")
+                    })? = Some(new_token.clone());
+                    self.persist_config_refresh_token(&new_token);
+                }
+            }
+            Err(_) => {
+                self.reload_config_refresh_token_from_disk();
+            }
+            _ => {}
+        }
+
+        result
+    }
+
+    fn reload_config_refresh_token_from_disk(&self) {
+        let path = self.config_path.clone().unwrap_or_else(default_config_path);
+        let Some(token) = Self::read_config_refresh_token(&path, &self.connection_id) else {
+            return;
+        };
+        if let Ok(mut guard) = self.config_refresh_token.lock() {
+            *guard = token;
+        }
+    }
+
+    fn read_config_refresh_token(
+        config_path: &Path,
+        connection_id: &str,
+    ) -> Option<Option<String>> {
+        let cfg = VoidConfig::load(config_path).ok()?;
+        let conn = cfg.connections.iter().find(|c| c.id == connection_id)?;
+        let ConnectionSettings::Slack {
+            config_refresh_token,
+            ..
+        } = &conn.settings
+        else {
+            return None;
+        };
+        Some(config_refresh_token.clone())
+    }
+
+    fn persist_config_refresh_token(&self, token: &str) {
+        let path = self.config_path.clone().unwrap_or_else(default_config_path);
+        if let Ok(mut cfg) = VoidConfig::load(&path) {
+            if cfg.set_slack_config_refresh_token(&self.connection_id, Some(token.to_string())) {
+                let _ = cfg.save(&path);
+            }
+        }
+    }
+
+    pub(crate) fn has_config_refresh_token(&self) -> bool {
+        self.reload_config_refresh_token_from_disk();
+        self.config_refresh_token
+            .lock()
+            .map(|token| token.is_some())
+            .unwrap_or(false)
     }
 
     pub async fn react(&self, channel: &str, ts: &str, emoji: &str) -> anyhow::Result<()> {

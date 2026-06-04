@@ -29,6 +29,7 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
                     .user_token
                     .ok_or_else(|| serde::de::Error::missing_field("user_token"))?,
                 app_id: raw.slack_app_id,
+                config_refresh_token: raw.config_refresh_token,
             },
             ConnectorType::Gmail => ConnectionSettings::Gmail {
                 credentials_file: raw.credentials_file,
@@ -87,6 +88,8 @@ struct RawConnectionConfig {
     #[serde(default, rename = "app_id")]
     slack_app_id: Option<String>,
     #[serde(default)]
+    config_refresh_token: Option<String>,
+    #[serde(default)]
     keywords: Option<Vec<String>>,
     #[serde(default)]
     min_score: Option<u32>,
@@ -108,6 +111,8 @@ pub enum ConnectionSettings {
         user_token: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        config_refresh_token: Option<String>,
     },
     Gmail {
         #[serde(default, skip_serializing_if = "Option::is_none")]

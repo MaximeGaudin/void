@@ -210,6 +210,8 @@ async fn backfill_stores_conversations_and_messages() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -320,6 +322,8 @@ async fn backfill_fetches_thread_replies() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -404,6 +408,8 @@ async fn backfill_skips_replies_fetch_when_no_thread_parents() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -516,6 +522,8 @@ async fn backfill_saves_done_state() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -559,6 +567,8 @@ async fn start_sync_skips_backfill_when_already_done() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -638,6 +648,8 @@ async fn backfill_paginates_conversations() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -700,6 +712,8 @@ async fn backfill_syncs_all_channels() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -761,6 +775,8 @@ async fn upload_file_calls_three_step_flow() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -878,6 +894,8 @@ async fn catch_up_fetches_messages_since_latest() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 
@@ -982,6 +1000,8 @@ async fn start_sync_runs_catch_up_when_backfill_done() {
         api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
         app_token: "xapp-test".to_string(),
         app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
         store_path: std::env::temp_dir(),
     };
 

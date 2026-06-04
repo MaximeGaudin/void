@@ -3,6 +3,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use tracing::debug;
 
+use crate::config::conversation_matches_ignore;
 use crate::error::DbError;
 
 pub(super) fn update_conversation_mute(
@@ -38,10 +39,57 @@ pub(super) fn set_mute_by_external_id(
     Ok(updated > 0)
 }
 
+/// Sync conversation mute flags from config ignore patterns for one connection.
+/// Returns `(newly_muted, newly_unmuted)` counts.
+pub(super) fn sync_ignore_conversations(
+    conn: &Connection,
+    connection_id: &str,
+    patterns: &[String],
+) -> Result<(usize, usize), DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, external_id, is_muted FROM conversations WHERE connection_id = ?1",
+    )?;
+    let rows = stmt.query_map(params![connection_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i32>(3)? != 0,
+        ))
+    })?;
+
+    let mut newly_muted = 0;
+    let mut newly_unmuted = 0;
+    for row in rows {
+        let (id, name, external_id, is_muted) = row?;
+        let should_mute = conversation_matches_ignore(name.as_deref(), &external_id, patterns);
+        if should_mute == is_muted {
+            continue;
+        }
+        update_conversation_mute(conn, &id, should_mute)?;
+        if should_mute {
+            newly_muted += 1;
+        } else {
+            newly_unmuted += 1;
+        }
+    }
+
+    if newly_muted > 0 || newly_unmuted > 0 {
+        debug!(
+            connection_id,
+            newly_muted,
+            newly_unmuted,
+            "synced conversation mute flags from config ignore patterns"
+        );
+    }
+    Ok((newly_muted, newly_unmuted))
+}
+
 /// Auto-mute conversations whose name or external_id matches any of the given
 /// patterns (case-insensitive substring match). Only affects non-muted
 /// conversations for the specified connection. Returns the number of newly muted
 /// conversations.
+#[allow(dead_code)]
 pub(super) fn auto_mute_matching_conversations(
     conn: &Connection,
     connection_id: &str,

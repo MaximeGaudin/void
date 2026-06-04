@@ -6,9 +6,8 @@ pub use args::*;
 
 use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use tracing::debug;
-use void_core::config::{self, VoidConfig};
+use void_core::config::VoidConfig;
 use void_core::connector::Connector;
-use void_core::db::Database;
 use void_core::models::ConnectorType;
 
 pub async fn run(args: &SlackArgs) -> anyhow::Result<()> {
@@ -22,8 +21,8 @@ pub async fn run(args: &SlackArgs) -> anyhow::Result<()> {
 }
 
 async fn run_react(args: &ReactArgs) -> anyhow::Result<()> {
-    let cfg = load_config()?;
-    let db = Database::open(&cfg.db_path())?;
+    let cfg = load_config();
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -39,7 +38,7 @@ async fn run_react(args: &ReactArgs) -> anyhow::Result<()> {
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
+    let connector = build_slack_connector(args.connection.as_deref(), cfg)?;
     connector
         .react(&conv.external_id, &msg.external_id, &args.emoji)
         .await?;
@@ -49,8 +48,8 @@ async fn run_react(args: &ReactArgs) -> anyhow::Result<()> {
 }
 
 async fn run_edit(args: &EditArgs) -> anyhow::Result<()> {
-    let cfg = load_config()?;
-    let db = Database::open(&cfg.db_path())?;
+    let cfg = load_config();
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -66,7 +65,7 @@ async fn run_edit(args: &EditArgs) -> anyhow::Result<()> {
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
+    let connector = build_slack_connector(args.connection.as_deref(), cfg)?;
     connector
         .edit_message(&conv.external_id, &msg.external_id, &args.message)
         .await?;
@@ -82,8 +81,8 @@ async fn run_schedule(args: &ScheduleArgs) -> anyhow::Result<()> {
         anyhow::bail!("Scheduled time must be in the future (parsed as Unix ts {post_at})");
     }
 
-    let cfg = load_config()?;
-    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
+    let cfg = load_config();
+    let connector = build_slack_connector(args.connection.as_deref(), cfg)?;
 
     let scheduled_id = connector
         .schedule_message(
@@ -104,8 +103,8 @@ async fn run_schedule(args: &ScheduleArgs) -> anyhow::Result<()> {
 }
 
 async fn run_open(args: &OpenArgs) -> anyhow::Result<()> {
-    let cfg = load_config()?;
-    let connector = build_slack_connector(args.connection.as_deref(), &cfg)?;
+    let cfg = load_config();
+    let connector = build_slack_connector(args.connection.as_deref(), cfg)?;
 
     let user_ids: Vec<&str> = args.users.split(',').map(|s| s.trim()).collect();
     if user_ids.is_empty() {
@@ -169,8 +168,8 @@ pub fn parse_schedule_time(input: &str) -> anyhow::Result<i64> {
 }
 
 async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
-    let cfg = load_config()?;
-    let db = Database::open(&cfg.db_path())?;
+    let cfg = load_config();
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -182,7 +181,7 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
 
     let conn_id =
         super::resolve::resolve_forward_connection(args.connection.as_deref(), &msg.connection_id);
-    let connector = build_slack_connector(Some(conn_id), &cfg)?;
+    let connector = build_slack_connector(Some(conn_id), cfg)?;
 
     let fwd_id = connector
         .forward(
@@ -197,10 +196,8 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_config() -> anyhow::Result<VoidConfig> {
-    let config_path = config::default_config_path();
-    VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))
+fn load_config() -> &'static VoidConfig {
+    crate::context::void_config()
 }
 
 fn build_slack_connector(
@@ -237,7 +234,9 @@ fn build_slack_connector(
         &user_token,
         &app_token,
         None,
+        None,
         std::env::temp_dir().as_path(),
+        None,
     )?)
 }
 

@@ -1,5 +1,4 @@
 use void_core::connector::Connector;
-use void_core::db::Database;
 
 use super::args::{
     AvailabilityArgs, CreateEventArgs, DeleteEventArgs, RespondEventArgs, SearchEventArgs,
@@ -10,8 +9,8 @@ use super::parsing::{normalize_datetime, parse_datetime_or_date};
 use crate::output::OutputFormatter;
 
 pub(super) async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {
-    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
-    let db = Database::open(&cfg.db_path())?;
+    let (connector, _cfg) = build_calendar_connector(args.connection.as_deref())?;
+    let db = crate::context::open_db()?;
 
     let start = normalize_datetime(&args.start)?;
     let end = match &args.end {
@@ -39,8 +38,8 @@ pub(super) async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {
 }
 
 pub(super) async fn run_search(args: &SearchEventArgs) -> anyhow::Result<()> {
-    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
-    let db = Database::open(&cfg.db_path())?;
+    let (connector, _cfg) = build_calendar_connector(args.connection.as_deref())?;
+    let db = crate::context::open_db()?;
 
     let time_min = args.from.as_deref().and_then(|d| {
         chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
@@ -85,8 +84,8 @@ pub(super) async fn run_calendars() -> anyhow::Result<()> {
 }
 
 pub(super) async fn run_update(args: &UpdateEventArgs) -> anyhow::Result<()> {
-    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
-    let db = Database::open(&cfg.db_path())?;
+    let (connector, _cfg) = build_calendar_connector(args.connection.as_deref())?;
+    let db = crate::context::open_db()?;
 
     let start = args.start.as_deref().map(normalize_datetime).transpose()?;
     let end = args.end.as_deref().map(normalize_datetime).transpose()?;
@@ -115,8 +114,8 @@ pub(super) async fn run_respond(args: &RespondEventArgs) -> anyhow::Result<()> {
         );
     }
 
-    let (connector, cfg) = build_calendar_connector(args.connection.as_deref())?;
-    let db = Database::open(&cfg.db_path())?;
+    let (connector, _cfg) = build_calendar_connector(args.connection.as_deref())?;
+    let db = crate::context::open_db()?;
 
     let email = args
         .email

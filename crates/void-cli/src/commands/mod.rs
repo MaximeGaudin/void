@@ -15,6 +15,7 @@ pub mod linkedin;
 pub mod messages;
 pub mod mute;
 pub mod pagination;
+pub mod remote;
 pub mod reply;
 pub mod resolve;
 pub mod search;

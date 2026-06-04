@@ -3,28 +3,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
 
-// ── Token persistence ─────────────────────────────────────────────────────
-
-#[test]
-fn save_and_load_refresh_token_roundtrip() {
-    let dir = std::env::temp_dir().join(format!("void-test-manifest-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("token.json");
-
-    save_refresh_token(&path, "xoxe-test-token").unwrap();
-    let loaded = load_refresh_token(&path).unwrap();
-    assert_eq!(loaded, Some("xoxe-test-token".to_string()));
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
-fn load_refresh_token_missing_file() {
-    let path = std::env::temp_dir().join("nonexistent-void-test-token.json");
-    let loaded = load_refresh_token(&path).unwrap();
-    assert_eq!(loaded, None);
-}
-
 // ── Manifest patching ─────────────────────────────────────────────────────
 
 #[test]
@@ -116,6 +94,48 @@ fn patch_preserves_other_manifest_fields() {
 }
 
 // ── API call tests with wiremock ──────────────────────────────────────────
+
+#[tokio::test]
+async fn ensure_event_subscriptions_rotates_token_in_place() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/tooling.tokens.rotate"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+            "token": "xoxe.xoxp-new-access-token",
+            "refresh_token": "xoxe-new-refresh-token"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/apps.manifest.export"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+            "manifest": { "settings": {} }
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/apps.manifest.update"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let mut token = Some("xoxe-old-refresh".to_string());
+    ensure_event_subscriptions_with_url(&mut token, "A0123456", "work-slack", &mock_server.uri())
+        .await
+        .unwrap();
+
+    assert_eq!(token.as_deref(), Some("xoxe-new-refresh-token"));
+}
 
 #[tokio::test]
 async fn rotate_config_token_parses_response() {

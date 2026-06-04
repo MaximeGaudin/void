@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use void_core::config::{self, ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -59,11 +59,9 @@ pub fn run(args: &HackerNewsArgs) -> anyhow::Result<()> {
 }
 
 fn run_config() -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let (keywords, min_score) = get_hn_settings(&cfg)?;
+    let (keywords, min_score) = get_hn_settings(cfg)?;
 
     let out = serde_json::json!({
         "data": {
@@ -77,18 +75,22 @@ fn run_config() -> anyhow::Result<()> {
 }
 
 fn run_keywords(args: &KeywordsArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
+    if matches!(args.action, KeywordsAction::List) {
+        let cfg = crate::context::void_config();
+        let (keywords, _) = get_hn_settings(cfg)?;
+        let out = serde_json::json!({ "data": keywords, "error": null });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
+    let config_path = crate::context::client_config_path();
     let mut cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 
     let (mut keywords, _) = get_hn_settings(&cfg)?;
 
     match &args.action {
-        KeywordsAction::List => {
-            let out = serde_json::json!({ "data": keywords, "error": null });
-            println!("{}", serde_json::to_string_pretty(&out)?);
-            return Ok(());
-        }
+        KeywordsAction::List => return Ok(()),
         KeywordsAction::Add(v) => {
             let new: Vec<String> = parse_csv(&v.value);
             for kw in new {
@@ -116,7 +118,7 @@ fn run_keywords(args: &KeywordsArgs) -> anyhow::Result<()> {
 }
 
 fn run_min_score(args: &MinScoreArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
+    let config_path = crate::context::client_config_path();
     let mut cfg = VoidConfig::load(&config_path)
         .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 

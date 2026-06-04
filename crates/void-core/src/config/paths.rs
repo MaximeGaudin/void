@@ -57,6 +57,18 @@ pub fn default_config_path() -> PathBuf {
     preferred_config_dir().join(CONFIG_FILENAME)
 }
 
+/// Resolve a config path from CLI `--config` (expands leading `~`) or the default location.
+pub fn resolve_config_path(path: Option<&std::path::Path>) -> PathBuf {
+    match path {
+        Some(p) => p
+            .to_str()
+            .filter(|s| s.starts_with('~'))
+            .map(expand_tilde)
+            .unwrap_or_else(|| p.to_path_buf()),
+        None => default_config_path(),
+    }
+}
+
 pub fn default_config() -> String {
     format!(
         r#"[store]
@@ -81,6 +93,7 @@ linkedin_backfill_days = 15
 # app_token = "xapp-1-..."
 # user_token = "xoxp-..."
 # # app_id = "A012ABCD0A0"  # optional — enables auto-repair of event subscriptions
+# # config_refresh_token = "xoxe-..."  # optional — Slack App Configuration refresh token
 #
 # [[connections]]
 # id = "personal-gmail"

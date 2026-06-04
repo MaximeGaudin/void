@@ -1,8 +1,9 @@
 use clap::Args;
 
 use crate::commands::connector_factory;
+use crate::commands::mute::run_one_time_legacy_mute_migration;
 use crate::commands::setup::prompt::confirm_default_yes;
-use void_core::config::{self, VoidConfig};
+use void_core::config::VoidConfig;
 use void_core::db::Database;
 
 #[derive(Debug, Args)]
@@ -16,8 +17,8 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
     eprintln!("void doctor: checking system health...\n");
 
     let mut issues = 0usize;
+    let config_path = crate::context::client_config_path();
 
-    let config_path = config::default_config_path();
     if config_path.exists() {
         eprintln!("[OK] Config file: {}", config_path.display());
     } else {
@@ -25,6 +26,10 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
         eprintln!("     Run `void setup` to create one.");
         issues += 1;
         return finish(args.non_interactive, issues);
+    }
+
+    if crate::context::is_remote() {
+        return run_remote_doctor(args, &mut issues);
     }
 
     let cfg = match VoidConfig::load(&config_path) {
@@ -39,10 +44,24 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
         }
     };
 
+    let mut cfg = cfg;
+
     let db_path = cfg.db_path();
     let db = match Database::open(&db_path) {
         Ok(db) => {
             eprintln!("[OK] Database: {}", db_path.display());
+            match run_one_time_legacy_mute_migration(&mut cfg, &db, &config_path) {
+                Ok(0) => {}
+                Ok(count) => {
+                    eprintln!(
+                        "[OK] Migrated {count} muted conversation(s) from database into config.toml"
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[!!] Failed to migrate legacy mutes to config: {e}");
+                    issues += 1;
+                }
+            }
             Some(db)
         }
         Err(e) => {
@@ -52,7 +71,7 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
         }
     };
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let lock_path = store_path.join("LOCK");
     if lock_path.exists() {
         let pid = std::fs::read_to_string(&lock_path).unwrap_or_default();
@@ -162,6 +181,116 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
     }
 
     finish(args.non_interactive, issues)
+}
+
+fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Result<()> {
+    eprintln!("[OK] Store mode: remote");
+    eprintln!(
+        "[OK] Local client profile: {} (no [[connections]] here is expected)",
+        crate::context::client_config_path().display()
+    );
+
+    let mut remote_host = "remote host".to_string();
+    match crate::context::get().remote_status() {
+        Ok(status) => {
+            if let Some(host) = status.get("host").and_then(|v| v.as_str()) {
+                remote_host = host.to_string();
+            }
+            let ssh_ok = status
+                .get("ssh_reachable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if ssh_ok {
+                eprintln!("[OK] SSH connection to remote host");
+            } else {
+                eprintln!("[!!] Cannot reach remote host via SSH");
+                *issues += 1;
+            }
+
+            let daemon = status
+                .get("remote_daemon_running")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if daemon {
+                eprintln!("[OK] Remote sync daemon appears running");
+            } else {
+                eprintln!("[!!] Remote sync daemon not running");
+                *issues += 1;
+            }
+
+            if let Some(age) = status.get("database_age_secs").and_then(|v| v.as_u64()) {
+                eprintln!("[OK] Local database snapshot age: {age}s");
+            }
+        }
+        Err(e) => {
+            eprintln!("[!!] Remote status error: {e}");
+            *issues += 1;
+        }
+    }
+
+    let mut conv_count = 0usize;
+    match crate::context::open_db() {
+        Ok(db) => {
+            eprintln!(
+                "[OK] Local database snapshot: {}",
+                crate::context::get().db_path().display()
+            );
+            conv_count = db
+                .list_conversations(None, None, 10000, true)
+                .map(|c| c.len())
+                .unwrap_or(0);
+            eprintln!("  Conversations: {conv_count}");
+        }
+        Err(e) => {
+            eprintln!("[!!] Database snapshot error: {e}");
+            *issues += 1;
+        }
+    }
+
+    let cache_config = crate::context::store_path().join("config.toml");
+    eprintln!("[--] Cached server config: {}", cache_config.display());
+
+    // Read the raw cached config to detect if the server file is actually a Mac remote stub.
+    // The context normalizes store.mode to Local after loading, so we must check the raw file.
+    let raw_is_client_stub = cache_config
+        .exists()
+        .then(|| std::fs::read_to_string(&cache_config).ok())
+        .flatten()
+        .and_then(|content| VoidConfig::parse(&content).ok())
+        .map(|raw| raw.is_remote_client_profile())
+        .unwrap_or(false);
+
+    let cfg = crate::context::config();
+
+    if raw_is_client_stub {
+        eprintln!(
+            "[WARN] Server config on {remote_host} is the Mac remote profile, not a full void config"
+        );
+        eprintln!(
+            "       Put [[connections]] on the server at ~/.config/void/config.toml (tokens, accounts)."
+        );
+        eprintln!(
+            "       Keep only [store.remote] on this Mac at {}.",
+            crate::context::client_config_path().display()
+        );
+        if conv_count > 0 {
+            eprintln!(
+                "       Snapshot has {conv_count} conversations (daemon is using older in-memory config)."
+            );
+        } else {
+            *issues += 1;
+        }
+    } else if cfg.connections.is_empty() {
+        eprintln!("[!!] Cached server config has no [[connections]]");
+        *issues += 1;
+    } else {
+        eprintln!(
+            "[OK] {} connection(s) in cached server config (connector checks run on server)",
+            cfg.connections.len()
+        );
+    }
+
+    finish(args.non_interactive, *issues)
 }
 
 fn finish(non_interactive: bool, issues: usize) -> anyhow::Result<()> {

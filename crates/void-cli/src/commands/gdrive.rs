@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, expand_tilde, ConnectionSettings, VoidConfig};
+use void_core::config::{expand_tilde, ConnectionSettings, VoidConfig};
 use void_core::models::ConnectorType;
 use void_gdrive::api::{self, DriveApiClient, ExportFormat};
 
@@ -140,14 +140,12 @@ async fn run_info(args: &InfoArgs) -> anyhow::Result<()> {
 }
 
 async fn run_auth(args: &AuthArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let connection = find_google_connection(&cfg, args.connection.as_deref())?;
+    let connection = find_google_connection(cfg, args.connection.as_deref())?;
     let credentials_file = extract_credentials_file(&connection.settings);
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
 
     api::authenticate_drive(
         &store_path,
@@ -181,14 +179,12 @@ type DriveClientFuture =
 fn build_drive_client(
     connection_filter: Option<&str>,
 ) -> anyhow::Result<(DriveClientFuture, VoidConfig)> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let connection = find_google_connection(&cfg, connection_filter)?;
+    let connection = find_google_connection(cfg, connection_filter)?;
     let credentials_file = extract_credentials_file(&connection.settings);
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let connection_id = connection.id.clone();
 
     let fut = Box::pin(async move {
@@ -201,7 +197,7 @@ fn build_drive_client(
         .map_err(Into::into)
     });
 
-    Ok((fut, cfg))
+    Ok((fut, cfg.clone()))
 }
 
 /// Find the first Google connection (gmail or calendar) matching the filter.

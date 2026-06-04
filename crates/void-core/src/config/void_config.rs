@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::ConfigError;
 use crate::models::ConnectorType;
 
-use super::connection::ConnectionConfig;
+use super::connection::{ConnectionConfig, ConnectionSettings};
 use super::paths::expand_tilde;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -18,19 +18,110 @@ pub struct VoidConfig {
     pub connections: Vec<ConnectionConfig>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum StoreMode {
+    #[default]
+    Local,
+    Remote,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoreConfig {
     #[serde(default = "default_store_path")]
     pub path: String,
+    #[serde(default)]
+    pub mode: StoreMode,
+    #[serde(default)]
+    pub remote: Option<RemoteStoreConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteStoreConfig {
+    pub host: String,
+    #[serde(default)]
+    pub user: Option<String>,
+    #[serde(default = "default_remote_config_path")]
+    pub remote_config_path: String,
+    /// Override store path on the remote host. When unset, uses `[store].path` from the remote config.
+    #[serde(default)]
+    pub remote_store_path: Option<String>,
+    #[serde(default = "default_true")]
+    pub proxy_writes: bool,
+    #[serde(default)]
+    pub ssh: RemoteSshConfig,
+    #[serde(default)]
+    pub cache: RemoteCacheConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteSshConfig {
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub identity_file: Option<String>,
+}
+
+impl Default for RemoteSshConfig {
+    fn default() -> Self {
+        Self {
+            port: default_ssh_port(),
+            identity_file: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteCacheConfig {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default = "default_config_ttl")]
+    pub config_ttl_secs: u64,
+    #[serde(default = "default_database_ttl")]
+    pub database_ttl_secs: u64,
+}
+
+impl Default for RemoteCacheConfig {
+    fn default() -> Self {
+        Self {
+            path: None,
+            config_ttl_secs: default_config_ttl(),
+            database_ttl_secs: default_database_ttl(),
+        }
+    }
+}
+
+fn default_remote_config_path() -> String {
+    "~/.config/void/config.toml".to_string()
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
+fn default_config_ttl() -> u64 {
+    300
+}
+
+fn default_database_ttl() -> u64 {
+    30
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for StoreConfig {
     fn default() -> Self {
         Self {
             path: default_store_path(),
+            mode: StoreMode::Local,
+            remote: None,
         }
     }
 }
+
+// Remove duplicate Default impl - there was one before for StoreConfig
 
 fn default_store_path() -> String {
     #[cfg(windows)]
@@ -92,15 +183,31 @@ fn default_linkedin_backfill_days() -> u64 {
 }
 
 impl VoidConfig {
+    /// Parse config from a string without writing migrations or sidecar changes.
+    pub fn parse(content: &str) -> Result<Self, ConfigError> {
+        let normalized = if content.contains("[[accounts]]") {
+            content.replace("[[accounts]]", "[[connections]]")
+        } else {
+            content.to_string()
+        };
+        Ok(toml::from_str(&normalized)?)
+    }
+
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
         if content.contains("[[accounts]]") {
             let migrated = content.replace("[[accounts]]", "[[connections]]");
             std::fs::write(path, &migrated)?;
-            let config: Self = toml::from_str(&migrated)?;
+            let mut config: Self = toml::from_str(&migrated)?;
+            if config.migrate_slack_sidecar_tokens() {
+                config.save(path)?;
+            }
             return Ok(config);
         }
-        let config: Self = toml::from_str(&content)?;
+        let mut config: Self = toml::from_str(&content)?;
+        if config.migrate_slack_sidecar_tokens() {
+            config.save(path)?;
+        }
         Ok(config)
     }
 
@@ -125,6 +232,27 @@ impl VoidConfig {
         self.store_path().join("void.db")
     }
 
+    pub fn is_remote(&self) -> bool {
+        self.store.mode == StoreMode::Remote
+    }
+
+    /// True when this file is a Mac-style remote client profile, not a full server config.
+    pub fn is_remote_client_profile(&self) -> bool {
+        self.store.mode == StoreMode::Remote
+            && self.connections.is_empty()
+            && self.store.remote.is_some()
+    }
+
+    pub fn remote(&self) -> Result<&RemoteStoreConfig, ConfigError> {
+        match (&self.store.mode, &self.store.remote) {
+            (StoreMode::Remote, Some(remote)) => Ok(remote),
+            (StoreMode::Remote, None) => Err(ConfigError::Remote(
+                "store.mode is \"remote\" but [store.remote] is missing".into(),
+            )),
+            _ => Err(ConfigError::Remote("store is not in remote mode".into())),
+        }
+    }
+
     pub fn find_connection(&self, connection_id: &str) -> Option<&ConnectionConfig> {
         self.connections.iter().find(|a| a.id == connection_id)
     }
@@ -142,5 +270,97 @@ impl VoidConfig {
             _ => return None,
         };
         self.connections.iter().find(|a| a.connector_type == target)
+    }
+
+    /// Import Slack config refresh tokens from legacy sidecar files in the store.
+    /// Returns `true` if any connection was updated.
+    fn migrate_slack_sidecar_tokens(&mut self) -> bool {
+        let store_path = self.store_path();
+        let mut migrated = false;
+        for conn in &mut self.connections {
+            if conn.connector_type != ConnectorType::Slack {
+                continue;
+            }
+            let ConnectionSettings::Slack {
+                config_refresh_token,
+                ..
+            } = &mut conn.settings
+            else {
+                continue;
+            };
+            if config_refresh_token.is_some() {
+                continue;
+            }
+            let sidecar = store_path.join(format!("slack-config-token-{}.json", conn.id));
+            if let Ok(content) = std::fs::read_to_string(&sidecar) {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(token) = value.get("refresh_token").and_then(|v| v.as_str()) {
+                        *config_refresh_token = Some(token.to_string());
+                        migrated = true;
+                    }
+                }
+                let _ = std::fs::remove_file(&sidecar);
+            }
+        }
+        migrated
+    }
+
+    pub fn set_slack_config_refresh_token(
+        &mut self,
+        connection_id: &str,
+        token: Option<String>,
+    ) -> bool {
+        let Some(conn) = self.connections.iter_mut().find(|c| c.id == connection_id) else {
+            return false;
+        };
+        let ConnectionSettings::Slack {
+            config_refresh_token,
+            ..
+        } = &mut conn.settings
+        else {
+            return false;
+        };
+        *config_refresh_token = token;
+        true
+    }
+
+    pub fn add_ignore_conversation(&mut self, connection_id: &str, entry: String) -> bool {
+        let Some(conn) = self.connections.iter_mut().find(|c| c.id == connection_id) else {
+            return false;
+        };
+        if conn
+            .ignore_conversations
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&entry))
+        {
+            return false;
+        }
+        conn.ignore_conversations.push(entry);
+        true
+    }
+
+    pub fn remove_ignore_conversation(
+        &mut self,
+        connection_id: &str,
+        external_id: &str,
+        name: Option<&str>,
+    ) -> bool {
+        let Some(conn) = self.connections.iter_mut().find(|c| c.id == connection_id) else {
+            return false;
+        };
+        let before = conn.ignore_conversations.len();
+        conn.ignore_conversations.retain(|entry| {
+            let entry_lower = entry.to_lowercase();
+            if entry_lower == external_id.to_lowercase() {
+                return false;
+            }
+            if let Some(name) = name {
+                if entry_lower == name.to_lowercase() {
+                    return false;
+                }
+            }
+            true
+        });
+        conn.ignore_conversations.len() < before
     }
 }

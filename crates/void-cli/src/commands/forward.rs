@@ -1,9 +1,6 @@
 use clap::Args;
 use tracing::{debug, info};
 
-use void_core::config::{self, VoidConfig};
-use void_core::db::Database;
-
 use crate::commands::connector_factory;
 
 #[derive(Debug, Args)]
@@ -20,11 +17,9 @@ pub struct ForwardArgs {
 
 pub async fn run(args: &ForwardArgs) -> anyhow::Result<()> {
     info!(message_id = %args.message_id, to = %args.to, "forward");
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -45,7 +40,7 @@ pub async fn run(args: &ForwardArgs) -> anyhow::Result<()> {
             )
         })?;
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let conn = connector_factory::build_connector(connection, &store_path)?;
 
     let fwd_id = conn

@@ -9,8 +9,7 @@ use super::lock::{parse_lock_pid, refresh_process_exists};
 /// Stop a running sync daemon by reading its PID from the lock file, sending
 /// SIGTERM, waiting for it to exit, and cleaning up the lock file.
 pub fn stop_daemon() -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)?;
+    let cfg = crate::context::config();
     let lock_path = cfg.store_path().join("LOCK");
 
     if !lock_path.exists() {
@@ -94,14 +93,14 @@ pub fn daemonize(args: &super::SyncArgs, verbose: bool) -> anyhow::Result<()> {
     use std::process::Stdio;
 
     let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path).map_err(|e| {
+    let _cfg = VoidConfig::load(&config_path).map_err(|e| {
         anyhow::anyhow!(
             "Cannot load config from {}: {e}\nRun `void setup` first.",
             config_path.display()
         )
     })?;
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     std::fs::create_dir_all(&store_path)?;
 
     let log_path = store_path.join("void-sync.log");

@@ -1,8 +1,6 @@
 use clap::Args;
 use tracing::{debug, info};
 
-use void_core::config::{self, VoidConfig};
-use void_core::db::Database;
 use void_core::models::ConnectorType;
 use void_core::models::MessageContent;
 
@@ -29,11 +27,9 @@ pub struct ReplyArgs {
 
 pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
     info!(message_id = %args.message_id, "reply");
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -70,7 +66,7 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
     let connector_type = parse_connector_type(&connection.connector_type.to_string())
         .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let conn = connector_factory::build_connector(connection, &store_path)?;
 
     let reply_id = build_reply_id(connector_type, &conv.external_id, &msg.external_id);
@@ -119,7 +115,9 @@ async fn run_slack_scheduled_reply(
         &user_token,
         &app_token,
         None,
+        None,
         std::env::temp_dir().as_path(),
+        None,
     )?;
 
     let scheduled_id = connector

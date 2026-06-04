@@ -1,8 +1,7 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, ConnectionSettings, VoidConfig};
+use void_core::config::{ConnectionSettings, VoidConfig};
 use void_core::connector::Connector;
-use void_core::db::Database;
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -54,11 +53,9 @@ pub async fn run(args: &TelegramArgs) -> anyhow::Result<()> {
 }
 
 async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -83,7 +80,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         anyhow::bail!("No downloadable media in metadata.");
     }
 
-    let connector = build_tg_connector(args.connection.as_deref(), &cfg)?;
+    let connector = build_tg_connector(args.connection.as_deref(), cfg)?;
 
     let raw_msg_id_str = msg.external_id.rsplit('_').next().unwrap_or("0");
     let raw_msg_id: i32 = raw_msg_id_str.parse().unwrap_or(0);
@@ -105,11 +102,9 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
 }
 
 async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 
@@ -121,7 +116,7 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
 
     let conn_id =
         super::resolve::resolve_forward_connection(args.connection.as_deref(), &msg.connection_id);
-    let connector = build_tg_connector(Some(conn_id), &cfg)?;
+    let connector = build_tg_connector(Some(conn_id), cfg)?;
 
     let fwd_id = connector
         .forward(
@@ -157,7 +152,7 @@ fn build_tg_connector(
         _ => anyhow::bail!("connection '{}' has mismatched settings", connection.id),
     };
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let session_path = store_path.join(format!("telegram-{}.json", connection.id));
     debug!(connection_id = %connection.id, "building Telegram connector for CLI");
     Ok(void_telegram::connector::TelegramConnector::new(

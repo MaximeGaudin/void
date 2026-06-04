@@ -134,8 +134,8 @@ pub fn run(args: &AgentInboxArgs) -> anyhow::Result<()> {
 }
 
 fn open_db() -> anyhow::Result<Database> {
-    let cfg = VoidConfig::load_or_default(&config::default_config_path());
-    Ok(Database::open(&cfg.db_path())?)
+    let cfg = crate::context::config();
+    crate::context::open_db()
 }
 
 fn print_item(item: &AgentInboxItem) -> anyhow::Result<()> {

@@ -1639,10 +1639,10 @@ fn dedup_context_same_timestamp_uses_id_tiebreak() {
     assert_eq!(rows[0].id, "m-zzz", "highest id wins on timestamp tie");
 }
 
-// ---- Auto-mute matching conversations (ignore_conversations) tests ----
+// ---- Sync ignore patterns from config (ignore_conversations) tests ----
 
 #[test]
-fn auto_mute_matches_by_name() {
+fn sync_ignore_matches_by_name() {
     let db = test_db();
     let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
     c1.name = Some("Family Group".into());
@@ -1653,10 +1653,9 @@ fn auto_mute_matches_by_name() {
     db.upsert_conversation(&c2).unwrap();
 
     let patterns = vec!["family".to_string()];
-    let muted = db
-        .auto_mute_matching_conversations("my-wa", &patterns)
-        .unwrap();
+    let (muted, unmuted) = db.sync_ignore_conversations("my-wa", &patterns).unwrap();
     assert_eq!(muted, 1);
+    assert_eq!(unmuted, 0);
 
     let loaded = db.get_conversation("c1").unwrap().unwrap();
     assert!(loaded.is_muted, "Family Group should be muted");
@@ -1666,15 +1665,13 @@ fn auto_mute_matches_by_name() {
 }
 
 #[test]
-fn auto_mute_matches_by_external_id() {
+fn sync_ignore_matches_by_external_id() {
     let db = test_db();
     let c1 = make_conversation("c1", "my-wa", "spam-group@g.us");
     db.upsert_conversation(&c1).unwrap();
 
     let patterns = vec!["spam-group".to_string()];
-    let muted = db
-        .auto_mute_matching_conversations("my-wa", &patterns)
-        .unwrap();
+    let (muted, _) = db.sync_ignore_conversations("my-wa", &patterns).unwrap();
     assert_eq!(muted, 1);
 
     let loaded = db.get_conversation("c1").unwrap().unwrap();
@@ -1682,21 +1679,19 @@ fn auto_mute_matches_by_external_id() {
 }
 
 #[test]
-fn auto_mute_case_insensitive() {
+fn sync_ignore_case_insensitive() {
     let db = test_db();
     let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
     c1.name = Some("NOISY GROUP".into());
     db.upsert_conversation(&c1).unwrap();
 
     let patterns = vec!["noisy".to_string()];
-    let muted = db
-        .auto_mute_matching_conversations("my-wa", &patterns)
-        .unwrap();
+    let (muted, _) = db.sync_ignore_conversations("my-wa", &patterns).unwrap();
     assert_eq!(muted, 1);
 }
 
 #[test]
-fn auto_mute_skips_already_muted() {
+fn sync_ignore_is_idempotent() {
     let db = test_db();
     let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
     c1.name = Some("Spam".into());
@@ -1704,14 +1699,13 @@ fn auto_mute_skips_already_muted() {
     db.update_conversation_mute("c1", true).unwrap();
 
     let patterns = vec!["spam".to_string()];
-    let muted = db
-        .auto_mute_matching_conversations("my-wa", &patterns)
-        .unwrap();
-    assert_eq!(muted, 0, "already-muted conversation should not be counted");
+    let (muted, unmuted) = db.sync_ignore_conversations("my-wa", &patterns).unwrap();
+    assert_eq!(muted, 0);
+    assert_eq!(unmuted, 0);
 }
 
 #[test]
-fn auto_mute_scoped_to_connection() {
+fn sync_ignore_scoped_to_connection() {
     let db = test_db();
     let mut c1 = make_conversation("c1", "wa-1", "111@g.us");
     c1.name = Some("Random".into());
@@ -1722,9 +1716,7 @@ fn auto_mute_scoped_to_connection() {
     db.upsert_conversation(&c2).unwrap();
 
     let patterns = vec!["random".to_string()];
-    let muted = db
-        .auto_mute_matching_conversations("wa-1", &patterns)
-        .unwrap();
+    let (muted, _) = db.sync_ignore_conversations("wa-1", &patterns).unwrap();
     assert_eq!(muted, 1);
 
     let loaded1 = db.get_conversation("c1").unwrap().unwrap();
@@ -1735,7 +1727,7 @@ fn auto_mute_scoped_to_connection() {
 }
 
 #[test]
-fn auto_mute_multiple_patterns() {
+fn sync_ignore_multiple_patterns() {
     let db = test_db();
     let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
     c1.name = Some("Random Chat".into());
@@ -1750,9 +1742,7 @@ fn auto_mute_multiple_patterns() {
     db.upsert_conversation(&c3).unwrap();
 
     let patterns = vec!["random".to_string(), "social".to_string()];
-    let muted = db
-        .auto_mute_matching_conversations("my-wa", &patterns)
-        .unwrap();
+    let (muted, _) = db.sync_ignore_conversations("my-wa", &patterns).unwrap();
     assert_eq!(muted, 2);
 
     assert!(db.get_conversation("c1").unwrap().unwrap().is_muted);
@@ -1761,13 +1751,32 @@ fn auto_mute_multiple_patterns() {
 }
 
 #[test]
-fn auto_mute_empty_patterns_is_noop() {
+fn sync_ignore_empty_patterns_unmutes_all() {
     let db = test_db();
     let c1 = make_conversation("c1", "my-wa", "111@g.us");
     db.upsert_conversation(&c1).unwrap();
+    db.update_conversation_mute("c1", true).unwrap();
 
-    let muted = db.auto_mute_matching_conversations("my-wa", &[]).unwrap();
+    let (muted, unmuted) = db.sync_ignore_conversations("my-wa", &[]).unwrap();
     assert_eq!(muted, 0);
+    assert_eq!(unmuted, 1);
+    assert!(!db.get_conversation("c1").unwrap().unwrap().is_muted);
+}
+
+#[test]
+fn sync_ignore_unmutes_when_pattern_removed() {
+    let db = test_db();
+    let mut c1 = make_conversation("c1", "my-wa", "111@g.us");
+    c1.name = Some("Family Group".into());
+    db.upsert_conversation(&c1).unwrap();
+
+    let patterns = vec!["family".to_string()];
+    db.sync_ignore_conversations("my-wa", &patterns).unwrap();
+    assert!(db.get_conversation("c1").unwrap().unwrap().is_muted);
+
+    let (muted, unmuted) = db.sync_ignore_conversations("my-wa", &[]).unwrap();
+    assert_eq!(muted, 0);
+    assert_eq!(unmuted, 1);
     assert!(!db.get_conversation("c1").unwrap().unwrap().is_muted);
 }
 

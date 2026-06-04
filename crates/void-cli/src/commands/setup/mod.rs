@@ -24,7 +24,8 @@ use self::prompt::select;
 use self::wizard::{exit_setup, run_full_wizard};
 
 pub async fn run() -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
+    crate::context::ensure_local_setup_allowed()?;
+    let config_path = crate::context::client_config_path();
 
     // If no config exists, create default and enter menu
     if !config_path.exists() {
@@ -37,7 +38,7 @@ pub async fn run() -> anyhow::Result<()> {
     }
 
     let mut cfg = VoidConfig::load_or_default(&config_path);
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     std::fs::create_dir_all(&store_path)?;
 
     loop {

@@ -4,9 +4,7 @@ use std::sync::Arc;
 use clap::Args;
 use tracing::{debug, info, warn};
 
-use void_core::config::{self, VoidConfig};
 use void_core::connector::Connector;
-use void_core::db::Database;
 
 use super::connector_factory;
 use crate::output;
@@ -53,8 +51,8 @@ async fn run_bulk_before(args: &ArchiveArgs) -> anyhow::Result<()> {
     let connector_filter = output::resolve_connector_filter(args.connector.as_deref())?;
 
     debug!(before = date_str, connector = ?connector_filter, "bulk archive before date");
-    let cfg = VoidConfig::load_or_default(&config::default_config_path());
-    let db = Database::open(&cfg.db_path())?;
+    let _cfg = crate::context::config();
+    let db = crate::context::open_db()?;
 
     let messages = db.bulk_archive_before(before_ts, connector_filter.as_deref())?;
     for msg in &messages {
@@ -73,8 +71,8 @@ async fn run_bulk_before(args: &ArchiveArgs) -> anyhow::Result<()> {
 
 async fn run_by_ids(args: &ArchiveArgs) -> anyhow::Result<()> {
     debug!(count = args.message_ids.len(), "archive by IDs");
-    let cfg = VoidConfig::load_or_default(&config::default_config_path());
-    let db = Database::open(&cfg.db_path())?;
+    let cfg = crate::context::config();
+    let db = crate::context::open_db()?;
 
     let mut connectors: HashMap<String, Arc<dyn Connector>> = HashMap::new();
     let mut results = Vec::new();
@@ -112,7 +110,8 @@ async fn run_by_ids(args: &ArchiveArgs) -> anyhow::Result<()> {
                 .find_connection(&msg.connection_id)
                 .or_else(|| cfg.find_connection_by_connector(&msg.connector))
             {
-                match connector_factory::build_connector(connection, &cfg.store_path()) {
+                match connector_factory::build_connector(connection, &crate::context::store_path())
+                {
                     Ok(c) => {
                         connectors.insert(connector_key.clone(), c);
                     }

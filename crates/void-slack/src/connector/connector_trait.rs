@@ -35,30 +35,16 @@ impl Connector for SlackConnector {
         db: Arc<Database>,
         cancel: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<()> {
-        if let Some(app_id) = &self.app_id {
-            let token_path = self.config_token_path();
-            if token_path.exists() {
-                if let Err(e) = crate::manifest::ensure_event_subscriptions(
-                    &token_path,
-                    app_id,
-                    &self.connection_id,
-                )
-                .await
-                {
-                    warn!(
-                        connection_id = %self.connection_id,
-                        error = %e,
-                        "event subscription check failed (non-fatal, continuing sync)"
-                    );
-                    void_core::status!(
-                        "[slack:{}] Warning: event subscription check failed: {e}",
-                        self.connection_id
-                    );
-                }
-            } else {
-                debug!(
+        if self.app_id.is_some() {
+            if let Err(e) = self.run_event_subscription_check().await {
+                warn!(
                     connection_id = %self.connection_id,
-                    "no config token file found, skipping event subscription check"
+                    error = %e,
+                    "event subscription check failed (non-fatal, continuing sync)"
+                );
+                void_core::status!(
+                    "[slack:{}] Warning: event subscription check failed: {e}",
+                    self.connection_id
                 );
             }
         }
@@ -111,42 +97,15 @@ impl Connector for SlackConnector {
             }
         };
 
-        if let Some(app_id) = &self.app_id {
-            let token_path = self.config_token_path();
-            if token_path.exists() {
-                if let Err(e) = crate::manifest::ensure_event_subscriptions(
-                    &token_path,
-                    app_id,
-                    &self.connection_id,
-                )
-                .await
-                {
-                    warn!(
-                        connection_id = %self.connection_id,
-                        error = %e,
-                        "Slack health check: event subscription check failed"
-                    );
-                    return Ok(HealthStatus {
-                        connection_id: self.connection_id.clone(),
-                        connector_type: ConnectorType::Slack,
-                        ok: false,
-                        message: format!(
-                            "Auth OK, but event subscription repair token is invalid: {e}"
-                        ),
-                        last_sync: None,
-                        message_count: None,
-                    });
-                }
-            } else {
-                return Ok(HealthStatus {
-                    connection_id: self.connection_id.clone(),
-                    connector_type: ConnectorType::Slack,
-                    ok: false,
-                    message: "Auth OK, but missing config token file (run void setup again to restore auto-repair)".to_string(),
-                    last_sync: None,
-                    message_count: None,
-                });
-            }
+        if self.app_id.is_some() && !self.has_config_refresh_token() {
+            return Ok(HealthStatus {
+                connection_id: self.connection_id.clone(),
+                connector_type: ConnectorType::Slack,
+                ok: false,
+                message: "Auth OK, but missing config_refresh_token (run void setup again to restore auto-repair)".to_string(),
+                last_sync: None,
+                message_count: None,
+            });
         }
 
         Ok(HealthStatus {

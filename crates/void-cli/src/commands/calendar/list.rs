@@ -1,6 +1,4 @@
 use chrono::{Datelike, Local};
-use void_core::config::{self, VoidConfig};
-use void_core::db::Database;
 
 use super::args::CalendarArgs;
 use super::parsing::{parse_date_to_ts, parse_day_spec};
@@ -8,8 +6,8 @@ use crate::output::{resolve_connector_filter, OutputFormatter};
 
 pub(super) fn run_list(args: &CalendarArgs) -> anyhow::Result<()> {
     let connector = resolve_connector_filter(args.connector.as_deref())?;
-    let cfg = VoidConfig::load_or_default(&config::default_config_path());
-    let db = Database::open(&cfg.db_path())?;
+    let _cfg = crate::context::config();
+    let db = crate::context::open_db()?;
     let formatter = OutputFormatter::new();
 
     let (from, to) = if let Some(day) = &args.day {
@@ -52,8 +50,8 @@ pub(super) fn run_list(args: &CalendarArgs) -> anyhow::Result<()> {
 }
 
 pub(super) fn run_week() -> anyhow::Result<()> {
-    let cfg = VoidConfig::load_or_default(&config::default_config_path());
-    let db = Database::open(&cfg.db_path())?;
+    let _cfg = crate::context::config();
+    let db = crate::context::open_db()?;
     let formatter = OutputFormatter::new();
 
     let today = Local::now().date_naive();

@@ -1,0 +1,51 @@
+# Full server config for gaudinlang.fr (~/.config/void/config.toml).
+# NOT the Mac remote client stub (store.mode must be "local" on the server).
+
+[store]
+path = "~/.local/share/void"
+mode = "local"
+
+[sync]
+gmail_poll_interval_secs = 30
+calendar_poll_interval_secs = 60
+hackernews_poll_interval_secs = 3600
+linkedin_poll_interval_secs = 1800
+linkedin_backfill_days = 15
+
+[[connections]]
+id = "mgaudin@gladia.io"
+type = "gmail"
+credentials_file = "~/.config/void/gmail-credentials.json"
+
+[[connections]]
+id = "me@maxime.ly"
+type = "gmail"
+credentials_file = "~/.config/void/gmail-credentials.json"
+
+[[connections]]
+id = "mgaudin@gladia.io-calendar"
+type = "calendar"
+credentials_file = "~/.config/void/gmail-credentials.json"
+calendar_ids = ["primary"]
+
+[[connections]]
+id = "me@maxime.ly-calendar"
+type = "calendar"
+credentials_file = "~/.config/void/gmail-credentials.json"
+calendar_ids = ["primary"]
+
+[[connections]]
+id = "telegram"
+type = "telegram"
+
+[[connections]]
+id = "whatsapp"
+type = "whatsapp"
+
+[[connections]]
+id = "hackernews"
+type = "hackernews"
+keywords = ["rust", "ai", "startup", "llm", "rag"]
+min_score = 100
+
+# Re-add Slack via `void setup` on the server (tokens cannot be recovered from sidecar alone).

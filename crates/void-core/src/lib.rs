@@ -7,4 +7,5 @@ pub mod links;
 pub mod log;
 pub mod models;
 pub mod progress;
+pub mod store;
 pub mod sync;

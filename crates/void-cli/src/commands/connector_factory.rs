@@ -18,13 +18,16 @@ pub fn build_connector(
                 user_token,
                 app_token,
                 app_id,
+                config_refresh_token,
             },
         ) => Ok(Arc::new(void_slack::connector::SlackConnector::new(
             &connection.id,
             user_token,
             app_token,
             app_id.as_deref(),
+            config_refresh_token.as_deref(),
             store_path,
+            Some(&crate::context::client_config_path()),
         )?)),
         (ConnectorType::Gmail, ConnectionSettings::Gmail { credentials_file }) => {
             let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
@@ -77,11 +80,7 @@ pub fn build_connector(
                 min_score,
             },
         ) => {
-            let poll_secs = void_core::config::VoidConfig::load_or_default(
-                &void_core::config::default_config_path(),
-            )
-            .sync
-            .hackernews_poll_interval_secs;
+            let poll_secs = crate::context::config().sync.hackernews_poll_interval_secs;
             Ok(Arc::new(
                 void_hackernews::connector::HackerNewsConnector::new(
                     &connection.id,
@@ -99,10 +98,7 @@ pub fn build_connector(
                 account_id,
             },
         ) => {
-            let sync_cfg = void_core::config::VoidConfig::load_or_default(
-                &void_core::config::default_config_path(),
-            )
-            .sync;
+            let sync_cfg = &crate::context::config().sync;
             Ok(Arc::new(void_linkedin::connector::LinkedInConnector::new(
                 &connection.id,
                 api_key,

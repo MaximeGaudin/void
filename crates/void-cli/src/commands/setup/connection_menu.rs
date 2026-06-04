@@ -206,19 +206,32 @@ pub(crate) async fn reauthenticate_specific_connection(
                 String::new()
             };
 
+        let current_refresh_token = if let void_core::config::ConnectionSettings::Slack {
+            ref config_refresh_token,
+            ..
+        } = connection.settings
+        {
+            config_refresh_token.clone().unwrap_or_default()
+        } else {
+            String::new()
+        };
+
         let user_token =
             super::prompt::prompt_default("User OAuth Token (xoxp-...)", &current_user_token);
         let app_token =
             super::prompt::prompt_default("App-Level Token  (xapp-...)", &current_app_token);
         let app_id =
             super::prompt::prompt_default("App ID (optional, e.g. A012ABCD0A0)", &current_app_id);
-
-        let refresh_token = prompt("Config Refresh Token (optional, xoxe-...): ");
+        let refresh_token = super::prompt::prompt_default(
+            "Config Refresh Token (optional, xoxe-...)",
+            &current_refresh_token,
+        );
 
         if let void_core::config::ConnectionSettings::Slack {
             app_token: ref mut at,
             user_token: ref mut ut,
             app_id: ref mut aid,
+            config_refresh_token: ref mut crt,
         } = cfg.connections[choice].settings
         {
             if !app_token.trim().is_empty() {
@@ -232,20 +245,11 @@ pub(crate) async fn reauthenticate_specific_connection(
             } else {
                 Some(app_id.trim().to_string())
             };
-        }
-
-        if !refresh_token.trim().is_empty() {
-            let token_path = store_path.join(format!("slack-config-token-{}.json", connection.id));
-            if let Err(e) =
-                void_slack::manifest::save_refresh_token(&token_path, refresh_token.trim())
-            {
-                eprintln!(
-                    "  ✗ Failed to save refresh token to {}: {e}",
-                    token_path.display()
-                );
+            *crt = if refresh_token.trim().is_empty() {
+                None
             } else {
-                eprintln!("  ✓ Refresh token saved to {}", token_path.display());
-            }
+                Some(refresh_token.trim().to_string())
+            };
         }
 
         cfg.save(config_path)?;

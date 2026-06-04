@@ -167,9 +167,7 @@ pub(crate) async fn setup_slack(
 
     let connection_id = prompt_default("Connection name", "slack");
 
-    let mut app_id: Option<String> = None;
-
-    let connection = ConnectionConfig {
+    let mut connection = ConnectionConfig {
         id: connection_id.clone(),
         connector_type: ConnectorType::Slack,
         ignore_conversations: vec![],
@@ -177,6 +175,7 @@ pub(crate) async fn setup_slack(
             app_token,
             user_token,
             app_id: None,
+            config_refresh_token: None,
         },
     };
 
@@ -214,17 +213,17 @@ pub(crate) async fn setup_slack(
         if !input_app_id.is_empty() {
             let refresh_token = prompt("Config Refresh Token (xoxe-...): ");
             if !refresh_token.is_empty() {
-                let token_path =
-                    store_path.join(format!("slack-config-token-{connection_id}.json"));
-                if let Err(e) =
-                    void_slack::manifest::save_refresh_token(&token_path, &refresh_token)
+                if let ConnectionSettings::Slack {
+                    app_id: ref mut cfg_app_id,
+                    config_refresh_token: ref mut cfg_refresh_token,
+                    ..
+                } = connection.settings
                 {
-                    eprintln!("  ✗ Failed to save refresh token: {e}");
-                } else {
-                    app_id = Some(input_app_id);
-                    eprintln!("  ✓ Auto-repair configured. Event subscriptions will be");
-                    eprintln!("    checked and restored automatically on each `void sync`.");
+                    *cfg_app_id = Some(input_app_id);
+                    *cfg_refresh_token = Some(refresh_token);
                 }
+                eprintln!("  ✓ Auto-repair configured. Event subscriptions will be");
+                eprintln!("    checked and restored automatically on each `void sync`.");
             } else {
                 eprintln!("  Skipped (no refresh token provided).");
             }
@@ -233,15 +232,6 @@ pub(crate) async fn setup_slack(
         }
     } else {
         eprintln!("  Skipped. You can configure this later in config.toml.");
-    }
-
-    let mut connection = connection;
-    if let ConnectionSettings::Slack {
-        app_id: ref mut cfg_app_id,
-        ..
-    } = connection.settings
-    {
-        *cfg_app_id = app_id;
     }
 
     cfg.connections.push(connection);

@@ -1,7 +1,6 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::{self, ConnectionSettings, VoidConfig};
-use void_core::db::Database;
+use void_core::config::ConnectionSettings;
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -35,11 +34,9 @@ pub async fn run(args: &LinkedInArgs) -> anyhow::Result<()> {
 }
 
 async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;
 

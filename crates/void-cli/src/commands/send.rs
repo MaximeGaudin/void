@@ -1,8 +1,7 @@
 use clap::Args;
 use tracing::{debug, info};
 
-use void_core::config::{self, VoidConfig};
-use void_core::db::Database;
+use void_core::config::VoidConfig;
 use void_core::models::ConnectorType;
 use void_core::models::MessageContent;
 
@@ -39,9 +38,7 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
     let connector_type = parse_connector_type(&args.via)
         .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", args.via))?;
 
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
     let target_type = connector_type.to_string();
     let connection = cfg
@@ -58,14 +55,14 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         if connection.connector_type != ConnectorType::Slack {
             anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
         }
-        return run_slack_scheduled_send(connection, &cfg, &args.to, &args.message, at_str).await;
+        return run_slack_scheduled_send(connection, cfg, &args.to, &args.message, at_str).await;
     }
 
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let conn = connector_factory::build_connector(connection, &store_path)?;
     debug!("connector built");
 
-    let to = resolve_target(&args.to, &target_type, &cfg)?;
+    let to = resolve_target(&args.to, &target_type, cfg)?;
 
     let content = if let Some(ref path) = args.file {
         MessageContent::File {
@@ -111,7 +108,9 @@ async fn run_slack_scheduled_send(
         &user_token,
         &app_token,
         None,
+        None,
         std::env::temp_dir().as_path(),
+        None,
     )?;
 
     let scheduled_id = connector
@@ -130,12 +129,12 @@ async fn run_slack_scheduled_send(
 /// Resolve `#channel-name` to a channel ID using the local database.
 /// Returns the original value if not a `#name` target or not found (the
 /// connector will handle the final resolution via the Slack API).
-fn resolve_target(to: &str, connector_type: &str, cfg: &VoidConfig) -> anyhow::Result<String> {
+fn resolve_target(to: &str, connector_type: &str, _cfg: &VoidConfig) -> anyhow::Result<String> {
     if !to.starts_with('#') {
         return Ok(to.to_string());
     }
     let name = &to[1..];
-    let db = Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
     if let Some(conv) = db.find_conversation_by_name(name, connector_type)? {
         debug!(name, external_id = %conv.external_id, "resolved channel name to ID from DB");
         Ok(conv.external_id)

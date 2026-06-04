@@ -345,6 +345,37 @@ Default `store.path` values:
 
 No external database or Docker required.
 
+### Remote store (SSH)
+
+Run sync on a home server but use `void` locally against the same data. The local machine keeps a thin client profile; the authoritative `config.toml`, credentials, and database live on the server.
+
+```toml
+# Local ~/.config/void/config.toml
+[store]
+mode = "remote"
+
+[store.remote]
+host = "homeserver"
+user = "mgaudin"
+remote_config_path = "~/.config/void/config.toml"
+
+[store.remote.cache]
+path = "~/.cache/void/remote/homeserver"
+config_ttl_secs = 300
+database_ttl_secs = 30
+```
+
+On the server, configure and run sync as usual (`void setup`, `void sync --daemon`). Locally:
+
+- **Read commands** (`inbox`, `search`, `messages`, …) use a cached DB snapshot pulled over SSH
+- **Write commands** (`send`, `reply`, `archive`, …) are proxied to the server via SSH
+- **`void remote status`** — SSH, cache age, remote daemon state
+- **`void remote refresh`** — force-refresh config + DB snapshot
+
+Global flags:
+- `--config <path>` — local client profile (default: platform config path)
+- `--store <path>` — override remote store path (local mode: override `store.path`)
+
 ## Development
 
 ```bash

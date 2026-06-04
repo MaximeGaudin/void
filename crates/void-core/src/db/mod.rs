@@ -41,9 +41,7 @@ impl Database {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
-        conn.pragma_update(None, "journal_mode", "WAL")?;
-        conn.pragma_update(None, "busy_timeout", 5000)?;
-        conn.pragma_update(None, "foreign_keys", "ON")?;
+        Self::configure_connection(&conn)?;
         let db = Self {
             conn: Mutex::new(conn),
             hook_runner: std::sync::RwLock::new(None),
@@ -51,6 +49,27 @@ impl Database {
         db.migrate()?;
         debug!("migration complete");
         Ok(db)
+    }
+
+    /// Open an existing database read-only (used for remote store snapshots).
+    pub fn open_readonly(path: &Path) -> Result<Self, DbError> {
+        info!(path = %path.display(), "opening database read-only");
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        let db = Self {
+            conn: Mutex::new(conn),
+            hook_runner: std::sync::RwLock::new(None),
+        };
+        Ok(db)
+    }
+
+    fn configure_connection(conn: &Connection) -> Result<(), DbError> {
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "busy_timeout", 5000)?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        Ok(())
     }
 
     /// Attach a hook runner so that event hooks fire on new message inserts.

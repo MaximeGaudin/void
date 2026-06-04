@@ -161,3 +161,12 @@ pub(super) fn get(conn: &Connection, id: &str) -> Result<Option<Conversation>, D
     .optional()
     .map_err(Into::into)
 }
+
+pub(super) fn list_muted(conn: &Connection) -> Result<Vec<Conversation>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+         FROM conversations WHERE is_muted = 1",
+    )?;
+    let rows = stmt.query_map([], row::row_to_conversation)?;
+    rows.collect::<Result<_, _>>().map_err(Into::into)
+}

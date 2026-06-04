@@ -1,12 +1,10 @@
-use void_core::config::{self, expand_tilde, VoidConfig};
+use void_core::config::{expand_tilde, VoidConfig};
 use void_core::models::ConnectorType;
 
 pub(super) fn build_calendar_connector(
     connection_filter: Option<&str>,
 ) -> anyhow::Result<(void_calendar::connector::CalendarConnector, VoidConfig)> {
-    let config_path = config::default_config_path();
-    let cfg = VoidConfig::load(&config_path)
-        .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
+    let cfg = crate::context::void_config();
 
     let connection = cfg
         .connections
@@ -32,7 +30,7 @@ pub(super) fn build_calendar_connector(
     };
 
     let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
-    let store_path = cfg.store_path();
+    let store_path = crate::context::store_path();
     let connector = void_calendar::connector::CalendarConnector::new(
         &connection.id,
         cred_path.as_deref().and_then(|p| p.to_str()),
@@ -40,5 +38,5 @@ pub(super) fn build_calendar_connector(
         &store_path,
     );
 
-    Ok((connector, cfg))
+    Ok((connector, cfg.clone()))
 }

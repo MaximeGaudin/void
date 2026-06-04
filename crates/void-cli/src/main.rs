@@ -1,4 +1,5 @@
 mod commands;
+pub mod context;
 pub mod output;
 
 use clap::{Parser, Subcommand};
@@ -14,6 +15,10 @@ struct Cli {
     #[arg(long, global = true)]
     store: Option<String>,
 
+    /// Override config file path (local client profile when store.mode = remote)
+    #[arg(long, global = true)]
+    config: Option<String>,
+
     /// Enable verbose logging
     #[arg(long, short, global = true)]
     verbose: bool,
@@ -21,6 +26,10 @@ struct Cli {
     /// Disable context enrichment (related messages) on output
     #[arg(long, global = true)]
     no_context: bool,
+
+    /// Force local store (set by SSH proxy on the server; hidden)
+    #[arg(long, global = true, hide = true)]
+    local_store: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -73,23 +82,74 @@ enum Command {
     Agent(commands::agent::AgentArgs),
     /// Manage hooks — LLM prompts triggered by events or schedules
     Hook(commands::hook::HookArgs),
+    /// Remote store utilities (status, cache refresh)
+    Remote(commands::remote::RemoteArgs),
+}
+
+fn refresh_policy_for_cli(cli: &Cli) -> void_core::store::RefreshPolicy {
+    use void_core::config::{resolve_config_path, StoreMode, VoidConfig};
+    use void_core::store::RefreshPolicy;
+
+    let config_path = cli
+        .config
+        .as_deref()
+        .map(|s| resolve_config_path(Some(std::path::Path::new(s))))
+        .unwrap_or_else(void_core::config::default_config_path);
+
+    let is_remote = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|content| VoidConfig::parse(&content).ok())
+        .is_some_and(|cfg| cfg.store.mode == StoreMode::Remote);
+
+    if !is_remote {
+        return RefreshPolicy::UseCache;
+    }
+
+    match &cli.command {
+        Some(cmd) if !context::runs_with_local_cache(cmd) => RefreshPolicy::ProxyOnly,
+        _ => RefreshPolicy::UseCache,
+    }
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    let refresh = refresh_policy_for_cli(&cli);
+    context::init(
+        cli.config.as_deref(),
+        cli.store.as_deref(),
+        refresh,
+        cli.local_store,
+    )?;
 
     if let Some(Command::Sync(ref args)) = cli.command {
         if args.status {
             return commands::sync::show_status();
         }
         if args.stop {
+            if context::is_remote() {
+                context::ensure_local_sync_allowed()?;
+            }
             return commands::sync::stop_daemon();
         }
         if args.daemon {
+            context::ensure_local_sync_allowed()?;
             return commands::sync::daemonize(args, cli.verbose);
         }
         if args.daemon_inner {
             return commands::sync::run_daemon_inner(args, cli.verbose);
+        }
+    }
+
+    if context::is_remote() {
+        if matches!(cli.command, Some(Command::Setup)) {
+            context::ensure_local_setup_allowed()?;
+        } else if matches!(cli.command, Some(Command::Sync(_))) {
+            context::ensure_local_sync_allowed()?;
+        } else if let Some(ref cmd) = cli.command {
+            if !context::runs_with_local_cache(cmd) {
+                context::proxy_current_command()?;
+            }
         }
     }
 
@@ -133,6 +193,9 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Drive(args)) => commands::gdrive::run(args).await,
         Some(Command::Agent(args)) => commands::agent::run(args, cli.verbose).await,
         Some(Command::Hook(args)) => commands::hook::run(args),
+        Some(Command::Remote(args)) => {
+            commands::remote::run(args, cli.config.as_deref(), cli.store.as_deref())
+        }
         None => {
             commands::status::run();
             Ok(())
@@ -151,6 +214,38 @@ mod tests {
 
     fn parse_err(args: &[&str]) -> clap::Error {
         Cli::try_parse_from(args).expect_err("should fail to parse")
+    }
+
+    #[test]
+    fn gmail_draft_create_uses_remote_proxy_in_remote_mode() {
+        let cli = parse(&[
+            "void",
+            "gmail",
+            "draft",
+            "create",
+            "--to",
+            "a@b.com",
+            "--subject",
+            "s",
+            "--body",
+            "b",
+        ]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(!context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
+    fn calendar_day_today_uses_local_cache() {
+        let cli = parse(&["void", "calendar", "--day", "today"]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
+    fn hn_keywords_list_uses_local_cache() {
+        let cli = parse(&["void", "hn", "keywords", "list"]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(context::runs_with_local_cache(cmd));
     }
 
     // --- Gmail forward parsing ---

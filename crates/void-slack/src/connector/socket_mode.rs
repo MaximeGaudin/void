@@ -182,19 +182,14 @@ impl SlackConnector {
     }
 
     async fn repair_event_subscriptions(&self) {
-        let Some(app_id) = &self.app_id else { return };
-        let token_path = self.config_token_path();
-        if !token_path.exists() {
+        if self.app_id.is_none() || !self.has_config_refresh_token() {
             return;
         }
         void_core::status!(
             "[slack:{}] re-verifying event subscriptions after stale connection",
             self.connection_id
         );
-        if let Err(e) =
-            crate::manifest::ensure_event_subscriptions(&token_path, app_id, &self.connection_id)
-                .await
-        {
+        if let Err(e) = self.run_event_subscription_check().await {
             warn!(
                 connection_id = %self.connection_id,
                 error = %e,

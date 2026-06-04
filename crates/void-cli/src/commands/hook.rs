@@ -286,9 +286,7 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
 
     let msg = match (&hook.trigger, message_id) {
         (Trigger::NewMessage { .. }, Some(mid)) => {
-            let config_path = void_core::config::default_config_path();
-            let cfg = void_core::config::VoidConfig::load_or_default(&config_path);
-            let db = void_core::db::Database::open(&cfg.db_path())?;
+            let db = crate::context::open_db()?;
             let msg = super::resolve::resolve_message(&db, mid)?;
             Some(msg)
         }
@@ -325,9 +323,7 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
 }
 
 fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>) -> anyhow::Result<()> {
-    let config_path = void_core::config::default_config_path();
-    let cfg = void_core::config::VoidConfig::load_or_default(&config_path);
-    let db = void_core::db::Database::open(&cfg.db_path())?;
+    let db = crate::context::open_db()?;
     let mut logs = db.list_hook_logs(limit)?;
 
     if let Some(filter) = hook_filter {

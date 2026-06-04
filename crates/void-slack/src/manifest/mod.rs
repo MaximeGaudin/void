@@ -5,8 +5,6 @@
 //! This module detects that situation at sync startup and patches the
 //! manifest back to the expected state.
 
-use std::path::Path;
-
 use serde::Deserialize;
 use tracing::{debug, info};
 
@@ -20,36 +18,6 @@ const EXPECTED_USER_EVENTS: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
-// Token persistence
-// ---------------------------------------------------------------------------
-
-#[derive(serde::Serialize, Deserialize)]
-struct TokenFile {
-    refresh_token: String,
-}
-
-pub fn load_refresh_token(path: &Path) -> anyhow::Result<Option<String>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let data = std::fs::read_to_string(path)?;
-    let file: TokenFile = serde_json::from_str(&data)?;
-    Ok(Some(file.refresh_token))
-}
-
-pub fn save_refresh_token(path: &Path, token: &str) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let file = TokenFile {
-        refresh_token: token.to_string(),
-    };
-    let data = serde_json::to_string_pretty(&file)?;
-    std::fs::write(path, data)?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // Low-level Slack API calls
 // ---------------------------------------------------------------------------
 
@@ -57,13 +25,6 @@ pub fn save_refresh_token(path: &Path, token: &str) -> anyhow::Result<()> {
 pub struct ConfigTokenRotation {
     pub token: String,
     pub refresh_token: String,
-}
-
-pub(crate) async fn rotate_config_token(
-    http: &reqwest::Client,
-    refresh_token: &str,
-) -> anyhow::Result<ConfigTokenRotation> {
-    rotate_config_token_with_url(http, SLACK_API_BASE, refresh_token).await
 }
 
 pub(crate) async fn rotate_config_token_with_url(
@@ -104,14 +65,6 @@ pub(crate) async fn rotate_config_token_with_url(
     })
 }
 
-pub(crate) async fn export_manifest(
-    http: &reqwest::Client,
-    config_token: &str,
-    app_id: &str,
-) -> anyhow::Result<serde_json::Value> {
-    export_manifest_with_url(http, SLACK_API_BASE, config_token, app_id).await
-}
-
 pub(crate) async fn export_manifest_with_url(
     http: &reqwest::Client,
     base_url: &str,
@@ -137,15 +90,6 @@ pub(crate) async fn export_manifest_with_url(
     resp.get("manifest")
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("apps.manifest.export: missing manifest in response"))
-}
-
-pub(crate) async fn update_manifest(
-    http: &reqwest::Client,
-    config_token: &str,
-    app_id: &str,
-    manifest: &serde_json::Value,
-) -> anyhow::Result<()> {
-    update_manifest_with_url(http, SLACK_API_BASE, config_token, app_id, manifest).await
 }
 
 pub(crate) async fn update_manifest_with_url(
@@ -239,39 +183,55 @@ pub(crate) fn patch_event_subscriptions(manifest: &mut serde_json::Value) {
 ///
 /// This is designed to be **non-fatal**: callers should log errors and
 /// continue with sync even if this fails.
+///
+/// On success, `config_refresh_token` is updated when Slack rotates the token.
+/// On `invalid_refresh_token`, callers should reload from config and retry —
+/// the token is not cleared here because another process may have rotated it.
 pub async fn ensure_event_subscriptions(
-    token_path: &Path,
+    config_refresh_token: &mut Option<String>,
     app_id: &str,
     connection_id: &str,
 ) -> anyhow::Result<()> {
-    let refresh_token = match load_refresh_token(token_path)? {
-        Some(t) => t,
-        None => return Ok(()), // or whatever the original was
+    ensure_event_subscriptions_with_url(config_refresh_token, app_id, connection_id, SLACK_API_BASE)
+        .await
+}
+
+pub(crate) async fn ensure_event_subscriptions_with_url(
+    config_refresh_token: &mut Option<String>,
+    app_id: &str,
+    connection_id: &str,
+    base_url: &str,
+) -> anyhow::Result<()> {
+    let Some(refresh_token) = config_refresh_token.clone() else {
+        return Ok(());
     };
 
     let http = reqwest::Client::new();
 
     debug!(connection_id, "rotating Slack config token");
-    let rotated = match rotate_config_token(&http, &refresh_token).await {
+    let rotated = match rotate_config_token_with_url(&http, base_url, &refresh_token).await {
         Ok(r) => r,
         Err(e) => {
             if e.to_string().contains("invalid_refresh_token") {
-                let _ = std::fs::remove_file(token_path);
-                anyhow::bail!("Slack config token is invalid (invalid_refresh_token). The file has been removed. Please run `void setup` again for this connection to restore auto-repair.");
+                anyhow::bail!(
+                    "Slack config token is invalid (invalid_refresh_token). \
+                     Reload config_refresh_token from config.toml or run `void setup` \
+                     if the token was revoked."
+                );
             }
             return Err(e);
         }
     };
 
-    save_refresh_token(token_path, &rotated.refresh_token)?;
+    *config_refresh_token = Some(rotated.refresh_token.clone());
     debug!(connection_id, "saved rotated refresh token");
 
     debug!(connection_id, app_id, "exporting Slack app manifest");
-    let mut manifest = export_manifest(&http, &rotated.token, app_id).await?;
+    let mut manifest = export_manifest_with_url(&http, base_url, &rotated.token, app_id).await?;
 
     let events_present = has_expected_events(&manifest);
     patch_event_subscriptions(&mut manifest);
-    update_manifest(&http, &rotated.token, app_id, &manifest).await?;
+    update_manifest_with_url(&http, base_url, &rotated.token, app_id, &manifest).await?;
 
     if events_present {
         void_core::status!(

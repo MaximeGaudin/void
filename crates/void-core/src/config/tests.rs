@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::models::ConnectorType;
 
-use super::*;
+use super::{StoreMode, *};
 
 #[test]
 fn parse_valid_config() {
@@ -111,6 +111,7 @@ fn find_connection_returns_match() {
                     app_token: "xapp".into(),
                     user_token: "xoxp".into(),
                     app_id: None,
+                    config_refresh_token: None,
                 },
             },
             ConnectionConfig {
@@ -178,6 +179,7 @@ fn save_and_load_roundtrip() {
     let config = VoidConfig {
         store: StoreConfig {
             path: "~/test-store".to_string(),
+            ..Default::default()
         },
         sync: SyncConfig::default(),
         connections: vec![ConnectionConfig {
@@ -244,6 +246,81 @@ credentials_file = "creds.json"
         }
         other => panic!("expected Calendar settings, got {other:?}"),
     }
+}
+
+#[test]
+fn parse_slack_with_config_refresh_token() {
+    let toml = r#"
+[[connections]]
+id = "work-slack"
+type = "slack"
+app_token = "xapp-1-test"
+user_token = "xoxp-test"
+app_id = "A0123456"
+config_refresh_token = "xoxe-test-token"
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    match &config.connections[0].settings {
+        ConnectionSettings::Slack {
+            app_id,
+            config_refresh_token,
+            ..
+        } => {
+            assert_eq!(app_id.as_deref(), Some("A0123456"));
+            assert_eq!(config_refresh_token.as_deref(), Some("xoxe-test-token"));
+        }
+        other => panic!("expected Slack settings, got {other:?}"),
+    }
+}
+
+#[test]
+fn migrate_slack_sidecar_token_into_config() {
+    let dir = std::env::temp_dir().join(format!("void-test-migrate-{}", uuid::Uuid::new_v4()));
+    let store_dir = dir.join("store");
+    std::fs::create_dir_all(&store_dir).unwrap();
+    let config_path = dir.join("config.toml");
+
+    let config = VoidConfig {
+        store: StoreConfig {
+            path: store_dir.to_string_lossy().into_owned(),
+            ..Default::default()
+        },
+        sync: SyncConfig::default(),
+        connections: vec![ConnectionConfig {
+            id: "work-slack".into(),
+            connector_type: ConnectorType::Slack,
+            ignore_conversations: vec![],
+            settings: ConnectionSettings::Slack {
+                app_token: "xapp".into(),
+                user_token: "xoxp".into(),
+                app_id: Some("A0123456".into()),
+                config_refresh_token: None,
+            },
+        }],
+    };
+    config.save(&config_path).unwrap();
+
+    std::fs::write(
+        store_dir.join("slack-config-token-work-slack.json"),
+        r#"{"refresh_token":"xoxe-from-sidecar"}"#,
+    )
+    .unwrap();
+
+    let loaded = VoidConfig::load(&config_path).unwrap();
+    match &loaded.connections[0].settings {
+        ConnectionSettings::Slack {
+            config_refresh_token,
+            ..
+        } => {
+            assert_eq!(config_refresh_token.as_deref(), Some("xoxe-from-sidecar"));
+        }
+        other => panic!("expected Slack settings, got {other:?}"),
+    }
+    assert!(!store_dir
+        .join("slack-config-token-work-slack.json")
+        .exists());
+
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
@@ -367,6 +444,17 @@ type = "hackernews"
 }
 
 #[test]
+fn resolve_config_path_expands_tilde() {
+    let path = super::resolve_config_path(Some(std::path::Path::new("~/.config/void/config.toml")));
+    assert!(path.exists() || !path.to_string_lossy().contains('~'));
+    assert!(
+        path.ends_with("void/config.toml"),
+        "unexpected path: {}",
+        path.display()
+    );
+}
+
+#[test]
 fn default_config_path_returns_config_toml_under_void_dir() {
     let path = default_config_path();
     assert_eq!(
@@ -387,6 +475,54 @@ fn default_config_contains_store_section() {
     assert!(config_str.contains("[store]"));
     assert!(config_str.contains("path"));
     assert!(config_str.contains("[sync]"));
+}
+
+#[test]
+fn add_and_remove_ignore_conversation() {
+    let mut cfg = VoidConfig {
+        store: StoreConfig::default(),
+        sync: SyncConfig::default(),
+        connections: vec![ConnectionConfig {
+            id: "work-slack".into(),
+            connector_type: ConnectorType::Slack,
+            ignore_conversations: vec!["random".into()],
+            settings: ConnectionSettings::Slack {
+                app_token: "xapp".into(),
+                user_token: "xoxp".into(),
+                app_id: None,
+                config_refresh_token: None,
+            },
+        }],
+    };
+
+    assert!(!cfg.add_ignore_conversation("work-slack", "random".into()));
+    assert!(cfg.add_ignore_conversation("work-slack", "C123".into()));
+    assert_eq!(
+        cfg.connections[0].ignore_conversations,
+        vec!["random", "C123"]
+    );
+
+    assert!(cfg.remove_ignore_conversation("work-slack", "C123", None));
+    assert_eq!(cfg.connections[0].ignore_conversations, vec!["random"]);
+}
+
+#[test]
+fn conversation_matches_ignore_patterns() {
+    assert!(conversation_matches_ignore(
+        Some("Random Chat"),
+        "C123",
+        &["random".into()]
+    ));
+    assert!(conversation_matches_ignore(
+        None,
+        "noisy-group@g.us",
+        &["noisy".into()]
+    ));
+    assert!(!conversation_matches_ignore(
+        Some("Work Updates"),
+        "C456",
+        &["random".into()]
+    ));
 }
 
 #[test]
@@ -413,6 +549,56 @@ type = "whatsapp"
 "#;
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert!(config.connections[0].ignore_conversations.is_empty());
+}
+
+#[test]
+fn parse_remote_store_config() {
+    let toml = r#"
+[store]
+mode = "remote"
+
+[store.remote]
+host = "homeserver"
+user = "alice"
+remote_config_path = "~/.config/void/config.toml"
+
+[store.remote.cache]
+database_ttl_secs = 15
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    assert_eq!(config.store.mode, StoreMode::Remote);
+    let remote = config.store.remote.as_ref().unwrap();
+    assert_eq!(remote.host, "homeserver");
+    assert_eq!(remote.user.as_deref(), Some("alice"));
+    assert_eq!(remote.remote_config_path, "~/.config/void/config.toml");
+    assert_eq!(remote.cache.database_ttl_secs, 15);
+    assert!(remote.proxy_writes);
+    assert!(config.is_remote_client_profile());
+}
+
+#[test]
+fn server_config_with_connections_is_not_remote_client_profile() {
+    let toml = r#"
+[store]
+path = "~/.local/share/void"
+
+[[connections]]
+id = "work-gmail"
+type = "gmail"
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    assert!(!config.is_remote_client_profile());
+}
+
+#[test]
+fn void_config_parse_readonly_does_not_touch_disk() {
+    let toml = r#"
+[[connections]]
+id = "wa"
+type = "whatsapp"
+"#;
+    let config = VoidConfig::parse(toml).unwrap();
+    assert_eq!(config.connections.len(), 1);
 }
 
 #[test]
