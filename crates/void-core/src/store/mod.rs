@@ -1,3 +1,4 @@
+mod proxy_files;
 mod remote;
 
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use crate::config::{default_config, expand_tilde, resolve_config_path, StoreMode
 use crate::db::Database;
 use crate::error::ConfigError;
 
+pub use proxy_files::plan_proxy_file_transfer;
 pub use remote::{
     cache_is_fresh, default_cache_dir, fetch_remote_file, fetch_remote_files_if_present, now_secs,
     CacheMeta, RemoteProxyTargets, SshTarget, REMOTE_PATH_PREFIX,
@@ -326,6 +328,14 @@ impl ResolvedContext {
             ));
         }
 
+        let mut transfer = proxy_files::plan_proxy_file_transfer(&remote.remote_store_path, args)?;
+        proxy_files::resolve_staged_paths_for_remote(&remote.ssh, &mut transfer)?;
+        proxy_files::execute_proxy_uploads(
+            &remote.ssh,
+            &remote.remote_store_path,
+            &transfer.uploads,
+        )?;
+
         let targets = {
             let mut cache = remote
                 .proxy_targets
@@ -349,7 +359,7 @@ impl ResolvedContext {
         parts.push("--local-store".to_string());
         parts.push("--store".to_string());
         parts.push(store_path);
-        parts.extend(args.iter().cloned());
+        parts.extend(transfer.args.iter().cloned());
 
         let escaped = parts
             .iter()
@@ -365,7 +375,29 @@ impl ResolvedContext {
             eprint!("{}", String::from_utf8_lossy(&output.stderr));
         }
 
-        Ok(output.status.code().unwrap_or(1))
+        let exit_code = output.status.code().unwrap_or(1);
+
+        let mut cleanup_paths: Vec<String> = transfer
+            .uploads
+            .iter()
+            .map(|upload| upload.remote_path.clone())
+            .collect();
+        if let Some(download) = &transfer.download {
+            cleanup_paths.push(download.remote_path.clone());
+        }
+
+        let result = if exit_code == 0 {
+            if let Some(download) = &transfer.download {
+                proxy_files::execute_proxy_download(&remote.ssh, download).map(|()| exit_code)
+            } else {
+                Ok(exit_code)
+            }
+        } else {
+            Ok(exit_code)
+        };
+
+        proxy_files::cleanup_remote_staging(&remote.ssh, &cleanup_paths);
+        result
     }
 
     pub fn ensure_local_sync_allowed(&self) -> Result<(), ConfigError> {

@@ -157,6 +157,35 @@ impl SshTarget {
             .map_err(|e| ConfigError::Remote(format!("ssh failed: {e}")))
     }
 
+    pub fn scp_to(&self, local_path: &Path, remote_path: &str) -> Result<(), ConfigError> {
+        // scp does not expand `~` on the remote destination; resolve to an absolute path.
+        let resolved_remote = if remote_path.starts_with('~') {
+            self.resolve_path_on_host(remote_path)?
+        } else {
+            remote_path.to_string()
+        };
+        let remote_spec = format!(
+            "{}:{}",
+            self.destination(),
+            format_remote_scp_path(&resolved_remote)
+        );
+        let mut cmd = Command::new("scp");
+        cmd.args(self.base_scp_args());
+        cmd.arg(local_path);
+        cmd.arg(&remote_spec);
+        let output = cmd
+            .output()
+            .map_err(|e| ConfigError::Remote(format!("scp failed: {e}")))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        Err(ConfigError::Remote(format!(
+            "scp failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )))
+    }
+
     pub fn scp_from(&self, remote_path: &str, local_path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = local_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -326,6 +355,14 @@ mod tests {
         assert_eq!(
             format_remote_scp_path("/path/with spaces/file"),
             "'/path/with spaces/file'"
+        );
+    }
+
+    #[test]
+    fn scp_path_keeps_tilde_for_upload_destination() {
+        assert_eq!(
+            format_remote_scp_path("~/.local/share/void/staging/uuid-file.pdf"),
+            "~/.local/share/void/staging/uuid-file.pdf"
         );
     }
 }

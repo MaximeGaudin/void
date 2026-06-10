@@ -235,6 +235,60 @@ mod tests {
     }
 
     #[test]
+    fn send_with_file_uses_remote_proxy_in_remote_mode() {
+        let cli = parse(&[
+            "void",
+            "send",
+            "--via",
+            "gmail",
+            "--to",
+            "a@b.com",
+            "--message",
+            "hi",
+            "--file",
+            "/tmp/x.pdf",
+        ]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(!context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
+    fn gmail_attachment_uses_remote_proxy_in_remote_mode() {
+        let cli = parse(&[
+            "void",
+            "gmail",
+            "attachment",
+            "m1",
+            "a1",
+            "--out",
+            "/tmp/x.pdf",
+        ]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(!context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
+    fn whatsapp_download_uses_remote_proxy_in_remote_mode() {
+        let cli = parse(&["void", "whatsapp", "download", "m1", "--out", "/tmp/x.jpg"]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(!context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
+    fn drive_download_uses_remote_proxy_in_remote_mode() {
+        let cli = parse(&[
+            "void",
+            "drive",
+            "download",
+            "https://drive.google.com/file/d/abc",
+            "--output",
+            "/tmp/x.pdf",
+        ]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(!context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
     fn calendar_day_today_uses_local_cache() {
         let cli = parse(&["void", "calendar", "--day", "today"]);
         let cmd = cli.command.as_ref().expect("command");

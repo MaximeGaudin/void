@@ -2,6 +2,65 @@
 
 A unified command-line interface for interacting with WhatsApp, Telegram, Slack, Gmail, Google Calendar, Google Drive, LinkedIn, and Hacker News from a single tool — plus an AI agent and LLM-powered hooks.
 
+## Quick Start
+
+Install the latest release from [GitHub Releases](https://github.com/MaximeGaudin/void/releases/latest). Each command downloads the binary and extracts it to `~/bin` — make sure that directory is on your `PATH`.
+
+**macOS (Apple Silicon)**
+
+```bash
+mkdir -p ~/bin && curl -fsSL https://github.com/MaximeGaudin/void/releases/latest/download/void-darwin-arm64.tar.gz | tar xz -C ~/bin
+```
+
+**macOS (Intel)**
+
+```bash
+mkdir -p ~/bin && curl -fsSL https://github.com/MaximeGaudin/void/releases/latest/download/void-darwin-amd64.tar.gz | tar xz -C ~/bin
+```
+
+**Linux (x86_64)**
+
+```bash
+mkdir -p ~/bin && curl -fsSL https://github.com/MaximeGaudin/void/releases/latest/download/void-linux-amd64.tar.gz | tar xz -C ~/bin
+```
+
+**Linux (ARM64)**
+
+```bash
+mkdir -p ~/bin && curl -fsSL https://github.com/MaximeGaudin/void/releases/latest/download/void-linux-arm64.tar.gz | tar xz -C ~/bin
+```
+
+**Windows (PowerShell)**
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\bin" | Out-Null; curl.exe -fsSL -o "$env:TEMP\void.zip" https://github.com/MaximeGaudin/void/releases/latest/download/void-windows-amd64.zip; Expand-Archive -Path "$env:TEMP\void.zip" -DestinationPath "$HOME\bin" -Force
+```
+
+Then configure and run:
+
+```bash
+# Interactive setup — configure connectors, authenticate connections
+void setup
+
+# Start background sync daemon
+void sync --daemon
+
+# Read your unified inbox
+void inbox
+
+# Search across all connectors
+void search "quarterly report"
+
+# Send a message
+void send --via slack --to "#general" --message "Hello team"
+
+# Archive a processed message
+void archive <message-id>
+
+# View today's calendar
+void calendar
+```
+
 ## Inbox Zero
 
 Void follows an **Inbox Zero** model. All unprocessed messages land in a single inbox. The goal is to reach Inbox Zero — an empty inbox — by processing every item:
@@ -50,7 +109,7 @@ Void runs a background sync daemon that continuously pulls messages and events f
 └────────────────────────────────────────────────────┘
 ```
 
-## Quick Start
+## Building from Source
 
 ```bash
 # Build and install to ~/bin
@@ -66,29 +125,6 @@ Void runs a background sync daemon that continuously pulls messages and events f
 
 # Or specify a custom directory
 .\scripts\build-install.ps1 -InstallDir "$HOME\\bin"
-```
-
-```bash
-# Interactive setup — configure connectors, authenticate connections
-void setup
-
-# Start background sync daemon
-void sync --daemon
-
-# Read your unified inbox
-void inbox
-
-# Search across all connectors
-void search "quarterly report"
-
-# Send a message
-void send --via slack --to "#general" --message "Hello team"
-
-# Archive a processed message
-void archive <message-id>
-
-# View today's calendar
-void calendar
 ```
 
 ## Commands
@@ -369,6 +405,7 @@ On the server, configure and run sync as usual (`void setup`, `void sync --daemo
 
 - **Read commands** (`inbox`, `search`, `messages`, …) use a cached DB snapshot pulled over SSH
 - **Write commands** (`send`, `reply`, `archive`, …) are proxied to the server via SSH
+- **File attachments** — `--file` on proxied sends/replies/drafts is staged to the remote store over SCP before the command runs; download commands (`gmail attachment`, `whatsapp download`, `telegram download`, `linkedin download`, `drive download --output`) write to a remote temp path and the result is pulled back to your local `--out` / `--output` path
 - **`void remote status`** — SSH, cache age, remote daemon state
 - **`void remote refresh`** — force-refresh config + DB snapshot
 
