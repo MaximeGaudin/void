@@ -73,8 +73,9 @@ impl CalendarApiClient {
             }
             // showDeleted must be true (default) to receive cancelled events
         } else {
+            // singleEvents expands recurring instances for display; orderBy must not be
+            // set — Google Calendar API does not return nextSyncToken when orderBy is used.
             params.push(("singleEvents", "true".into()));
-            params.push(("orderBy", "startTime".into()));
             if let Some(t) = time_min {
                 params.push(("timeMin", t.into()));
             }
@@ -108,6 +109,43 @@ impl CalendarApiClient {
         debug!(
             count,
             has_sync_token, has_page_token, "calendar: list_events ok"
+        );
+        Ok(resp)
+    }
+
+    /// Unfiltered events.list for sync-token bootstrap (no timeMin/timeMax/singleEvents/orderBy).
+    pub async fn list_events_sync_bootstrap(
+        &self,
+        calendar_id: &str,
+        page_token: Option<&str>,
+    ) -> Result<EventListResponse, CalendarError> {
+        debug!(calendar_id, "calendar: list_events_sync_bootstrap");
+        let mut params: Vec<(&str, String)> = vec![("maxResults", "2500".into())];
+        if let Some(pt) = page_token {
+            params.push(("pageToken", pt.into()));
+        }
+
+        let url = format!(
+            "{}/calendar/v3/calendars/{}/events",
+            self.base_url,
+            urlencoded(calendar_id)
+        );
+        let resp: EventListResponse = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .query(&params)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+            .map_err(CalendarError::from)?;
+        debug!(
+            count = resp.items.as_ref().map(|i| i.len()).unwrap_or(0),
+            has_sync_token = resp.next_sync_token.is_some(),
+            has_page_token = resp.next_page_token.is_some(),
+            "calendar: list_events_sync_bootstrap ok"
         );
         Ok(resp)
     }

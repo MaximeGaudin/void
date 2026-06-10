@@ -81,15 +81,15 @@ impl CalendarConnector {
                     }
                 }
 
-                if let Some(token) = &resp.next_sync_token {
-                    db.set_sync_state(&self.connection_id, &format!("sync_token:{cal_id}"), token)?;
-                }
-
                 page_token = resp.next_page_token;
                 if page_token.is_none() {
                     break;
                 }
             }
+
+            // timeMin/timeMax/singleEvents backfill does not yield a sync token; paginate
+            // without filters to obtain one for incremental sync (Google Calendar API guide).
+            self.acquire_sync_token(&api, db, cal_id).await?;
             progress.inc_page();
         }
 
@@ -98,13 +98,52 @@ impl CalendarConnector {
         Ok(())
     }
 
+    /// Paginate an unfiltered events.list until Google returns nextSyncToken.
+    async fn acquire_sync_token(
+        &self,
+        api: &CalendarApiClient,
+        db: &Database,
+        cal_id: &str,
+    ) -> anyhow::Result<()> {
+        let key = format!("sync_token:{cal_id}");
+        if db.get_sync_state(&self.connection_id, &key)?.is_some() {
+            return Ok(());
+        }
+
+        info!(connection_id = %self.connection_id, calendar = %cal_id, "acquiring Calendar sync token");
+        let mut page_token: Option<String> = None;
+        loop {
+            let resp = api
+                .list_events_sync_bootstrap(cal_id, page_token.as_deref())
+                .await?;
+
+            if let Some(token) = &resp.next_sync_token {
+                db.set_sync_state(&self.connection_id, &key, token)?;
+                debug!(connection_id = %self.connection_id, calendar = %cal_id, "Calendar sync token stored");
+                return Ok(());
+            }
+
+            page_token = resp.next_page_token;
+            if page_token.is_none() {
+                anyhow::bail!(
+                    "Calendar API did not return a sync token for {cal_id} \
+                     (connection {})",
+                    self.connection_id
+                );
+            }
+        }
+    }
+
     pub(crate) async fn incremental_sync(&self, db: &Database) -> anyhow::Result<()> {
         let api = self.get_client().await?;
 
         for cal_id in &self.calendar_ids {
             let key = format!("sync_token:{cal_id}");
+            if db.get_sync_state(&self.connection_id, &key)?.is_none() {
+                debug!(calendar = %cal_id, "no sync_token, bootstrapping");
+                self.acquire_sync_token(&api, db, cal_id).await?;
+            }
             let Some(sync_token) = db.get_sync_state(&self.connection_id, &key)? else {
-                debug!(calendar = %cal_id, "no sync_token, skipping incremental");
                 continue;
             };
 

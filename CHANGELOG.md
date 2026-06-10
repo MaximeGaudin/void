@@ -7,14 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-08
+
 ### Added
 
+- **Remote store** — Full remote store mode with SSH proxy and local cache: run sync on a home server, use `void` locally against the same data (`store.mode = "remote"`, `void remote status`, `void remote refresh`).
+- **Doctor** — Added `--non-interactive` flag for scriptable health checks.
 - **LinkedIn** — Sync comments on your own posts via Unipile Posts & Comments API (one thread per post, nested comment replies, `void reply` on post comments).
 - **LinkedIn** — Catch-up after sleep/idle (wall-clock idle detection, progress on resume, same as Slack/Gmail).
 - **Hacker News** — Catch-up after sleep/idle with visible progress when resuming from hibernation.
 
 ### Fixed
 
+- **Calendar** — Incremental sync now works: initial backfill no longer uses `orderBy` (which prevented Google from returning a sync token), and a bootstrap step acquires the token for ongoing updates.
+- **Config** — Auto-create default config on first run instead of erroring.
+- **Gmail** — Paginate `list_history` to avoid silently dropping events.
+- **Gmail** — Preserve HTML when forwarding messages.
+- **Inbox** — Thread dedup no longer hides threads with newer archived messages.
 - **LinkedIn** — Run catch-up on daemon start when backfill is already complete (missed messages while void was stopped).
 - **Slack** — Skip external/Google and thumbnail-only attachments when caching files; prefer `url_private_download` to avoid repeated 404/401 warnings.
 
