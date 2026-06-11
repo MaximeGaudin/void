@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
@@ -29,7 +30,7 @@ impl HookRunner {
                 _ => unreachable!(),
             };
 
-            let cron = match croner::Cron::new(&cron_expr).parse() {
+            let cron = match croner::Cron::from_str(&cron_expr) {
                 Ok(c) => c,
                 Err(e) => {
                     error!(hook = %hook_name, cron = %cron_expr, "invalid cron expression: {e}");

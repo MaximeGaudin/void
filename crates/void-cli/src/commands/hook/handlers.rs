@@ -40,8 +40,8 @@ pub(crate) fn cmd_create(
         "schedule" | "cron" => {
             let cron_expr =
                 cron.ok_or_else(|| anyhow::anyhow!("--cron is required for schedule triggers"))?;
-            croner::Cron::new(cron_expr)
-                .parse()
+            std::str::FromStr::from_str(cron_expr)
+                .map(|_: croner::Cron| ())
                 .map_err(|e| anyhow::anyhow!("Invalid cron expression '{}': {}", cron_expr, e))?;
             Trigger::Schedule {
                 cron: cron_expr.to_string(),
