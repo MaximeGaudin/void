@@ -1,16 +1,16 @@
 # Graph Report - void  (2026-06-11)
 
 ## Corpus Check
-- 203 files · ~117,373 words
+- 204 files · ~118,315 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3350 nodes · 6586 edges · 190 communities (179 shown, 11 thin omitted)
+- 3360 nodes · 6596 edges · 189 communities (178 shown, 11 thin omitted)
 - Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 266 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c1b9f2ce`
+- Built from commit: `41181090`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -167,7 +167,6 @@
 - [[_COMMUNITY_Community 152|Community 152]]
 - [[_COMMUNITY_Community 153|Community 153]]
 - [[_COMMUNITY_Community 154|Community 154]]
-- [[_COMMUNITY_Community 155|Community 155]]
 - [[_COMMUNITY_Community 156|Community 156]]
 - [[_COMMUNITY_Community 157|Community 157]]
 - [[_COMMUNITY_Community 158|Community 158]]
@@ -229,7 +228,7 @@
 - 1-file cycle: `crates/void-cli/src/commands/setup/auth.rs -> crates/void-cli/src/commands/setup/auth.rs`
 - 1-file cycle: `crates/void-cli/src/commands/setup/calendar.rs -> crates/void-cli/src/commands/setup/calendar.rs`
 
-## Communities (190 total, 11 thin omitted)
+## Communities (189 total, 11 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.06
@@ -292,8 +291,8 @@ Cohesion: 0.09
 Nodes (33): AtomicBool, AtomicUsize, Arc, CancellationToken, Connector, ConnectorType, Database, Drop (+25 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.12
-Nodes (29): ConfigError, Option, Output, Path, PathBuf, Result, Self, String (+21 more)
+Cohesion: 0.05
+Nodes (57): CacheMeta, Arc, ConfigError, Database, DbError, Mutex, Option, Path (+49 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.08
@@ -348,8 +347,8 @@ Cohesion: 0.19
 Nodes (28): AccountOwnerProfile, comment_timestamp(), comment_to_void(), comment_to_void_sets_post_comment_metadata(), CommentVoidInput, ingest_comment(), post_conversation_ids(), post_conversation_ids_use_numeric_post_id() (+20 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.13
-Nodes (20): CacheMeta, Arc, ConfigError, Mutex, Option, Path, RemoteStoreConfig, Result (+12 more)
+Cohesion: 0.31
+Nodes (9): ConnectorType, Option, String, Vec, parse_connector_type(), resolve_connector_filter(), resolve_connector_filter_unknown_returns_err(), resolve_connector_list() (+1 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.15
@@ -397,7 +396,7 @@ Nodes (13): GmailConnector, resolve_body_part(), Arc, CancellationToken, Connect
 
 ### Community 43 - "Community 43"
 Cohesion: 0.11
-Nodes (9): ConnectorType, Option, String, Vec, parse_connector_type(), resolve_connector_filter(), resolve_connector_filter_unknown_returns_err(), resolve_connector_list() (+1 more)
+Nodes (5): T, Value, json_wrap(), json_wrap_paginated(), PaginationMeta
 
 ### Community 44 - "Community 44"
 Cohesion: 0.14
@@ -444,12 +443,12 @@ Cohesion: 0.15
 Nodes (19): AvailabilityArgs, run_availability(), run_calendars(), run_create(), run_delete(), run_respond(), run_search(), run_update() (+11 more)
 
 ### Community 55 - "Community 55"
-Cohesion: 0.16
-Nodes (17): InboxArgs, run(), run_conversations(), build_meta(), build_meta_exact_page_boundary(), build_meta_negative_total_treated_as_empty(), build_meta_partial_last_page(), build_meta_zero_total() (+9 more)
+Cohesion: 0.23
+Nodes (11): build_meta(), build_meta_exact_page_boundary(), build_meta_negative_total_treated_as_empty(), build_meta_partial_last_page(), build_meta_zero_total(), parse_page(), parse_page_overflow(), parse_page_rejects_non_positive_page() (+3 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.18
-Nodes (20): default_config(), default_config_path(), default_store_path_template(), dirs_home(), expand_tilde(), legacy_config_dir(), legacy_store_dir(), preferred_config_dir() (+12 more)
+Cohesion: 0.24
+Nodes (16): default_config(), default_config_path(), default_store_path_template(), dirs_home(), legacy_config_dir(), legacy_store_dir(), preferred_config_dir(), preferred_store_dir() (+8 more)
 
 ### Community 57 - "Community 57"
 Cohesion: 0.18
@@ -544,8 +543,8 @@ Cohesion: 0.22
 Nodes (14): CalendarEvent, Conversation, ConversationKind, Message, Option, Result, Row, String (+6 more)
 
 ### Community 81 - "Community 81"
-Cohesion: 0.25
-Nodes (7): Database, DbError, PathBuf, VoidConfig, RemoteHandle, ResolvedContext, StoreMode
+Cohesion: 0.22
+Nodes (8): Contributing, Cursor (zero setup), Graphify — codebase knowledge graph, Install the CLI, Keep the graph fresh, Optional git hooks, Query the graph, What gets committed
 
 ### Community 82 - "Community 82"
 Cohesion: 0.49
@@ -652,8 +651,8 @@ Cohesion: 0.20
 Nodes (9): Active window, Choosing the agent, Creating hooks, Hook files, Hooks — LLM automation, How it works, Prompt placeholders, Testing and logs (+1 more)
 
 ### Community 108 - "Community 108"
-Cohesion: 0.22
-Nodes (8): [0.1.0] - 2026-03-11, [0.3.1] - 2026-03-19, [0.9.3] - 2026-06-11, Added, Changed, Changelog, Fixed, [Unreleased]
+Cohesion: 0.18
+Nodes (10): [0.1.0] - 2026-03-11, [0.3.1] - 2026-03-19, [0.5.0] - 2026-03-29, [0.9.3] - 2026-06-11, Added, Added, Changed, Changed (+2 more)
 
 ### Community 109 - "Community 109"
 Cohesion: 0.39
@@ -692,8 +691,8 @@ Cohesion: 0.46
 Nodes (7): extract_media_metadata(), extract_media_type(), extract_text(), Message, Option, String, Value
 
 ### Community 118 - "Community 118"
-Cohesion: 0.43
-Nodes (6): build_connector(), Arc, ConnectionConfig, Connector, Path, Result
+Cohesion: 0.27
+Nodes (9): build_connector(), expand_tilde(), expand_tilde_bare_tilde(), expand_tilde_works(), Arc, ConnectionConfig, Connector, Path (+1 more)
 
 ### Community 119 - "Community 119"
 Cohesion: 0.38
@@ -736,8 +735,8 @@ Cohesion: 0.60
 Nodes (5): Path, Result, VoidConfig, exit_setup(), run_full_wizard()
 
 ### Community 130 - "Community 130"
-Cohesion: 0.47
-Nodes (5): T, Value, json_wrap(), json_wrap_paginated(), PaginationMeta
+Cohesion: 0.43
+Nodes (6): InboxArgs, run(), run_conversations(), Option, Result, String
 
 ### Community 131 - "Community 131"
 Cohesion: 0.40
@@ -835,17 +834,13 @@ Nodes (3): ConfigError, DbError, HookError
 Cohesion: 0.67
 Nodes (3): [0.4.2] - 2026-03-24, Added, Fixed
 
-### Community 155 - "Community 155"
-Cohesion: 0.67
-Nodes (3): [0.5.0] - 2026-03-29, Added, Changed
-
 ### Community 156 - "Community 156"
 Cohesion: 0.67
 Nodes (3): [0.8.0] - 2026-05-19, Added, Fixed
 
 ### Community 157 - "Community 157"
-Cohesion: 0.67
-Nodes (3): [0.9.0] - 2026-06-08, Added, Fixed
+Cohesion: 0.40
+Nodes (5): [0.9.0] - 2026-06-08, Added, Added, Fixed, [Unreleased]
 
 ### Community 158 - "Community 158"
 Cohesion: 0.67
@@ -856,21 +851,21 @@ Cohesion: 0.67
 Nodes (3): [0.9.2] - 2026-06-11, Changed, Removed
 
 ## Knowledge Gaps
-- **626 isolated node(s):** `Client`, `CalendarListResponse`, `InsertEventRequest`, `UpdateEventRequest`, `FreeBusyResponse` (+621 more)
+- **632 isolated node(s):** `Getting started`, `Before you push`, `Project layout`, `Adding a connector`, `Commit conventions` (+627 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `expand_tilde()` connect `Community 56` to `Community 4`, `Community 12`, `Community 47`, `Community 118`, `Community 22`, `Community 54`, `Community 31`?**
-  _High betweenness centrality (0.069) - this node is a cross-community bridge._
-- **Why does `build_calendar_connector()` connect `Community 54` to `Community 56`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
-- **Why does `resolve_connector_filter()` connect `Community 43` to `Community 136`, `Community 73`, `Community 60`, `Community 48`, `Community 116`, `Community 21`, `Community 55`, `Community 124`, `Community 125`, `Community 127`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
-- **What connects `Client`, `CalendarListResponse`, `InsertEventRequest` to the rest of the system?**
-  _626 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `expand_tilde()` connect `Community 118` to `Community 4`, `Community 12`, `Community 47`, `Community 16`, `Community 22`, `Community 54`, `Community 56`?**
+  _High betweenness centrality (0.079) - this node is a cross-community bridge._
+- **Why does `build_calendar_connector()` connect `Community 54` to `Community 118`?**
+  _High betweenness centrality (0.064) - this node is a cross-community bridge._
+- **Why does `resolve_connector_filter()` connect `Community 31` to `Community 130`, `Community 136`, `Community 73`, `Community 43`, `Community 60`, `Community 48`, `Community 116`, `Community 21`, `Community 124`, `Community 125`, `Community 127`?**
+  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+- **What connects `Getting started`, `Before you push`, `Project layout` to the rest of the system?**
+  _632 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.05572545022086307 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**

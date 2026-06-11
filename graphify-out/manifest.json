@@ -985,8 +985,8 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1781202400.5316503,
-    "ast_hash": "aa98994e07f3b365032228530c68fb75",
+    "mtime": 1781206330.908046,
+    "ast_hash": "381e26c771b57db9b666afe1f119513e",
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {
@@ -995,13 +995,13 @@
     "semantic_hash": ""
   },
   "CONTRIBUTING.md": {
-    "mtime": 1781202400.5318704,
-    "ast_hash": "5521a86e043f65efe8d46071cee173ee",
+    "mtime": 1781207589.9538047,
+    "ast_hash": "2a556057d221b6c252465a406fbed75d",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1781202400.5327294,
-    "ast_hash": "2b19d0031b40a98f6eb7ebf317c0e1ce",
+    "mtime": 1781205970.529821,
+    "ast_hash": "95df539f8a5963b6afeaae1c42e02e70",
     "semantic_hash": ""
   },
   "SECURITY.md": {
@@ -1052,6 +1052,11 @@
   "docs/assets/readme-banner.svg": {
     "mtime": 1781202400.5616353,
     "ast_hash": "725a5cbf5e97592c2779694b6bcf1b12",
+    "semantic_hash": ""
+  },
+  "docs/graphify.md": {
+    "mtime": 1781207588.0092795,
+    "ast_hash": "81e559ae4598fc679534b71a82ef0c05",
     "semantic_hash": ""
   }
 }
