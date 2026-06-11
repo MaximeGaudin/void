@@ -213,5 +213,10 @@ pub fn looks_like_html(text: &str) -> bool {
 }
 
 pub fn html_to_markdown(html: &str) -> String {
-    html_to_markdown_rs::convert(html, None).unwrap_or_else(|_| html.to_string())
+    // html-to-markdown-rs 3.x returns a ConversionResult whose `content` holds
+    // the rendered text (None only in extraction-only mode, which we don't use).
+    html_to_markdown_rs::convert(html, None)
+        .ok()
+        .and_then(|result| result.content)
+        .unwrap_or_else(|| html.to_string())
 }
