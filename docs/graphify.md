@@ -4,9 +4,9 @@ This repo ships a [graphify](https://github.com/safishamsi/graphify) knowledge g
 
 - [Cursor (zero setup)](#cursor-zero-setup)
 - [Install the CLI](#install-the-cli)
-- [Install git hooks (required)](#install-git-hooks-required)
-- [Query the graph](#query-the-graph)
 - [Keep the graph fresh](#keep-the-graph-fresh)
+- [Optional git hooks](#optional-git-hooks)
+- [Query the graph](#query-the-graph)
 - [What gets committed](#what-gets-committed)
 - [Contributing](#contributing)
 
@@ -21,11 +21,11 @@ Open Agent chat and ask architecture questions as usual; the agent should query 
 
 Browse the graph visually: open `graphify-out/graph.html` in a browser, or skim `graphify-out/GRAPH_REPORT.md` for community hubs and suggested questions.
 
-> **If you change code**, the committed graph will go stale unless you [install the git hooks](#install-git-hooks-required). Without hooks, Cursor agents query outdated structure and miss new symbols or dead references.
+> **The graph is only as current as the last commit.** If you or someone else changed code without updating `graphify-out/`, queries return stale structure — missing new symbols, dead references, outdated docs. Check that the graph matches your branch before relying on it (see [Keep the graph fresh](#keep-the-graph-fresh)).
 
 ## Install the CLI
 
-The graph works in Cursor without installing anything on first checkout. **Install the CLI before you start editing code** — it is required for git hooks and for refreshing the graph manually.
+The graph works in Cursor without installing anything on first checkout. Install the CLI when you want to query from the terminal or refresh the graph after edits.
 
 ```bash
 # recommended — puts graphify on PATH automatically
@@ -41,27 +41,43 @@ Verify:
 graphify --version
 ```
 
-## Install git hooks (required)
+## Keep the graph fresh
 
-**Run this once after every clone.** Hooks are not committed to the repo; each developer must install them locally.
+**Good practice:** run `graphify update .` before you commit code or doc changes, then include the updated `graphify-out/` files in the same commit. That keeps the graph in git aligned with the code everyone else (and every Cursor session) will see.
+
+```bash
+graphify update .          # AST-only, no LLM cost
+git add graphify-out/
+git commit                 # code + graph together
+```
+
+`graphify update .` is fast for day-to-day work. For a full semantic re-extraction (requires an LLM API key, rarely needed):
+
+```bash
+graphify extract .
+```
+
+**Before relying on the graph** — after pulling, switching branches, or starting a long Cursor session — confirm it reflects your tree. If `graphify-out/` was not updated in recent commits, run `graphify update .` locally or query with the understanding that results may be incomplete.
+
+## Optional git hooks
+
+Graphify can install local git hooks (`graphify hook install`). They are **optional** — the repo does not require them, and they do not keep the committed graph in sync by themselves.
 
 ```bash
 graphify hook install
-graphify hook status   # should show post-commit and post-checkout: installed
+graphify hook status   # post-commit and post-checkout: installed
 ```
 
-What they do:
+What they actually do:
 
 | Hook | When it runs | Effect |
 |------|--------------|--------|
-| **post-commit** | after every commit | runs `graphify update .` (AST-only, no API cost) so `graphify-out/` stays aligned with your changes |
+| **post-commit** | after each commit | rebuilds the graph in the **background** from the commit you just made; updated files stay **unstaged** until you commit them again |
 | **post-checkout** | after branch switch | refreshes the graph for the checked-out branch |
 
-This is the main way graph maintenance stays automatic. Without hooks, you must remember to run `graphify update .` before every commit that touches code — easy to forget, and a stale graph misleads Cursor agents.
+Because the rebuild is post-commit and asynchronous, the graph update lands **after** your code commit — not inside it. Hooks are a convenience for local rebuilds, not a substitute for running `graphify update .` and committing `graphify-out/` before you push.
 
-Hooks also register a merge driver for `graph.json`, so parallel commits union-merge the graph instead of leaving conflict markers.
-
-Re-run `graphify hook install` after upgrading graphify so the embedded interpreter path stays correct.
+Hooks also register a merge driver for `graph.json`, which helps when two branches both update the graph. Re-run `graphify hook install` after upgrading graphify.
 
 ## Query the graph
 
@@ -78,22 +94,6 @@ graphify explain "void-core"
 
 Useful flags: `--budget 500` to cap output size, `--graph graphify-out/graph.json` to point at a specific graph file.
 
-## Keep the graph fresh
-
-**With hooks installed:** the post-commit hook updates the graph after each commit. Stage and commit the updated `graphify-out/` files alongside your code changes.
-
-**Without hooks:** refresh manually before committing code changes:
-
-```bash
-graphify update .
-```
-
-For a full semantic re-extraction (requires an LLM API key, rarely needed day-to-day):
-
-```bash
-graphify extract .
-```
-
 ## What gets committed
 
 | Path | Committed? | Notes |
@@ -106,14 +106,14 @@ graphify extract .
 | `graphify-out/cache/` | no | local rebuild cache (~4 MB) |
 | `graphify-out/cost.json` | no | local extraction cost log |
 
-When committing code changes, include the hook-updated `graphify-out/` files in the same commit so everyone (and every Cursor session) sees an accurate graph.
+When your PR touches Rust or repo docs, include updated `graphify-out/` files so the graph on `main` stays trustworthy.
 
 ## Contributing
 
 Follow [CONTRIBUTING.md](../CONTRIBUTING.md) for the full workflow. Graphify-specific expectations:
 
-1. **Hooks** — run `graphify hook install` once after every clone (see above).
-2. **Same PR as code** — when your change touches Rust or repo docs, commit the updated `graphify-out/` files in the same PR.
+1. **Before commit** — run `graphify update .` and commit `graphify-out/` with your code or doc changes when the graph should reflect those edits.
+2. **Same PR as code** — do not leave the graph stale on a branch that changes behavior or structure.
 3. **Checks** — run `./scripts/check.sh` before pushing; CI must be green.
-4. **Commits** — use [Conventional Commits](https://www.conventionalcommits.org/): `docs:` for documentation-only changes, `feat(scope):` / `fix(scope):` for code (include graph updates in that commit, not a separate one).
+4. **Commits** — use [Conventional Commits](https://www.conventionalcommits.org/): `docs:` for documentation-only changes, `feat(scope):` / `fix(scope):` for code (include graph updates in that commit when relevant).
 5. **Changelog** — add a line under `[Unreleased]` in [CHANGELOG.md](../CHANGELOG.md) when the change is user- or contributor-visible (new guides, workflow changes).

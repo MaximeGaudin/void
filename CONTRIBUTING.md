@@ -12,7 +12,7 @@ cargo build
 
 The Rust toolchain is pinned by `rust-toolchain.toml` — `rustup` picks it up automatically. Minimum supported Rust version is declared in `Cargo.toml` (`rust-version`).
 
-**Using Cursor?** After clone, install the graphify CLI and git hooks so the committed knowledge graph stays current as you edit code — see [docs/graphify.md](docs/graphify.md).
+**Using Cursor?** The repo includes a pre-built knowledge graph — see [docs/graphify.md](docs/graphify.md). Run `graphify update .` before committing code changes so `graphify-out/` stays current in git.
 
 ## Before you push
 
@@ -22,8 +22,6 @@ CI enforces formatting, clippy with `-D warnings`, and tests on Linux, macOS, an
 ./scripts/check.sh        # fmt + clippy + test, same as CI
 ```
 
-If you changed Rust or markdown under `docs/`, commit the hook-updated `graphify-out/` files in the same PR (see [docs/graphify.md](docs/graphify.md)).
-
 or individually:
 
 ```bash
@@ -31,6 +29,8 @@ cargo fmt --all
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+If you changed Rust or markdown under `docs/`, run `graphify update .` and commit the updated `graphify-out/` files in the same PR (see [docs/graphify.md](docs/graphify.md)).
 
 ## Project layout
 
