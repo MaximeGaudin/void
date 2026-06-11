@@ -1,5 +1,10 @@
 # Void CLI
 
+[![CI](https://github.com/MaximeGaudin/void/actions/workflows/ci.yml/badge.svg)](https://github.com/MaximeGaudin/void/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/MaximeGaudin/void)](https://github.com/MaximeGaudin/void/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](Cargo.toml)
+
 **One inbox for everything.** `void` unifies WhatsApp, Telegram, Slack, Gmail, Google Calendar, Google Drive, LinkedIn, and Hacker News into a single local-first command-line tool — one inbox, one search index, one set of commands.
 
 It is built for terminals, shell scripts, and AI agents:
@@ -162,11 +167,11 @@ All data stays on your machine in `~/.local/share/void` — no external database
 ## Development
 
 ```bash
-cargo fmt && cargo clippy && cargo test
+./scripts/check.sh       # fmt + clippy + tests, same as CI
 cargo build --release
 ```
 
-Contributions welcome — [Adding a connector](docs/adding-a-connector.md) is the best place to start.
+Contributions welcome — read [CONTRIBUTING.md](CONTRIBUTING.md), and [Adding a connector](docs/adding-a-connector.md) is the best place to start. Security reports: [SECURITY.md](SECURITY.md). Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -1,0 +1,60 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+        **Never paste tokens, OAuth credentials, or private message contents** — redact anything personal.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+      placeholder: |
+        1. Ran `void ...`
+        2. Expected ...
+        3. Got ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `void --version`
+      placeholder: void 0.9.1
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (x86_64)
+        - Linux (ARM64)
+        - Windows
+    validations:
+      required: true
+  - type: dropdown
+    id: connector
+    attributes:
+      label: Connector involved (if any)
+      options:
+        - None / not connector-specific
+        - WhatsApp
+        - Telegram
+        - Slack
+        - Gmail
+        - Google Calendar
+        - Google Drive
+        - LinkedIn
+        - Hacker News
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output, ideally with `-v`. `void doctor` output also helps. Redact anything sensitive.
+      render: shell

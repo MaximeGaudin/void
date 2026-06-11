@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Docs** — Restructured the README around a quick start and everyday examples, and split deep material into modular guides (`docs/`): command reference, configuration, connector setup, hooks, remote store.
+- **Community** — Added contribution guide, security policy, code of conduct, issue/PR templates, and Dependabot configuration.
+
+### Removed
+
+- **Agent** — Removed the unused rig-core-based interactive agent mode (`void agent`) and its crate. Hooks (`void hook`) are unaffected.
+
 ## [0.9.1] - 2026-06-10
 
 ### Fixed

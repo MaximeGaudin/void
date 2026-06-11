@@ -18,6 +18,7 @@ version = "0.9.1"
 edition = "2021"
 license = "GPL-3.0-only"
 rust-version = "1.75"
+repository = "https://github.com/MaximeGaudin/void"
 
 [workspace.dependencies]
 # Async runtime

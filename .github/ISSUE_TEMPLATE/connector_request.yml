@@ -1,0 +1,29 @@
+name: Connector request
+description: Request support for a new messaging service or data source
+labels: ["enhancement", "connector"]
+body:
+  - type: input
+    id: service
+    attributes:
+      label: Service
+      placeholder: e.g. Discord, Signal, Outlook, Mastodon
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: How could void talk to it?
+      description: Official API? Reverse-engineered protocol? Third-party bridge? Links welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: What should work?
+      description: Read/sync only, or also send, reply, media download, ...?
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be willing to implement this (see docs/adding-a-connector.md)

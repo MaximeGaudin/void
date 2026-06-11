@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/MaximeGaudin/void/discussions
+    about: Ask questions and share how you use void
+  - name: Security vulnerability
+    url: https://github.com/MaximeGaudin/void/security/advisories/new
+    about: Report privately — please don't open a public issue
