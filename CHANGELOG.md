@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-06-11
+
+### Changed
+
+- **Homebrew** — Fixed automatic tap formula updates on release (deploy-key authentication instead of a cross-repo PAT).
+
 ## [0.9.2] - 2026-06-11
 
 ### Changed
