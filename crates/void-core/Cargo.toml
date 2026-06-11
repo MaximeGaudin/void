@@ -22,3 +22,8 @@ tokio-util = { workspace = true }
 croner = { workspace = true }
 dirs = { workspace = true }
 sysinfo = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+proptest = { workspace = true }
+tokio = { workspace = true }

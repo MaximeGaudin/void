@@ -19,6 +19,7 @@ chrono = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 wiremock = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }
