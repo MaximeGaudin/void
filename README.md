@@ -1,5 +1,7 @@
 # Void CLI
 
+![void banner](docs/assets/readme-banner.svg)
+
 [![CI](https://github.com/MaximeGaudin/void/actions/workflows/ci.yml/badge.svg)](https://github.com/MaximeGaudin/void/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/MaximeGaudin/void)](https://github.com/MaximeGaudin/void/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
