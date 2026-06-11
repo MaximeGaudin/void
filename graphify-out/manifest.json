@@ -1,0 +1,1057 @@
+{
+  "crates/void-calendar/src/api.rs": {
+    "mtime": 1781202400.5332148,
+    "ast_hash": "af956bfd27693e0c7a2c28bea5ca2030",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/attendees.rs": {
+    "mtime": 1781202400.5334067,
+    "ast_hash": "635a8af99a69e338ba6deda1bf369d6e",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/connector_trait.rs": {
+    "mtime": 1781202400.5335684,
+    "ast_hash": "1c75f46696397d7c55c8cdf4bce9bace",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/events.rs": {
+    "mtime": 1781202400.5337195,
+    "ast_hash": "fa993e4395a5e45ed092d8f9d1e637a8",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/mapping.rs": {
+    "mtime": 1781202400.5338001,
+    "ast_hash": "defc10aec536aca8ea3493015ab00653",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/mod.rs": {
+    "mtime": 1781202400.5338714,
+    "ast_hash": "d19d40b90b639a57c5e4b0e28abcbc72",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/sync_ops.rs": {
+    "mtime": 1781202400.5340025,
+    "ast_hash": "b5b59a289c26e4f6110584386835fc94",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/tests.rs": {
+    "mtime": 1781202400.5341249,
+    "ast_hash": "236c7127a28326ac52edb997afd088ed",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/connector/types.rs": {
+    "mtime": 1781202400.5342112,
+    "ast_hash": "036aa9a9ee134681759593c570cfdf79",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/error.rs": {
+    "mtime": 1781202400.534287,
+    "ast_hash": "bfe0b5ba33e82200c8a9335ffab30d5a",
+    "semantic_hash": ""
+  },
+  "crates/void-calendar/src/lib.rs": {
+    "mtime": 1781202400.5345387,
+    "ast_hash": "20cbd23dad50a44762cf545b8ed3d98e",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/agent_inbox/handlers.rs": {
+    "mtime": 1781202400.535278,
+    "ast_hash": "50a8576592742407e60d2ccc406021e5",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/agent_inbox/mod.rs": {
+    "mtime": 1781202400.5353854,
+    "ast_hash": "3fba661e832c2108c5406e1b2f174acb",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/agent_inbox/tests.rs": {
+    "mtime": 1781202400.5355487,
+    "ast_hash": "6543888bb8b01f7dc967b7f0dba0dc0d",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/archive.rs": {
+    "mtime": 1781202400.535689,
+    "ast_hash": "8705caf2fda94e9ffe32b5b51df25781",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/calendar/api.rs": {
+    "mtime": 1781202400.5359597,
+    "ast_hash": "0c44904db3ac0b65eefaa52af4440496",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/calendar/args.rs": {
+    "mtime": 1781202400.536052,
+    "ast_hash": "f8b29993d06c14b11ae35aa6b13cbc7f",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/calendar/connector.rs": {
+    "mtime": 1781202400.5362492,
+    "ast_hash": "38710d090feb74b5fb2fabc4550e0f80",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/calendar/list.rs": {
+    "mtime": 1781202400.5364952,
+    "ast_hash": "b99d15c7f773b08deee2522843bfd69e",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/calendar/mod.rs": {
+    "mtime": 1781202400.5365937,
+    "ast_hash": "38642f14bc96c3ac03c5379b3774d181",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/calendar/parsing.rs": {
+    "mtime": 1781202400.5367644,
+    "ast_hash": "868faf881dbda508614f8c29bc75e83b",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/channels.rs": {
+    "mtime": 1781202400.5368683,
+    "ast_hash": "b0aa815c56e324c8a9bb8eb46c04a8bc",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/connector_factory.rs": {
+    "mtime": 1781202400.5369582,
+    "ast_hash": "f3a91e3d6d597ddf32b82c60b0ae656d",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/contacts.rs": {
+    "mtime": 1781202400.5370367,
+    "ast_hash": "1d8cf68a2fe30477b926e065cf84c4bb",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/doctor.rs": {
+    "mtime": 1781202400.5373168,
+    "ast_hash": "ef08eea2ac18a357f3f7c6058fcafada",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/forward.rs": {
+    "mtime": 1781202400.5374482,
+    "ast_hash": "45aa93809a005fce5d3ec1b751e2b3a1",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/gdrive.rs": {
+    "mtime": 1781202400.5375893,
+    "ast_hash": "2a0a484e0ba9f4058bd0222fcc13e6dd",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/gmail/args.rs": {
+    "mtime": 1781202400.5377574,
+    "ast_hash": "ebcac18f7e87c2b786bd16c1f206e0f5",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/gmail/handlers.rs": {
+    "mtime": 1781202400.5379117,
+    "ast_hash": "1234e6b58593078c773e5310d17e85cb",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/gmail/mod.rs": {
+    "mtime": 1781202400.538009,
+    "ast_hash": "069f95403d7759a8eb5d2d81000031f0",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/hackernews.rs": {
+    "mtime": 1781202400.5381346,
+    "ast_hash": "066ac013444c8131472ddd8ec3376206",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/hook/handlers.rs": {
+    "mtime": 1781202400.538293,
+    "ast_hash": "eb2ad0537cbab08bc71d6472e2134e6a",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/hook/mod.rs": {
+    "mtime": 1781202400.5384054,
+    "ast_hash": "841538c682da341a2212ed8660bf3d48",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/inbox.rs": {
+    "mtime": 1781202400.5384777,
+    "ast_hash": "e30b8f68da6c259a4b641138fde4095d",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/linkedin.rs": {
+    "mtime": 1781202400.538612,
+    "ast_hash": "ba8025d38e08d3a53ca2dffe2096f194",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/messages.rs": {
+    "mtime": 1781202400.5387244,
+    "ast_hash": "1c58f3592de7d44cc662a86c1862b8d8",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/mod.rs": {
+    "mtime": 1781202400.5388048,
+    "ast_hash": "f47183c17d94cd648bb9d8de8f67fc33",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/mute.rs": {
+    "mtime": 1781202400.5390747,
+    "ast_hash": "a405ac6a5c81c46d0a2dfc38fd2cc326",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/pagination.rs": {
+    "mtime": 1781202400.5391746,
+    "ast_hash": "c76d851a922879e22fdfbff9394066c1",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/remote.rs": {
+    "mtime": 1781202400.5392554,
+    "ast_hash": "f7af59b08e7081171673813c4cfddab2",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/reply.rs": {
+    "mtime": 1781202400.5394003,
+    "ast_hash": "9cebc14c56d0407ed7db613d89f7c577",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/resolve.rs": {
+    "mtime": 1781202400.5395575,
+    "ast_hash": "cfd1017f43153cee3e6bdfbfa946e96d",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/search.rs": {
+    "mtime": 1781202400.539642,
+    "ast_hash": "ad5741554f6ddfcd4412095dee8541e0",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/send.rs": {
+    "mtime": 1781202400.5399323,
+    "ast_hash": "0b566de317804bbd09dcd7ded98624f7",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/auth.rs": {
+    "mtime": 1781202400.5402577,
+    "ast_hash": "1c879f2169c8164fdc4e636f75941d19",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/calendar.rs": {
+    "mtime": 1781202400.540353,
+    "ast_hash": "94e182777e6b2b59d4c13d49ba7cfd06",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/config_ui.rs": {
+    "mtime": 1781202400.5404923,
+    "ast_hash": "aab0be86bd0773e4f9ec91e87bd66ecb",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/connection_menu.rs": {
+    "mtime": 1781202400.5406437,
+    "ast_hash": "bf431372755240c5dce566fbcbc651b4",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/gdrive.rs": {
+    "mtime": 1781202400.5407205,
+    "ast_hash": "2d0385e19825e787414aa2f060e4ed74",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/gmail.rs": {
+    "mtime": 1781202400.5408003,
+    "ast_hash": "10b836fc6e1345fba96b0c9c15f93a9c",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/hackernews.rs": {
+    "mtime": 1781202400.5408957,
+    "ast_hash": "d4587ea3555dafa7ca817a7c27831bc6",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/linkedin.rs": {
+    "mtime": 1781202400.5409858,
+    "ast_hash": "ddd6733a132f2ab641f4fb7f7c29e329",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/mod.rs": {
+    "mtime": 1781202400.5411124,
+    "ast_hash": "ae559cfe4d8f4c98ea56e697dec514fb",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/prompt.rs": {
+    "mtime": 1781202400.5411952,
+    "ast_hash": "4da6e2c312b41c6000fbef6d309c8ec2",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/slack.rs": {
+    "mtime": 1781202400.5413508,
+    "ast_hash": "03cd77ef0ebf4f1c7fe1982e8aaea557",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/telegram.rs": {
+    "mtime": 1781202400.541435,
+    "ast_hash": "570d5cf69e02b650000bda3a3d984e69",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/whatsapp.rs": {
+    "mtime": 1781202400.5415087,
+    "ast_hash": "76de853d0b4f6e1cc3b3af4f8fa46303",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/setup/wizard.rs": {
+    "mtime": 1781202400.5415943,
+    "ast_hash": "9dc0b326ae4e435e3bac94566f75ed22",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/slack/args.rs": {
+    "mtime": 1781202400.5417397,
+    "ast_hash": "f6804d8fec5eb953c8b4dfcdefbc9428",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/slack/mod.rs": {
+    "mtime": 1781202400.5419092,
+    "ast_hash": "f733e6fa2590f71f0a68b09961f22887",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/status.rs": {
+    "mtime": 1781202400.5420141,
+    "ast_hash": "df74b366272d32fa4cbd6a96d9cbad1b",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/sync/args.rs": {
+    "mtime": 1781202400.5421479,
+    "ast_hash": "dbdfd59d8edfc8ee98275b1379743d80",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/sync/daemon.rs": {
+    "mtime": 1781202400.54228,
+    "ast_hash": "18aca0a51adc9402e7560ef9731c2507",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/sync/engine.rs": {
+    "mtime": 1781202400.5424218,
+    "ast_hash": "8b6594413da75c24b17a9293bd674ea7",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/sync/lock.rs": {
+    "mtime": 1781202400.5425098,
+    "ast_hash": "b4af5f72297f22ed9f809dad0af39272",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/sync/mod.rs": {
+    "mtime": 1781202400.5425963,
+    "ast_hash": "d1aaf2e853472bc19311af874e516958",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/sync/status.rs": {
+    "mtime": 1781202400.5427015,
+    "ast_hash": "37f517ee2eb4bd21a4addbfaaccb8b1d",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/telegram.rs": {
+    "mtime": 1781202400.542814,
+    "ast_hash": "a5aee144cca046b3ac18e52c5bbc6c8c",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/commands/whatsapp.rs": {
+    "mtime": 1781202400.5428886,
+    "ast_hash": "341a99e76b68912f0b690c2e9b6ce6a1",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/context.rs": {
+    "mtime": 1781202400.5430195,
+    "ast_hash": "1efbc9e24774e8dcc376f8321148a430",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/main.rs": {
+    "mtime": 1781202400.543138,
+    "ast_hash": "ca2e4d088b2d0ecfec32d163f68b5a19",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/src/output.rs": {
+    "mtime": 1781202400.5433102,
+    "ast_hash": "c8308ad7cc7e298593bf3428aeb5ea7a",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/tests/cli_contract.rs": {
+    "mtime": 1781202400.5434341,
+    "ast_hash": "5991287aa96091949dd217dbf91f8ef6",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/tests/first_run.rs": {
+    "mtime": 1781202400.5435314,
+    "ast_hash": "c7f2e4da141244df30255cda14d41f50",
+    "semantic_hash": ""
+  },
+  "crates/void-cli/tests/read_paths.rs": {
+    "mtime": 1781202400.5436587,
+    "ast_hash": "e0d0f7bdf57020a804fb9656e443a207",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/config/connection.rs": {
+    "mtime": 1781202400.5439682,
+    "ast_hash": "c2efe5a827650479f9c63690f87a8f5d",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/config/ignore.rs": {
+    "mtime": 1781202400.5440567,
+    "ast_hash": "e6c0018f6d996dd6c54a66a85419d100",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/config/mod.rs": {
+    "mtime": 1781202400.5441427,
+    "ast_hash": "84709e0f56830c0041557269ac4fe677",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/config/paths.rs": {
+    "mtime": 1781202400.544243,
+    "ast_hash": "e3a5e5d661f56469d7a194015846b36a",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/config/tests.rs": {
+    "mtime": 1781202400.5443606,
+    "ast_hash": "4f8adbbd12bab2c1a378fc1e8477bf59",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/config/void_config.rs": {
+    "mtime": 1781202400.5445037,
+    "ast_hash": "ca60ba037fa1e30f915820b689c124cf",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/connector.rs": {
+    "mtime": 1781202400.544588,
+    "ast_hash": "318799594ad47fecc9e5f4530b171bc9",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/agent_inbox.rs": {
+    "mtime": 1781202400.5447478,
+    "ast_hash": "018921aae3e45aba1a1f9a717c298bf2",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/agent_inbox_tests.rs": {
+    "mtime": 1781202400.5448785,
+    "ast_hash": "85231b1938b6c6951904f3a633f6e843",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/conversations.rs": {
+    "mtime": 1781202400.5451756,
+    "ast_hash": "f99b14c711497badc6b67cb4686f2dbb",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/database_access.rs": {
+    "mtime": 1781202400.5455432,
+    "ast_hash": "a354152f33048be5a30615d4a68b704f",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/directory.rs": {
+    "mtime": 1781202400.5457518,
+    "ast_hash": "fe29de43517526f9759f3f19ad8efa28",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/events.rs": {
+    "mtime": 1781202400.5459137,
+    "ast_hash": "75267f07c1f6fa6bcf5f836881cbd9a7",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/hook_logs.rs": {
+    "mtime": 1781202400.5460262,
+    "ast_hash": "21c7d539ede779ec621f9fe9217e40f5",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/messages.rs": {
+    "mtime": 1781202400.5462132,
+    "ast_hash": "e86ccb5f5f28db9a0447caae7a86dca5",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/mod.rs": {
+    "mtime": 1781202400.5465183,
+    "ast_hash": "cf6e6f632c8e8a78c6a1a040f0eb4b4b",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/mute_sync.rs": {
+    "mtime": 1781202400.5467176,
+    "ast_hash": "ab109d8ef80bd64af7f2440e9ef2563c",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/row.rs": {
+    "mtime": 1781202400.5468197,
+    "ast_hash": "03817fc922982cf009291cbe4c74f7c7",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/schema.rs": {
+    "mtime": 1781202400.547025,
+    "ast_hash": "d0fee99af65d4f3d9677f8851bfd19a9",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/search.rs": {
+    "mtime": 1781202400.5476615,
+    "ast_hash": "78342cc0fe0a62f87f0966bd0fdc27a6",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/db/tests.rs": {
+    "mtime": 1781202400.547929,
+    "ast_hash": "dd1738a4120b30be908cc29a46d382ed",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/error.rs": {
+    "mtime": 1781202400.5480964,
+    "ast_hash": "be66744ad718a6f43064578efccd57c9",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/execute.rs": {
+    "mtime": 1781202400.5483973,
+    "ast_hash": "33d8386f4ea61ad42c02f39d72eb5402",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/hook_fs.rs": {
+    "mtime": 1781202400.5485268,
+    "ast_hash": "dafdbbe96b20ba19a71d37d5c06e876d",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/mod.rs": {
+    "mtime": 1781202400.5487096,
+    "ast_hash": "2a32bb5e212fc4a280913d85b08465c2",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/model.rs": {
+    "mtime": 1781202400.5488887,
+    "ast_hash": "e1b2298155e2557cba7059dd1aaca3d3",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/placeholders.rs": {
+    "mtime": 1781202400.5489886,
+    "ast_hash": "df2929443594fa203449c69f16b26233",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/runner/mod.rs": {
+    "mtime": 1781202400.5491374,
+    "ast_hash": "522c1eea947a3bef1cfdc41e750ddf28",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/runner/on_message.rs": {
+    "mtime": 1781202400.549276,
+    "ast_hash": "90d242cf122221f26a99f30d542d5558",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/runner/schedule.rs": {
+    "mtime": 1781202400.5494163,
+    "ast_hash": "253891d8eea0d034fc5c2a1574b3e565",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/hooks/tests.rs": {
+    "mtime": 1781202400.5495527,
+    "ast_hash": "64a0e91d6c14458741613f4ed144c0c2",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/lib.rs": {
+    "mtime": 1781202400.5496705,
+    "ast_hash": "88f8ae9aebf249e6afb9526f5e869b48",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/links.rs": {
+    "mtime": 1781202400.5498207,
+    "ast_hash": "99a7b1966e8479a42dd08d6b1d5e36f5",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/log.rs": {
+    "mtime": 1781202400.5499039,
+    "ast_hash": "b0af51a67549d9c6633e360911d343ed",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/calendar.rs": {
+    "mtime": 1781202400.550062,
+    "ast_hash": "ec3e6867e7e24b5dd7519ca1d277e343",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/connector.rs": {
+    "mtime": 1781202400.5501375,
+    "ast_hash": "d4e87c87faa20c089d663359d55ae9f1",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/contact.rs": {
+    "mtime": 1781202400.5502062,
+    "ast_hash": "7eb6ef16ce4b586bb096794bb5cb3273",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/conversation.rs": {
+    "mtime": 1781202400.5502744,
+    "ast_hash": "84e88d59ec33f38f16896414ded1ad4d",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/health.rs": {
+    "mtime": 1781202400.5503569,
+    "ast_hash": "b620e6f3746ced8c876f816a4391b750",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/message.rs": {
+    "mtime": 1781202400.5504503,
+    "ast_hash": "d0d8a6f41354aa1d94d6d66252ec9d67",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/mod.rs": {
+    "mtime": 1781202400.5505266,
+    "ast_hash": "fddc3666657f16ceec463d20c06d6349",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/serde_ts.rs": {
+    "mtime": 1781202400.5506005,
+    "ast_hash": "0efcf1827188b666d4d0b86d796f1385",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/models/tests.rs": {
+    "mtime": 1781202400.5507238,
+    "ast_hash": "facce4087ba1bffc229d2e7f8ddb2b69",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/progress.rs": {
+    "mtime": 1781202400.5508502,
+    "ast_hash": "c923198cf28e8155f1aab12b08d5dcb1",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/store/mod.rs": {
+    "mtime": 1781202400.5510159,
+    "ast_hash": "fda23c9220e1a4e958827fa0e2bf9791",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/store/proxy_files.rs": {
+    "mtime": 1781202400.5512261,
+    "ast_hash": "dd907166128c6723744ce5927a35ecb4",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/store/remote.rs": {
+    "mtime": 1781202400.5513482,
+    "ast_hash": "e91ed262d2391d0e731a274f6e9080b7",
+    "semantic_hash": ""
+  },
+  "crates/void-core/src/sync.rs": {
+    "mtime": 1781202400.5515478,
+    "ast_hash": "8135b11c8db9ddb4861a257935e14da9",
+    "semantic_hash": ""
+  },
+  "crates/void-gdrive/src/api.rs": {
+    "mtime": 1781202400.5518432,
+    "ast_hash": "140f4147c0b9a271d8287243f776d0d4",
+    "semantic_hash": ""
+  },
+  "crates/void-gdrive/src/error.rs": {
+    "mtime": 1781202400.551922,
+    "ast_hash": "cb83a84a0ea6a42c376650adc5d3e78b",
+    "semantic_hash": ""
+  },
+  "crates/void-gdrive/src/lib.rs": {
+    "mtime": 1781202400.5519867,
+    "ast_hash": "f47d82083218ca88b43d104efab422b6",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/api.rs": {
+    "mtime": 1781202400.552346,
+    "ast_hash": "5bc573242ce7f5d4dc6323e3d3da87f4",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/auth.rs": {
+    "mtime": 1781202400.5524993,
+    "ast_hash": "b339947f46784e463f33821d3843e6b2",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/connector/api_methods.rs": {
+    "mtime": 1781202400.5527859,
+    "ast_hash": "c9960edb42aa8f7251e7530fa4dae183",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/connector/compose.rs": {
+    "mtime": 1781202400.5529065,
+    "ast_hash": "31933f0eeddeef4415c9786e76859072",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/connector/connector_trait.rs": {
+    "mtime": 1781202400.553047,
+    "ast_hash": "2db93ff0c37dc555c0bf682b024072e7",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/connector/mod.rs": {
+    "mtime": 1781202400.5531304,
+    "ast_hash": "a1b02edb77b4f6c33f829cb11ddf5445",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/connector/sync.rs": {
+    "mtime": 1781202400.5537188,
+    "ast_hash": "f11762686c3c8156ca5ec8974a9cc166",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/connector/tests.rs": {
+    "mtime": 1781202400.5538912,
+    "ast_hash": "f345a5be7b302a80817b8fd177ae9e81",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/error.rs": {
+    "mtime": 1781202400.5540133,
+    "ast_hash": "4c54fe2a0c0e60d93e866d83db4faf9a",
+    "semantic_hash": ""
+  },
+  "crates/void-gmail/src/lib.rs": {
+    "mtime": 1781202400.554104,
+    "ast_hash": "3b01ac31e9573ece57e6e003618e13e0",
+    "semantic_hash": ""
+  },
+  "crates/void-hackernews/src/api.rs": {
+    "mtime": 1781202400.5543785,
+    "ast_hash": "f0bf4ea350ad4c5b288fcd7a12a30cd3",
+    "semantic_hash": ""
+  },
+  "crates/void-hackernews/src/connector/mod.rs": {
+    "mtime": 1781202400.5545719,
+    "ast_hash": "2e9072aa4336e87d71004d6e9b10b12c",
+    "semantic_hash": ""
+  },
+  "crates/void-hackernews/src/connector/sync.rs": {
+    "mtime": 1781202400.5547912,
+    "ast_hash": "f1227df75efd215fb1e8931333e038f8",
+    "semantic_hash": ""
+  },
+  "crates/void-hackernews/src/error.rs": {
+    "mtime": 1781202400.5548778,
+    "ast_hash": "a0715c41b484f08e06269f7fc8ef974f",
+    "semantic_hash": ""
+  },
+  "crates/void-hackernews/src/lib.rs": {
+    "mtime": 1781202400.5549552,
+    "ast_hash": "20cbd23dad50a44762cf545b8ed3d98e",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/api.rs": {
+    "mtime": 1781202400.5552983,
+    "ast_hash": "58832b91cf4cb3e7d057da084d8717fa",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/api/integration.rs": {
+    "mtime": 1781202400.5555544,
+    "ast_hash": "be12c78b74abb561fdc71917d5f5b216",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/api/posts.rs": {
+    "mtime": 1781202400.5556893,
+    "ast_hash": "f73ffe6680551eadafd9785a233dc030",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/extract.rs": {
+    "mtime": 1781202400.5558164,
+    "ast_hash": "814dbbfff641624798cfa525ce8edac5",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/media.rs": {
+    "mtime": 1781202400.5558946,
+    "ast_hash": "1c9171222af74d78b315ff4cb315a79c",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/mod.rs": {
+    "mtime": 1781202400.5560122,
+    "ast_hash": "bd22662db99532475f089bf035354772",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/posts_sync.rs": {
+    "mtime": 1781202400.5562027,
+    "ast_hash": "261eaac57fedf7d5344f89347b5fe48b",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/profiles.rs": {
+    "mtime": 1781202400.5563192,
+    "ast_hash": "3ba8770b36f5273889d006f739989446",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/send.rs": {
+    "mtime": 1781202400.5564077,
+    "ast_hash": "b304f9ace6eb98ab49981c0d35cea20e",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/sync.rs": {
+    "mtime": 1781202400.5565197,
+    "ast_hash": "8b87b9a383503ac528555cd8e6606b57",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/connector/tests.rs": {
+    "mtime": 1781202400.5566137,
+    "ast_hash": "6593859d06c8541a5bef7f4c63e3102b",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/error.rs": {
+    "mtime": 1781202400.5566838,
+    "ast_hash": "a9dfc0e3e44c0732a83f9f8694b8ce9c",
+    "semantic_hash": ""
+  },
+  "crates/void-linkedin/src/lib.rs": {
+    "mtime": 1781202400.5567517,
+    "ast_hash": "20cbd23dad50a44762cf545b8ed3d98e",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/api.rs": {
+    "mtime": 1781202400.5570352,
+    "ast_hash": "be277952831905901a0c0a393d0011db",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/connector/connector_trait.rs": {
+    "mtime": 1781202400.5573006,
+    "ast_hash": "e99f891b36f7460d35ec14685e320a2a",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/connector/files.rs": {
+    "mtime": 1781202400.5574236,
+    "ast_hash": "b33c81aff8df7a67a55613338e2afa8c",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/connector/mapping.rs": {
+    "mtime": 1781202400.5575352,
+    "ast_hash": "9918963f44211b204c6dec88211d4079",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/connector/mod.rs": {
+    "mtime": 1781202400.5576699,
+    "ast_hash": "3c4933d748f569eb855c7ab9b9096b83",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/connector/socket_mode.rs": {
+    "mtime": 1781202400.5577986,
+    "ast_hash": "e1703635f8abe3d237b98491029bf1a8",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/connector/sync.rs": {
+    "mtime": 1781202400.5580177,
+    "ast_hash": "8b244386cde6287e5b0c76e71703479d",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/connector/tests.rs": {
+    "mtime": 1781202400.5581644,
+    "ast_hash": "14b6f914a37b54f631a1de0d2eb0b9a0",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/error.rs": {
+    "mtime": 1781202400.5582578,
+    "ast_hash": "c07350ce4477df5ea6d6eae1057a5bbd",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/lib.rs": {
+    "mtime": 1781202400.558329,
+    "ast_hash": "b121d03750bb79a19094257801965c90",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/manifest/mod.rs": {
+    "mtime": 1781202400.55853,
+    "ast_hash": "97a29fea2afc2e876f73e2b1af3da347",
+    "semantic_hash": ""
+  },
+  "crates/void-slack/src/manifest/tests.rs": {
+    "mtime": 1781202400.558671,
+    "ast_hash": "e1c8de511b006719744adfd6d1f30bb9",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/connector/connector_trait.rs": {
+    "mtime": 1781202400.5590525,
+    "ast_hash": "19531484840c57a43d7343d6c505f2ce",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/connector/extract.rs": {
+    "mtime": 1781202400.5591261,
+    "ast_hash": "49d072383278a98fb1455f0b80bc0b8a",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/connector/media.rs": {
+    "mtime": 1781202400.5592058,
+    "ast_hash": "6813f19ca04df15247b2e313d858f2dc",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/connector/mod.rs": {
+    "mtime": 1781202400.5592809,
+    "ast_hash": "8d23db5b91bec612df10917ec3ea0544",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/connector/send.rs": {
+    "mtime": 1781202400.5593894,
+    "ast_hash": "c8785972da3dd5d8c4ba9f51189effb5",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/connector/sync.rs": {
+    "mtime": 1781202400.5595129,
+    "ast_hash": "428b4288825c5b429c060eea19dd928a",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/connector/tests.rs": {
+    "mtime": 1781202400.5595737,
+    "ast_hash": "6a45bac0d0b39844dc444bee480f7113",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/error.rs": {
+    "mtime": 1781202400.5596406,
+    "ast_hash": "341f5bc3c25b00395a871319ebd6be89",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/lib.rs": {
+    "mtime": 1781202400.5596988,
+    "ast_hash": "779239c780d9e6f0b3d78fbae1bc04d8",
+    "semantic_hash": ""
+  },
+  "crates/void-telegram/src/session.rs": {
+    "mtime": 1781202400.559897,
+    "ast_hash": "92406ab5b72382fe03e2ddee0b81dab7",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/connector/connector_trait.rs": {
+    "mtime": 1781202400.5603292,
+    "ast_hash": "7c0f583dec00d788980f97d6650f2667",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/connector/extract.rs": {
+    "mtime": 1781202400.5604556,
+    "ast_hash": "1e9a9a16adde8e20bebd103038090fab",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/connector/media.rs": {
+    "mtime": 1781202400.560564,
+    "ast_hash": "ba3e0fb0ae53a5c2a3415cdb1a78fe07",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/connector/mod.rs": {
+    "mtime": 1781202400.5606723,
+    "ast_hash": "d1ae0059e178747a97e1462255dce8d9",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/connector/send.rs": {
+    "mtime": 1781202400.560747,
+    "ast_hash": "424386481a71f78304ea8f29d322fddd",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/connector/sync.rs": {
+    "mtime": 1781202400.5609431,
+    "ast_hash": "726bdd4a097e4ea7d24796f2b31ddf9d",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/connector/tests.rs": {
+    "mtime": 1781202400.5610526,
+    "ast_hash": "02bf15c5a746d26fb7748b4df51a8c14",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/error.rs": {
+    "mtime": 1781202400.561128,
+    "ast_hash": "6ea829ff701eb44c7a4e55932ad8b5c6",
+    "semantic_hash": ""
+  },
+  "crates/void-whatsapp/src/lib.rs": {
+    "mtime": 1781202400.5611916,
+    "ast_hash": "41a7b0b87600c4a20ff310dd5ef4986d",
+    "semantic_hash": ""
+  },
+  "scripts/build-install.ps1": {
+    "mtime": 1781202400.5626416,
+    "ast_hash": "cf86335ba4aa8de35780966affde70ea",
+    "semantic_hash": ""
+  },
+  "scripts/build-install.sh": {
+    "mtime": 1781202400.5627263,
+    "ast_hash": "40a5a6dccb2e9f110b779e0cedcf5f1f",
+    "semantic_hash": ""
+  },
+  "scripts/check.ps1": {
+    "mtime": 1781202400.562798,
+    "ast_hash": "d9c759672180f546e88a1fe850c37d0e",
+    "semantic_hash": ""
+  },
+  "scripts/check.sh": {
+    "mtime": 1781202400.5628688,
+    "ast_hash": "d72058bb703e77451c03dd6875d7289c",
+    "semantic_hash": ""
+  },
+  ".github/ISSUE_TEMPLATE/bug_report.yml": {
+    "mtime": 1781202400.5305827,
+    "ast_hash": "90cfc6e28dd0560f739857cd33cd2916",
+    "semantic_hash": ""
+  },
+  ".github/ISSUE_TEMPLATE/config.yml": {
+    "mtime": 1781202400.5306997,
+    "ast_hash": "3e1f053ed377e86739cdac36f89153fe",
+    "semantic_hash": ""
+  },
+  ".github/ISSUE_TEMPLATE/connector_request.yml": {
+    "mtime": 1781202400.530791,
+    "ast_hash": "d9b4009e08dd873f483afc8cc2b08fef",
+    "semantic_hash": ""
+  },
+  ".github/ISSUE_TEMPLATE/feature_request.yml": {
+    "mtime": 1781202400.5308673,
+    "ast_hash": "5fe66d2b7a29ce1eac03d4f943af4986",
+    "semantic_hash": ""
+  },
+  ".github/PULL_REQUEST_TEMPLATE.md": {
+    "mtime": 1781202400.5309453,
+    "ast_hash": "7405f99ad6675e54ba85842ff5c41e2a",
+    "semantic_hash": ""
+  },
+  ".github/dependabot.yml": {
+    "mtime": 1781202400.5310378,
+    "ast_hash": "df8d0f8137711b45794e1c93d954bf62",
+    "semantic_hash": ""
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1781202400.5311816,
+    "ast_hash": "fecd5d60d686dfe0ff3460f0a453680a",
+    "semantic_hash": ""
+  },
+  ".github/workflows/release.yml": {
+    "mtime": 1781202400.5313847,
+    "ast_hash": "e3d1386146383b18dc27bd739c91dec4",
+    "semantic_hash": ""
+  },
+  "CHANGELOG.md": {
+    "mtime": 1781202400.5316503,
+    "ast_hash": "aa98994e07f3b365032228530c68fb75",
+    "semantic_hash": ""
+  },
+  "CODE_OF_CONDUCT.md": {
+    "mtime": 1781202400.5317693,
+    "ast_hash": "4560de94e2ceca0e1c969b3dc0e3ca42",
+    "semantic_hash": ""
+  },
+  "CONTRIBUTING.md": {
+    "mtime": 1781202400.5318704,
+    "ast_hash": "5521a86e043f65efe8d46071cee173ee",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1781202400.5327294,
+    "ast_hash": "2b19d0031b40a98f6eb7ebf317c0e1ce",
+    "semantic_hash": ""
+  },
+  "SECURITY.md": {
+    "mtime": 1781202400.5328345,
+    "ast_hash": "1ab295b14daa9324eddac4299bab9029",
+    "semantic_hash": ""
+  },
+  "docs/adding-a-connector.md": {
+    "mtime": 1781202400.5614653,
+    "ast_hash": "ec6d3a2e60585c00650c8e685a52b94c",
+    "semantic_hash": ""
+  },
+  "docs/commands.md": {
+    "mtime": 1781202400.5617645,
+    "ast_hash": "4ee9781820e2c03e75c972ece82cb101",
+    "semantic_hash": ""
+  },
+  "docs/configuration.md": {
+    "mtime": 1781202400.5618825,
+    "ast_hash": "cccde8e61efbb895be9ae27d4462f06e",
+    "semantic_hash": ""
+  },
+  "docs/connectors.md": {
+    "mtime": 1781202400.562002,
+    "ast_hash": "163608f6d3f150db33a4a9ab756fb88a",
+    "semantic_hash": ""
+  },
+  "docs/hooks.md": {
+    "mtime": 1781202400.5621164,
+    "ast_hash": "917858319476bbef3a61441b4d3d12be",
+    "semantic_hash": ""
+  },
+  "docs/install.md": {
+    "mtime": 1781202400.5621967,
+    "ast_hash": "2d1a371303c5060b0a05342322275ca3",
+    "semantic_hash": ""
+  },
+  "docs/remote-store.md": {
+    "mtime": 1781202400.5622745,
+    "ast_hash": "fbd850d87c1ea80b8654e219896e0f71",
+    "semantic_hash": ""
+  },
+  "docs/testing.md": {
+    "mtime": 1781202400.5623882,
+    "ast_hash": "178fa2a69938a9063f594fc9c93adf0e",
+    "semantic_hash": ""
+  },
+  "docs/assets/readme-banner.svg": {
+    "mtime": 1781202400.5616353,
+    "ast_hash": "725a5cbf5e97592c2779694b6bcf1b12",
+    "semantic_hash": ""
+  }
+}
