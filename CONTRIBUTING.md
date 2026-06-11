@@ -12,6 +12,8 @@ cargo build
 
 The Rust toolchain is pinned by `rust-toolchain.toml` — `rustup` picks it up automatically. Minimum supported Rust version is declared in `Cargo.toml` (`rust-version`).
 
+**Using Cursor?** After clone, install the graphify CLI and git hooks so the committed knowledge graph stays current as you edit code — see [docs/graphify.md](docs/graphify.md).
+
 ## Before you push
 
 CI enforces formatting, clippy with `-D warnings`, and tests on Linux, macOS, and Windows, plus an MSRV check, `cargo deny`, and coverage. See [docs/testing.md](docs/testing.md) for the suite layout and conventions. Run the core checks locally:
@@ -19,6 +21,8 @@ CI enforces formatting, clippy with `-D warnings`, and tests on Linux, macOS, an
 ```bash
 ./scripts/check.sh        # fmt + clippy + test, same as CI
 ```
+
+If you changed Rust or markdown under `docs/`, commit the hook-updated `graphify-out/` files in the same PR (see [docs/graphify.md](docs/graphify.md)).
 
 or individually:
 
@@ -38,6 +42,8 @@ crates/
 ```
 
 The best deep-dive is [docs/adding-a-connector.md](docs/adding-a-connector.md) — it walks through the `Connector` trait, the sync engine, and the config schema.
+
+For AI-assisted development in Cursor, see [docs/graphify.md](docs/graphify.md) — the repo includes a pre-built codebase graph and a project rule that steers agents to query it before reading files.
 
 ## Adding a connector
 
@@ -68,7 +74,7 @@ User-visible changes go in [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`, fo
 
 1. Fork and create a feature branch from `main`
 2. Keep PRs focused — one logical change per PR
-3. Update the changelog and docs when behavior changes
+3. Update the changelog and docs when behavior changes; include `graphify-out/` updates when code or docs change (see [docs/graphify.md](docs/graphify.md))
 4. Make sure `./scripts/check.sh` passes
 5. Open the PR against `main`; CI must be green
 

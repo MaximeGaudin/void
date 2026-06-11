@@ -169,6 +169,7 @@ All data stays on your machine in `~/.local/share/void` — no external database
 - [Remote store](docs/remote-store.md) — server-side sync over SSH
 - [Adding a connector](docs/adding-a-connector.md) — wire in a new service
 - [Testing](docs/testing.md) — suite layout, conventions, coverage gaps
+- [Graphify](docs/graphify.md) — knowledge graph setup for Cursor and local CLI use
 
 ## Development
 

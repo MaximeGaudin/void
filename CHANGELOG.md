@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Docs** — Graphify knowledge graph and [setup guide](docs/graphify.md) for Cursor and local CLI use.
+
 ## [0.9.3] - 2026-06-11
 
 ### Changed
