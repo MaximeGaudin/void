@@ -184,4 +184,81 @@ mod tests {
         assert_eq!(parse_connector_type("unknown"), None);
         assert_eq!(parse_connector_type(""), None);
     }
+
+    #[test]
+    fn parse_connector_type_telegram() {
+        assert_eq!(
+            parse_connector_type("telegram"),
+            Some(ConnectorType::Telegram)
+        );
+        assert_eq!(parse_connector_type("tg"), Some(ConnectorType::Telegram));
+    }
+
+    #[test]
+    fn parse_connector_type_hackernews() {
+        assert_eq!(
+            parse_connector_type("hackernews"),
+            Some(ConnectorType::HackerNews)
+        );
+        assert_eq!(parse_connector_type("hn"), Some(ConnectorType::HackerNews));
+    }
+
+    #[test]
+    fn resolve_connector_filter_none_returns_ok_none() {
+        assert_eq!(resolve_connector_filter(None).unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_connector_filter_valid_connector() {
+        assert_eq!(
+            resolve_connector_filter(Some("slack")).unwrap(),
+            Some("slack".to_string())
+        );
+        assert_eq!(
+            resolve_connector_filter(Some("GM")).unwrap(),
+            Some("gmail".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_connector_filter_unknown_returns_err() {
+        let err = resolve_connector_filter(Some("twitter")).unwrap_err();
+        assert!(err.to_string().contains("Unknown connector"));
+    }
+
+    #[test]
+    fn resolve_connector_list_none_returns_ok_none() {
+        assert_eq!(resolve_connector_list(None).unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_connector_list_comma_separated() {
+        assert_eq!(
+            resolve_connector_list(Some("slack, gmail, wa")).unwrap(),
+            Some(vec![
+                "slack".to_string(),
+                "gmail".to_string(),
+                "whatsapp".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn resolve_connector_list_empty_parts_skipped() {
+        assert_eq!(
+            resolve_connector_list(Some("slack,,gmail")).unwrap(),
+            Some(vec!["slack".to_string(), "gmail".to_string()])
+        );
+    }
+
+    #[test]
+    fn resolve_connector_list_all_empty_returns_none() {
+        assert_eq!(resolve_connector_list(Some(" , ")).unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_connector_list_unknown_connector_err() {
+        let err = resolve_connector_list(Some("slack,unknown")).unwrap_err();
+        assert!(err.to_string().contains("Unknown connector"));
+    }
 }

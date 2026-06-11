@@ -92,26 +92,26 @@ impl Weekday {
     }
 }
 
+fn current_minute_time(hour: u32, minute: u32) -> NaiveTime {
+    NaiveTime::from_hms_opt(hour, minute, 0)
+        .unwrap_or_else(|| NaiveTime::from_hms_opt(0, 0, 0).expect("midnight is a valid NaiveTime"))
+}
+
 impl ActiveWindow {
     /// Returns true if the current time falls within this active window.
     pub fn is_active_now(&self) -> bool {
         let (current_weekday, current_time) = match self.utc_offset_hours {
             Some(offset_hours) => {
                 let offset_secs = offset_hours * 3600;
-                let offset = chrono::FixedOffset::east_opt(offset_secs)
-                    .unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+                let offset = chrono::FixedOffset::east_opt(offset_secs).unwrap_or_else(|| {
+                    chrono::FixedOffset::east_opt(0).expect("UTC offset is valid")
+                });
                 let now = Utc::now().with_timezone(&offset);
-                (
-                    now.weekday(),
-                    NaiveTime::from_hms_opt(now.hour(), now.minute(), 0).unwrap(),
-                )
+                (now.weekday(), current_minute_time(now.hour(), now.minute()))
             }
             None => {
                 let now = Local::now();
-                (
-                    now.weekday(),
-                    NaiveTime::from_hms_opt(now.hour(), now.minute(), 0).unwrap(),
-                )
+                (now.weekday(), current_minute_time(now.hour(), now.minute()))
             }
         };
 

@@ -203,6 +203,8 @@ Void runs a background sync daemon that continuously pulls messages and events f
 | `void sync --stop` | Stop the sync daemon |
 | `void sync --clear` | Clear database and start fresh |
 | `void doctor` | Check configuration and connectivity |
+| `void remote status` | Show remote store connection and cache status (requires `store.mode = "remote"`) |
+| `void remote refresh` | Force-refresh cached remote config and database snapshot |
 
 ### Global Flags
 

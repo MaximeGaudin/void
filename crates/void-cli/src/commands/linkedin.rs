@@ -84,8 +84,6 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         _ => anyhow::bail!("Invalid LinkedIn connection settings."),
     };
 
-    let _ = account_id;
-
     let connector = void_linkedin::connector::LinkedInConnector::new(
         &connection.id,
         &api_key,

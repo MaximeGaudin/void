@@ -526,6 +526,29 @@ fn conversation_matches_ignore_patterns() {
 }
 
 #[test]
+fn conversation_matches_ignore_empty_patterns_returns_false() {
+    assert!(!conversation_matches_ignore(
+        Some("Random Chat"),
+        "C123",
+        &[]
+    ));
+}
+
+#[test]
+fn conversation_matches_ignore_case_insensitive_name() {
+    assert!(conversation_matches_ignore(
+        Some("RANDOM Chat"),
+        "C123",
+        &["random".into()]
+    ));
+    assert!(conversation_matches_ignore(
+        Some("Work Updates"),
+        "C456",
+        &["WORK".into()]
+    ));
+}
+
+#[test]
 fn parse_ignore_conversations() {
     let toml = r#"
 [[connections]]

@@ -376,4 +376,19 @@ mod tests {
         assert_eq!(like_escape("100%"), "100\\%");
         assert_eq!(like_escape("a_b"), "a\\_b");
     }
+
+    #[test]
+    fn like_escape_backslash() {
+        assert_eq!(like_escape(r"path\to\file"), r"path\\to\\file");
+    }
+
+    #[test]
+    fn like_escape_combined_wildcards() {
+        assert_eq!(like_escape(r"50%_off\deal"), r"50\%\_off\\deal");
+    }
+
+    #[test]
+    fn like_escape_empty_string() {
+        assert_eq!(like_escape(""), "");
+    }
 }

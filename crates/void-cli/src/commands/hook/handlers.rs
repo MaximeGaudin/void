@@ -1,143 +1,7 @@
-use clap::{Args, Subcommand};
-
 use crate::output::resolve_connector_filter;
 use void_core::hooks::{self, ActiveWindow, Hook, PromptConfig, Trigger, Weekday};
 
-#[derive(Debug, Args)]
-pub struct HookArgs {
-    #[command(subcommand)]
-    pub command: HookCommand,
-}
-
-#[derive(Debug, Subcommand)]
-#[allow(clippy::large_enum_variant)]
-pub enum HookCommand {
-    /// List all hooks
-    List,
-    /// Create a new hook
-    Create {
-        /// Hook name
-        #[arg(long)]
-        name: String,
-        /// Trigger type: new_message or schedule
-        #[arg(long)]
-        trigger: String,
-        /// Connector filter (only for new_message triggers)
-        #[arg(long)]
-        connector: Option<String>,
-        /// Cron expression (only for schedule triggers)
-        #[arg(long)]
-        cron: Option<String>,
-        /// Prompt text (inline)
-        #[arg(long, conflicts_with = "prompt_file")]
-        prompt: Option<String>,
-        /// Read prompt from a file
-        #[arg(long, conflicts_with = "prompt")]
-        prompt_file: Option<String>,
-        /// Max agent turns
-        #[arg(long, default_value = "3")]
-        max_turns: usize,
-        /// The agent to execute the hook (e.g. "claude", "cursor")
-        #[arg(long, default_value = "claude")]
-        agent: String,
-        /// Active window: days of the week (comma-separated, e.g. "mon,tue,wed,thu,fri")
-        #[arg(long)]
-        active_days: Option<String>,
-        /// Active window: start time in HH:MM 24h format (e.g. "08:00")
-        #[arg(long, requires = "active_days")]
-        active_start: Option<String>,
-        /// Active window: end time in HH:MM 24h format (e.g. "21:00")
-        #[arg(long, requires = "active_days")]
-        active_end: Option<String>,
-        /// Active window: UTC offset in hours (e.g. 2 for UTC+2, -5 for UTC-5). Defaults to local time.
-        #[arg(long)]
-        active_utc_offset: Option<i32>,
-    },
-    /// Show a hook's full configuration
-    Show {
-        /// Hook name (or slug)
-        name: String,
-    },
-    /// Delete a hook
-    Delete {
-        /// Hook name (or slug)
-        name: String,
-    },
-    /// Enable a hook
-    Enable {
-        /// Hook name (or slug)
-        name: String,
-    },
-    /// Disable a hook
-    Disable {
-        /// Hook name (or slug)
-        name: String,
-    },
-    /// Test a hook (dry-run): execute it against a specific message or immediately for schedules
-    Test {
-        /// Hook name (or slug)
-        name: String,
-        /// Message ID to test against (for new_message hooks)
-        #[arg(long)]
-        message_id: Option<String>,
-    },
-    /// Show recent hook execution logs
-    Log {
-        /// Number of log entries to show
-        #[arg(long, short = 'n', default_value = "100")]
-        limit: usize,
-        /// Filter by hook name
-        #[arg(long)]
-        hook: Option<String>,
-        /// Show full detail for a specific log entry ID
-        #[arg(long)]
-        id: Option<i64>,
-    },
-}
-
-pub fn run(args: &HookArgs) -> anyhow::Result<()> {
-    let dir = hooks::hooks_dir();
-
-    match &args.command {
-        HookCommand::List => cmd_list(&dir),
-        HookCommand::Create {
-            name,
-            trigger,
-            connector,
-            cron,
-            prompt,
-            prompt_file,
-            max_turns,
-            agent,
-            active_days,
-            active_start,
-            active_end,
-            active_utc_offset,
-        } => cmd_create(
-            &dir,
-            name,
-            trigger,
-            connector.as_deref(),
-            cron.as_deref(),
-            prompt.as_deref(),
-            prompt_file.as_deref(),
-            *max_turns,
-            agent,
-            active_days.as_deref(),
-            active_start.as_deref(),
-            active_end.as_deref(),
-            *active_utc_offset,
-        ),
-        HookCommand::Show { name } => cmd_show(&dir, name),
-        HookCommand::Delete { name } => cmd_delete(&dir, name),
-        HookCommand::Enable { name } => cmd_toggle(&dir, name, true),
-        HookCommand::Disable { name } => cmd_toggle(&dir, name, false),
-        HookCommand::Test { name, message_id } => cmd_test(&dir, name, message_id.as_deref()),
-        HookCommand::Log { limit, hook, id } => cmd_log(*limit, hook.as_deref(), *id),
-    }
-}
-
-fn cmd_list(dir: &std::path::Path) -> anyhow::Result<()> {
+pub(crate) fn cmd_list(dir: &std::path::Path) -> anyhow::Result<()> {
     let hooks = hooks::load_hooks(dir);
     let output = serde_json::json!({ "data": hooks });
     println!("{}", serde_json::to_string_pretty(&output)?);
@@ -145,7 +9,7 @@ fn cmd_list(dir: &std::path::Path) -> anyhow::Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn cmd_create(
+pub(crate) fn cmd_create(
     dir: &std::path::Path,
     name: &str,
     trigger: &str,
@@ -256,13 +120,13 @@ fn validate_time_format(time: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_show(dir: &std::path::Path, name: &str) -> anyhow::Result<()> {
+pub(crate) fn cmd_show(dir: &std::path::Path, name: &str) -> anyhow::Result<()> {
     let hook = hooks::find_hook(dir, name)?;
     println!("{}", serde_json::to_string_pretty(&hook)?);
     Ok(())
 }
 
-fn cmd_delete(dir: &std::path::Path, name: &str) -> anyhow::Result<()> {
+pub(crate) fn cmd_delete(dir: &std::path::Path, name: &str) -> anyhow::Result<()> {
     if hooks::delete_hook(dir, name)? {
         eprintln!("Hook '{}' deleted.", name);
     } else {
@@ -271,7 +135,7 @@ fn cmd_delete(dir: &std::path::Path, name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_toggle(dir: &std::path::Path, name: &str, enabled: bool) -> anyhow::Result<()> {
+pub(crate) fn cmd_toggle(dir: &std::path::Path, name: &str, enabled: bool) -> anyhow::Result<()> {
     if hooks::update_hook_enabled(dir, name, enabled)? {
         let state = if enabled { "enabled" } else { "disabled" };
         eprintln!("Hook '{}' {}.", name, state);
@@ -281,13 +145,17 @@ fn cmd_toggle(dir: &std::path::Path, name: &str, enabled: bool) -> anyhow::Resul
     Ok(())
 }
 
-fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyhow::Result<()> {
+pub(crate) fn cmd_test(
+    dir: &std::path::Path,
+    name: &str,
+    message_id: Option<&str>,
+) -> anyhow::Result<()> {
     let hook = hooks::find_hook(dir, name)?;
 
     let msg = match (&hook.trigger, message_id) {
         (Trigger::NewMessage { .. }, Some(mid)) => {
             let db = crate::context::open_db()?;
-            let msg = super::resolve::resolve_message(&db, mid)?;
+            let msg = super::super::resolve::resolve_message(&db, mid)?;
             Some(msg)
         }
         (Trigger::NewMessage { .. }, None) => {
@@ -322,7 +190,11 @@ fn cmd_test(dir: &std::path::Path, name: &str, message_id: Option<&str>) -> anyh
     Ok(())
 }
 
-fn cmd_log(limit: usize, hook_filter: Option<&str>, detail_id: Option<i64>) -> anyhow::Result<()> {
+pub(crate) fn cmd_log(
+    limit: usize,
+    hook_filter: Option<&str>,
+    detail_id: Option<i64>,
+) -> anyhow::Result<()> {
     let db = crate::context::open_db()?;
     let mut logs = db.list_hook_logs(limit)?;
 

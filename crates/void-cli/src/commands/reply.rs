@@ -164,4 +164,34 @@ mod tests {
         );
         assert_eq!(id, "linkedin_linkedin_chat-abc:linkedin_linkedin_msg-xyz");
     }
+
+    #[test]
+    fn build_reply_id_whatsapp_joins_conv_and_message_external_ids() {
+        let id = build_reply_id(ConnectorType::WhatsApp, "120363@g.us", "msg-abc");
+        assert_eq!(id, "120363@g.us:msg-abc");
+    }
+
+    #[test]
+    fn build_reply_id_slack_joins_conv_and_message_external_ids() {
+        let id = build_reply_id(ConnectorType::Slack, "C08UDH5JE57", "1776936528.857609");
+        assert_eq!(id, "C08UDH5JE57:1776936528.857609");
+    }
+
+    #[test]
+    fn build_reply_id_telegram_joins_conv_and_message_external_ids() {
+        let id = build_reply_id(ConnectorType::Telegram, "chat-42", "msg-99");
+        assert_eq!(id, "chat-42:msg-99");
+    }
+
+    #[test]
+    fn build_reply_id_gmail_uses_message_external_id_only() {
+        let id = build_reply_id(ConnectorType::Gmail, "thread-ignored", "msg-rfc822-id");
+        assert_eq!(id, "msg-rfc822-id");
+    }
+
+    #[test]
+    fn build_reply_id_hackernews_uses_message_external_id_only() {
+        let id = build_reply_id(ConnectorType::HackerNews, "story-1", "comment-42");
+        assert_eq!(id, "comment-42");
+    }
 }
