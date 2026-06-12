@@ -96,7 +96,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
 
     let data = connector.download_media(raw_msg_id, raw_chat_id).await?;
 
-    std::fs::write(&args.out, &data)?;
+    crate::commands::write_download(&args.out, &data)?;
     eprintln!("Saved to {} ({} bytes).", args.out, data.len());
     Ok(())
 }

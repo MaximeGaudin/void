@@ -2,6 +2,8 @@
 
 Run the sync daemon on an always-on machine (home server, VPS) and use `void` from any laptop against the same data. The local machine keeps a thin client profile; the authoritative `config.toml`, credentials, and database live on the server. Everything goes over plain SSH — no extra service to run.
 
+> New to remote mode? [Deployment modes](deployment.md) compares it with the local default and covers migration. This page is the configuration reference.
+
 ## Server side
 
 Configure and run sync as usual:

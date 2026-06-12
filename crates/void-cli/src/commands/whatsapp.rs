@@ -88,7 +88,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         )
         .await?;
 
-    std::fs::write(&args.out, &data)?;
+    crate::commands::write_download(&args.out, &data)?;
     eprintln!("Saved to {} ({} bytes).", args.out, data.len());
     Ok(())
 }

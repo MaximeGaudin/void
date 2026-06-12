@@ -335,6 +335,9 @@ impl ResolvedContext {
             &remote.remote_store_path,
             &transfer.uploads,
         )?;
+        if transfer.uploads.is_empty() && transfer.download.is_some() {
+            proxy_files::ensure_remote_staging(&remote.ssh, &remote.remote_store_path)?;
+        }
 
         let targets = {
             let mut cache = remote

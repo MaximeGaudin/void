@@ -157,7 +157,22 @@ A background daemon keeps a local SQLite database in sync with every connected s
 | `void-cli` | The `void` binary: clap commands, output formatting |
 | `void-slack`, `void-gmail`, `void-calendar`, `void-whatsapp`, `void-telegram`, `void-gdrive`, `void-hackernews`, `void-linkedin` | One crate per connector |
 
-All data stays on your machine in `~/.local/share/void` — no external database, no Docker, no cloud. Layout details: [Configuration](docs/configuration.md#data-storage-layout). Or run sync on a server and use the CLI anywhere over SSH: [Remote store](docs/remote-store.md).
+All data stays on your machine in `~/.local/share/void` — no external database, no Docker, no cloud. Layout details: [Configuration](docs/configuration.md#data-storage-layout).
+
+### Two ways to run it
+
+| | **Local mode** (default) | **Remote mode** |
+|---|---|---|
+| Where sync runs | your machine | an always-on server |
+| Setup | nothing beyond `void setup` | one server + a 4-line client config |
+| When your laptop is off | sync and hooks pause | sync and hooks keep running 24/7 |
+| Multiple machines | one database per machine | any laptop, over plain SSH |
+
+**Local mode** is the zero-infrastructure default: daemon, database, and credentials all live on your machine. The only catch is that sync follows your laptop — closed lid means a stale inbox and silent hooks until it wakes.
+
+**Remote mode** moves the daemon (and your credentials) to a home server or VPS. Your laptop keeps a cached snapshot for instant, offline-capable reads, and proxies writes to the server over plain SSH — no extra service, no open ports beyond SSH.
+
+Details, trade-offs, and migration: [Deployment modes](docs/deployment.md) · config reference: [Remote store](docs/remote-store.md)
 
 ## Documentation
 
@@ -166,6 +181,7 @@ All data stays on your machine in `~/.local/share/void` — no external database
 - [Connector setup](docs/connectors.md) — credentials and onboarding per service
 - [Configuration](docs/configuration.md) — full `config.toml` schema, data layout
 - [Hooks](docs/hooks.md) — LLM automation: triggers, placeholders, agent contract
+- [Deployment modes](docs/deployment.md) — local vs remote sync: trade-offs, architecture, migration
 - [Remote store](docs/remote-store.md) — server-side sync over SSH
 - [Adding a connector](docs/adding-a-connector.md) — wire in a new service
 - [Testing](docs/testing.md) — suite layout, conventions, coverage gaps
