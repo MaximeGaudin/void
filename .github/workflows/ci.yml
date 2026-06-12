@@ -52,6 +52,10 @@ jobs:
           cache-on-failure: true
 
       - name: Clippy
+        # Lints are platform-independent; skip the slowest runner. Windows
+        # cfg blocks still compile fatally under RUSTFLAGS=-D warnings in
+        # the test step — only clippy-specific lints are uncovered there.
+        if: matrix.os != 'windows-latest'
         run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Test
