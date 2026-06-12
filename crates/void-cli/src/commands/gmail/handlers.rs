@@ -299,7 +299,7 @@ async fn run_attachment(args: &AttachmentArgs) -> anyhow::Result<()> {
         .get_attachment_data(&args.message_id, &args.attachment_id)
         .await?;
 
-    std::fs::write(&args.out, &data)?;
+    crate::commands::write_download(&args.out, &data)?;
     eprintln!("Attachment saved to {} ({} bytes).", args.out, data.len());
     Ok(())
 }

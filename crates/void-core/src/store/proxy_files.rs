@@ -151,6 +151,13 @@ pub fn execute_proxy_uploads(
     Ok(())
 }
 
+/// Create the remote staging directory ahead of a staged download.
+/// Uploads create it themselves in [`execute_proxy_uploads`]; download-only
+/// commands need it to exist before the proxied `void` writes its `--out` file.
+pub fn ensure_remote_staging(ssh: &SshTarget, remote_store_path: &str) -> Result<(), ConfigError> {
+    ensure_remote_dir(ssh, &format!("{remote_store_path}/staging"))
+}
+
 pub fn execute_proxy_download(
     ssh: &SshTarget,
     download: &StagedDownload,

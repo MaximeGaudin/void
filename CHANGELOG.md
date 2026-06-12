@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Remote mode** — Download commands (`gmail attachment`, `whatsapp download`, `telegram download`, `linkedin download`) failed on a fresh remote store because the remote staging directory was only created by `--file` uploads. The staging directory is now created before download-only proxied commands, and download handlers create the output file's parent directories (matching `drive download`).
+
 ## [0.9.3] - 2026-06-11
 
 ### Changed
