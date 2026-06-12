@@ -9,6 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  # No debuginfo in CI: tests don't need PDB/DWARF, and dropping it roughly
+  # halves the dependency cache and slashes MSVC link time on Windows.
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   # Fast, no-compile formatting check that fails the pipeline in ~15s when
@@ -40,14 +43,19 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          # Keep cache writes restricted to main to avoid filling the 10 GB
-          # GitHub Actions cache quota with short-lived PR branches.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Cache writes are restricted to main to protect the 10 GB quota —
+          # except Dependabot PRs, which change Cargo.lock and would otherwise
+          # rebuild cold on every push without ever saving.
+          save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
           # Persist cache even when clippy/tests fail so the next run starts
           # warm instead of recompiling everything from scratch.
           cache-on-failure: true
 
       - name: Clippy
+        # Lints are platform-independent; skip the slowest runner. Windows
+        # cfg blocks still compile fatally under RUSTFLAGS=-D warnings in
+        # the test step — only clippy-specific lints are uncovered there.
+        if: matrix.os != 'windows-latest'
         run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Test
@@ -64,7 +72,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
       - name: Check
         run: cargo check --workspace --locked
 
@@ -94,7 +102,7 @@ jobs:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --workspace --locked --lcov --output-path lcov.info
