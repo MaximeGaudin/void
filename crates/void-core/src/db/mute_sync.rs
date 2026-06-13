@@ -195,3 +195,119 @@ pub(super) fn rename_connection(
     conn.execute("PRAGMA foreign_keys = ON", [])?;
     Ok(())
 }
+
+/// WhatsApp sync briefly stored messages under the account JID instead of the
+/// config connection name. Remap JID-based rows onto the canonical config id
+/// when unambiguous (single non-JID whatsapp connection in the DB).
+pub(super) fn migrate_whatsapp_jid_connections(conn: &Connection) -> Result<(), DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT connection_id FROM messages
+         WHERE connector = 'whatsapp' AND instr(connection_id, '@') > 0",
+    )?;
+    let jid_ids: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .filter_map(Result::ok)
+        .collect();
+    if jid_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut canonical_ids: Vec<String> = conn
+        .prepare(
+            "SELECT DISTINCT connection_id FROM (
+                SELECT connection_id FROM messages WHERE connector = 'whatsapp'
+                UNION
+                SELECT connection_id FROM conversations WHERE connector = 'whatsapp'
+             ) WHERE instr(connection_id, '@') = 0",
+        )?
+        .query_map([], |row| row.get(0))?
+        .filter_map(Result::ok)
+        .collect();
+    canonical_ids.sort();
+    canonical_ids.dedup();
+
+    let Some(canonical) = (canonical_ids.len() == 1).then(|| canonical_ids[0].clone()) else {
+        debug!(
+            jid_count = jid_ids.len(),
+            config_count = canonical_ids.len(),
+            "skipping WhatsApp JID connection migration (ambiguous or no canonical id)"
+        );
+        return Ok(());
+    };
+
+    for jid_id in jid_ids {
+        merge_connection_id(conn, &jid_id, &canonical)?;
+    }
+    Ok(())
+}
+
+/// Like `rename_connection`, but drops rows whose target id already exists.
+fn merge_connection_id(conn: &Connection, old_id: &str, new_id: &str) -> Result<(), DbError> {
+    debug!(old_id, new_id, "merging WhatsApp JID connection id");
+    conn.execute("PRAGMA foreign_keys = OFF", [])?;
+
+    let mut stmt = conn
+        .prepare("SELECT id, conversation_id, context_id FROM messages WHERE connection_id = ?1")?;
+    let rows: Vec<(String, String, Option<String>)> = stmt
+        .query_map(params![old_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?
+        .filter_map(Result::ok)
+        .collect();
+
+    for (msg_id, conv_id, context_id) in rows {
+        let new_msg_id = msg_id.replace(old_id, new_id);
+        let new_conv_id = conv_id.replace(old_id, new_id);
+        let new_context_id = context_id.map(|c| c.replace(old_id, new_id));
+
+        let target_exists = conn
+            .query_row(
+                "SELECT 1 FROM messages WHERE id = ?1",
+                params![new_msg_id],
+                |_| Ok(()),
+            )
+            .is_ok();
+
+        if target_exists {
+            conn.execute("DELETE FROM messages WHERE id = ?1", params![msg_id])?;
+        } else {
+            conn.execute(
+                "UPDATE messages SET id = ?1, connection_id = ?2, conversation_id = ?3, context_id = ?4 WHERE id = ?5",
+                params![new_msg_id, new_id, new_conv_id, new_context_id, msg_id],
+            )?;
+        }
+    }
+
+    let mut stmt = conn.prepare("SELECT id FROM conversations WHERE connection_id = ?1")?;
+    let conv_ids: Vec<String> = stmt
+        .query_map(params![old_id], |row| row.get(0))?
+        .filter_map(Result::ok)
+        .collect();
+
+    for conv_id in conv_ids {
+        let new_conv_id = conv_id.replace(old_id, new_id);
+        let target_exists = conn
+            .query_row(
+                "SELECT 1 FROM conversations WHERE id = ?1",
+                params![new_conv_id],
+                |_| Ok(()),
+            )
+            .is_ok();
+
+        if target_exists {
+            conn.execute("DELETE FROM conversations WHERE id = ?1", params![conv_id])?;
+        } else {
+            conn.execute(
+                "UPDATE conversations SET id = ?1, connection_id = ?2 WHERE id = ?3",
+                params![new_conv_id, new_id, conv_id],
+            )?;
+        }
+    }
+
+    conn.execute(
+        "UPDATE sync_state SET connection_id = ?2 WHERE connection_id = ?1",
+        params![old_id, new_id],
+    )?;
+    conn.execute("PRAGMA foreign_keys = ON", [])?;
+    Ok(())
+}

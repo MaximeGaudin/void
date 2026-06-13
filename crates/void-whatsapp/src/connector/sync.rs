@@ -27,6 +27,7 @@ pub(super) fn is_system_message(msg: &WaMessage) -> bool {
 pub(super) fn handle_history_sync(
     db: &Database,
     connection_id: &str,
+    own_jid: Option<&str>,
     history: &HistorySync,
 ) -> anyhow::Result<()> {
     let mut total_stored = 0u64;
@@ -100,7 +101,15 @@ pub(super) fn handle_history_sync(
 
             let from_me = wmi.key.from_me.unwrap_or(false);
             let sender_jid = if from_me {
-                connection_id.to_string()
+                own_jid
+                    .map(str::to_string)
+                    .or_else(|| {
+                        wmi.key
+                            .participant
+                            .clone()
+                            .or_else(|| wmi.participant.clone())
+                    })
+                    .unwrap_or_else(|| connection_id.to_string())
             } else if is_group {
                 wmi.key
                     .participant

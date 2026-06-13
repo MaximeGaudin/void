@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::error::DbError;
 
-pub const SCHEMA_VERSION: i32 = 11;
+pub const SCHEMA_VERSION: i32 = 12;
 
 /// Run all pending migrations on the database connection.
 pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
@@ -57,6 +57,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     }
     if version < 11 {
         migrate_v11(conn)?;
+    }
+    if version < 12 {
+        migrate_v12(conn)?;
     }
     Ok(())
 }
@@ -286,6 +289,16 @@ fn migrate_v11(conn: &Connection) -> Result<(), DbError> {
 
         INSERT OR REPLACE INTO schema_version (version) VALUES (11);
     ",
+    )?;
+    Ok(())
+}
+
+fn migrate_v12(conn: &Connection) -> Result<(), DbError> {
+    debug!("running migration v12: normalize WhatsApp JID connection ids");
+    super::mute_sync::migrate_whatsapp_jid_connections(conn)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_version (version) VALUES (12)",
+        [],
     )?;
     Ok(())
 }

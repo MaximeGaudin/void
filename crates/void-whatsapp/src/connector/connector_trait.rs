@@ -129,12 +129,7 @@ impl Connector for WhatsAppConnector {
                                     *jid_lock = Some(jid);
                                 }
                             }
-                            let connection_id = own_jid_holder
-                                .lock()
-                                .expect("mutex")
-                                .clone()
-                                .unwrap_or_else(|| config_id.clone());
-                            match handle_message(&db, &connection_id, &msg, &info) {
+                            match handle_message(&db, &config_id, &msg, &info) {
                                 Ok(Some(stored)) => {
                                     let sender = if info.source.is_from_me {
                                         "me".to_string()
@@ -151,7 +146,7 @@ impl Connector for WhatsAppConnector {
                                                 .unwrap_or_default();
                                         eprintln!(
                                             "[whatsapp:{}] {} {} — {}: {}",
-                                            connection_id,
+                                            config_id,
                                             time,
                                             stored.conv_name,
                                             sender,
@@ -176,20 +171,18 @@ impl Connector for WhatsAppConnector {
                             );
                         }
                         Event::HistorySync(history) => {
-                            let connection_id = own_jid_holder
-                                .lock()
-                                .expect("mutex")
-                                .clone()
-                                .unwrap_or_else(|| config_id.clone());
+                            let own_jid = own_jid_holder.lock().expect("mutex").clone();
                             let sync_type = history.sync_type;
                             let conv_count = history.conversations.len();
                             let msg_count: usize =
                                 history.conversations.iter().map(|c| c.messages.len()).sum();
                             eprintln!(
                                 "[whatsapp:{}] history sync type={} conversations={} messages={}",
-                                connection_id, sync_type, conv_count, msg_count
+                                config_id, sync_type, conv_count, msg_count
                             );
-                            if let Err(e) = handle_history_sync(&db, &connection_id, &history) {
+                            if let Err(e) =
+                                handle_history_sync(&db, &config_id, own_jid.as_deref(), &history)
+                            {
                                 warn!("Failed to process history sync: {e}");
                             }
                         }

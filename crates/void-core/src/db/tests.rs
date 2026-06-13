@@ -1071,6 +1071,78 @@ fn rename_connection_updates_ids_in_all_tables() {
     assert!(db.get_conversation("old-id-c1").unwrap().is_none());
 }
 
+#[test]
+fn migrate_whatsapp_jid_connections_merges_jid_rows_into_config_name() {
+    let db = test_db();
+
+    let old_conv = make_conversation_with_connector(
+        "wa_94004066660357:37@lid_120363@g.us",
+        "94004066660357:37@lid",
+        "120363@g.us",
+        "whatsapp",
+    );
+    db.upsert_conversation(&old_conv).unwrap();
+    db.upsert_message(&make_message_with_connector(
+        "wa_94004066660357:37@lid_MSG1",
+        "wa_94004066660357:37@lid_120363@g.us",
+        "94004066660357:37@lid",
+        "Salut toi",
+        1_000,
+        "whatsapp",
+    ))
+    .unwrap();
+
+    let canonical_conv = make_conversation_with_connector(
+        "wa_whatsapp_120363@g.us",
+        "whatsapp",
+        "120363@g.us",
+        "whatsapp",
+    );
+    db.upsert_conversation(&canonical_conv).unwrap();
+    db.upsert_message(&make_message_with_connector(
+        "wa_whatsapp_MSG0",
+        "wa_whatsapp_120363@g.us",
+        "whatsapp",
+        "older",
+        900,
+        "whatsapp",
+    ))
+    .unwrap();
+
+    db.conn()
+        .unwrap()
+        .execute("DELETE FROM schema_version WHERE version >= 12", [])
+        .unwrap();
+    db.conn()
+        .unwrap()
+        .execute(
+            "INSERT OR REPLACE INTO schema_version (version) VALUES (11)",
+            [],
+        )
+        .unwrap();
+    super::schema::run_migrations(&db.conn().unwrap()).unwrap();
+
+    let migrated = db.get_message("wa_whatsapp_MSG1").unwrap();
+    assert!(
+        migrated.is_some(),
+        "JID message remapped to config connection id"
+    );
+    assert_eq!(migrated.unwrap().connection_id, "whatsapp");
+
+    assert!(db
+        .get_message("wa_94004066660357:37@lid_MSG1")
+        .unwrap()
+        .is_none());
+    assert!(db
+        .get_conversation("wa_94004066660357:37@lid_120363@g.us")
+        .unwrap()
+        .is_none());
+    assert!(db
+        .get_conversation("wa_whatsapp_120363@g.us")
+        .unwrap()
+        .is_some());
+}
+
 fn make_conversation_with_connector(
     id: &str,
     connection_id: &str,
