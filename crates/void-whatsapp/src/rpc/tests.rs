@@ -3,15 +3,20 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use void_core::models::MessageContent;
 
 use crate::connector::WhatsAppConnector;
 use crate::rpc::client::{reply_message, send_message};
-use crate::rpc::protocol::{RpcContent, RpcMethod, RpcRequest, RpcResponseBody};
 use crate::rpc::Server;
+
+// Only the Unix-socket end-to-end test exercises the raw protocol and stream IO;
+// on Windows these would be unused imports (and `-D warnings` fails).
+#[cfg(unix)]
+use crate::rpc::protocol::{RpcContent, RpcMethod, RpcRequest, RpcResponseBody};
+#[cfg(unix)]
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 async fn start_test_server(
     dir: &Path,
