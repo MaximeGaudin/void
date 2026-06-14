@@ -1,6 +1,10 @@
 //! Cross-platform IPC endpoint paths for the WhatsApp RPC server.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+// `PathBuf` is only used by the Unix socket path; on Windows the endpoint is a
+// named-pipe `String`, so the import would be unused (and `-D warnings` fails).
+#[cfg(unix)]
+use std::path::PathBuf;
 
 #[cfg(unix)]
 fn store_hash(store_path: &Path) -> u64 {
