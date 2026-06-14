@@ -7,15 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-14
+
+### Added
+
+- **WhatsApp** — Support for the "Message yourself" (notes-to-self) chat: `send` and `reply` now detect and route to the notes-to-self conversation, including via the new `send --conversation <id>` flag.
+
+### Changed
+
+- **Telegram** — Replaced the raw-memory `unsafe` transmute of `PeerAuth` with the crate's safe accessors and a fixed little-endian encoding (no behavior change for existing little-endian session files).
+
+### Fixed
+
+- **WhatsApp** — Messages are now stored under the config connection id instead of the account JID, so history stays attached to the right connection.
+- **Docs** — Corrected the `calendar respond --status` values (`accepted|declined|tentative`) and added the missing Hacker News command reference.
+
 ### Security
 
 - **Credentials at rest** — `config.toml`, OAuth token caches, the Telegram session file, and the WhatsApp session DB are now written owner-only (`0600`, parent dir `0700`) on Unix instead of inheriting world-readable permissions. Other local users can no longer read your tokens/session keys.
 - **Drive download path traversal** — `void drive download` (without `--output`) derived the destination from the attacker-controlled remote file name; a name like `../../../.zshrc` could write outside the working directory. The auto-derived name is now reduced to a single sanitized path component.
 - **Remote store shell quoting** — tilde-prefixed remote paths sourced from config are now properly escaped before being passed to the remote login shell (scp specs and the daemon lock-file check), closing a command-injection gap against your own remote host.
-
-### Changed
-
-- **Telegram session** — Replaced the raw-memory `unsafe` transmute of `PeerAuth` with the crate's safe accessors and a fixed little-endian encoding (no behavior change for existing little-endian session files).
 
 ## [0.9.4] - 2026-06-12
 
