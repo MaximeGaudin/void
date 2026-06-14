@@ -81,29 +81,35 @@ impl Server {
         #[cfg(windows)]
         {
             use tokio::net::windows::named_pipe::ServerOptions;
+            // Only the first instance of a named pipe may set `first_pipe_instance`;
+            // every subsequent instance must be created without it. Create the next
+            // instance before handing the connected one to the handler so the next
+            // client can connect immediately.
+            let mut server = ServerOptions::new()
+                .first_pipe_instance(true)
+                .create(&endpoint)?;
             loop {
-                if cancel.is_cancelled() {
-                    info!("WhatsApp RPC server shutting down");
-                    break;
-                }
-                let server = ServerOptions::new()
-                    .first_pipe_instance(true)
-                    .create(&endpoint)?;
-                tokio::select! {
-                    _ = cancel.cancelled() => break,
-                    connect = server.connect() => {
-                        if let Err(e) = connect {
-                            warn!("WhatsApp RPC pipe connect error: {e}");
-                            continue;
-                        }
-                        let handlers = Arc::clone(&self.handlers);
-                        tokio::spawn(async move {
-                            if let Err(e) = handle_connection(server, handlers).await {
-                                debug!("WhatsApp RPC connection error: {e}");
-                            }
-                        });
+                // Resolve the connect (or cancellation) before touching `server`,
+                // so its borrow ends before we move it into the handler.
+                let connect = tokio::select! {
+                    _ = cancel.cancelled() => {
+                        info!("WhatsApp RPC server shutting down");
+                        break;
                     }
+                    connect = server.connect() => connect,
+                };
+                let connected = server;
+                server = ServerOptions::new().create(&endpoint)?;
+                if let Err(e) = connect {
+                    warn!("WhatsApp RPC pipe connect error: {e}");
+                    continue;
                 }
+                let handlers = Arc::clone(&self.handlers);
+                tokio::spawn(async move {
+                    if let Err(e) = handle_connection(connected, handlers).await {
+                        debug!("WhatsApp RPC connection error: {e}");
+                    }
+                });
             }
         }
 
