@@ -11,7 +11,7 @@ pub use connector::ConnectorType;
 pub use contact::{Contact, SyncState};
 pub use conversation::{Conversation, ConversationKind};
 pub use health::{HealthStatus, MessageContent};
-pub use message::Message;
+pub use message::{parse_reply_id, Message};
 
 #[cfg(test)]
 mod tests;

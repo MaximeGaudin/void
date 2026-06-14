@@ -169,7 +169,7 @@ impl Connector for TelegramConnector {
         content: MessageContent,
         _in_thread: bool,
     ) -> anyhow::Result<String> {
-        let (conv_ext_id, msg_ext_id) = send::parse_reply_id(message_id)?;
+        let (conv_ext_id, msg_ext_id) = void_core::models::parse_reply_id(message_id)?;
 
         let raw_msg_id: i32 = send::strip_telegram_prefix(&msg_ext_id, &self.config_id)
             .parse()

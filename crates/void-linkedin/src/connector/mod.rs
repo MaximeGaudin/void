@@ -131,7 +131,7 @@ impl Connector for LinkedInConnector {
 
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
         let client = self.client();
-        let text = send::text_for_message_content(&content);
+        let text = content.text();
         let file = send::file_path_for_message_content(&content);
 
         // LinkedIn provider member IDs (for new 1:1 chats) typically start with ACo/AE.
@@ -160,8 +160,8 @@ impl Connector for LinkedInConnector {
         content: MessageContent,
         _in_thread: bool,
     ) -> anyhow::Result<String> {
-        let (conv_ext_id, msg_ext_id) = send::parse_reply_id(message_id)?;
-        let text = send::text_for_message_content(&content);
+        let (conv_ext_id, msg_ext_id) = void_core::models::parse_reply_id(message_id)?;
+        let text = content.text();
         let file = send::file_path_for_message_content(&content);
         if file.is_some() {
             anyhow::bail!("LinkedIn post comment replies do not support file attachments yet");

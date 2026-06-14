@@ -47,14 +47,6 @@ pub fn parse_jid(input: &str) -> anyhow::Result<Jid> {
     }
 }
 
-/// Parse reply message_id format: `chat_jid:wa_msg_id`
-pub(crate) fn parse_reply_id(message_id: &str) -> anyhow::Result<(String, String)> {
-    let (chat_jid, msg_id) = message_id
-        .split_once(':')
-        .ok_or_else(|| anyhow::Error::msg("invalid reply id format, expected 'chat_jid:msg_id'"))?;
-    Ok((chat_jid.to_string(), msg_id.to_string()))
-}
-
 /// Normalize a phone number for WhatsApp JID: strip `+` and spaces.
 pub fn normalize_phone(phone: &str) -> String {
     phone.chars().filter(|c| c.is_ascii_digit()).collect()

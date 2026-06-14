@@ -161,6 +161,73 @@ fn calendar_event_serialization() {
     assert_eq!(roundtrip.end_at, 1_700_001_800);
 }
 
+#[test]
+fn parse_reply_id_valid() {
+    let (conv, msg) = parse_reply_id("conv123:msg456").unwrap();
+    assert_eq!(conv, "conv123");
+    assert_eq!(msg, "msg456");
+}
+
+#[test]
+fn parse_reply_id_splits_on_first_colon_only() {
+    let (conv, msg) = parse_reply_id("left:mid:right").unwrap();
+    assert_eq!(conv, "left");
+    assert_eq!(msg, "mid:right");
+}
+
+#[test]
+fn parse_reply_id_invalid_no_colon() {
+    assert!(parse_reply_id("no-separator-here").is_err());
+}
+
+#[test]
+fn parse_reply_id_empty_string_is_error() {
+    assert!(parse_reply_id("").is_err());
+}
+
+#[test]
+fn parse_reply_id_leading_colon_yields_empty_conv() {
+    let (conv, msg) = parse_reply_id(":42").unwrap();
+    assert_eq!(conv, "");
+    assert_eq!(msg, "42");
+}
+
+#[test]
+fn parse_reply_id_trailing_colon_yields_empty_msg() {
+    let (conv, msg) = parse_reply_id("chat:").unwrap();
+    assert_eq!(conv, "chat");
+    assert_eq!(msg, "");
+}
+
+#[test]
+fn parse_reply_id_error_message_includes_input() {
+    let err = parse_reply_id("xyz").unwrap_err().to_string();
+    assert!(err.contains("xyz"), "error should include the input: {err}");
+}
+
+#[test]
+fn message_content_text_returns_body() {
+    assert_eq!(MessageContent::Text("hello".into()).text(), "hello");
+    assert_eq!(MessageContent::Text(String::new()).text(), "");
+}
+
+#[test]
+fn message_content_text_returns_caption_for_file() {
+    let with_caption = MessageContent::File {
+        path: "/tmp/x.png".into(),
+        caption: Some("a photo".into()),
+        mime_type: Some("image/png".into()),
+    };
+    assert_eq!(with_caption.text(), "a photo");
+
+    let no_caption = MessageContent::File {
+        path: "/tmp/x.png".into(),
+        caption: None,
+        mime_type: None,
+    };
+    assert_eq!(no_caption.text(), "");
+}
+
 fn make_msg_ts(id: &str, ts: i64, ctx_id: Option<&str>) -> Message {
     Message {
         id: id.into(),

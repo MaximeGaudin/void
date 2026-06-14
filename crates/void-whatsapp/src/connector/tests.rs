@@ -1,6 +1,6 @@
 use void_core::models::MessageContent;
 
-use super::send::{build_wa_message, parse_reply_id};
+use super::send::build_wa_message;
 use super::*;
 use wa_rs::download::MediaType as WaMediaType;
 use wa_rs_proto::whatsapp::message::ExtendedTextMessage;
@@ -446,37 +446,6 @@ fn extract_media_metadata_none_for_text() {
         ..Default::default()
     };
     assert!(extract::extract_media_metadata(&msg).is_none());
-}
-
-#[test]
-fn parse_reply_id_valid() {
-    let (chat, msg) = parse_reply_id("33612345678@s.whatsapp.net:ABC123DEF").unwrap();
-    assert_eq!(chat, "33612345678@s.whatsapp.net");
-    assert_eq!(msg, "ABC123DEF");
-}
-
-#[test]
-fn parse_reply_id_invalid() {
-    assert!(parse_reply_id("no_colon_here").is_err());
-}
-
-#[test]
-fn parse_reply_id_empty_is_error() {
-    assert!(parse_reply_id("").is_err());
-}
-
-#[test]
-fn parse_reply_id_splits_on_first_colon_only() {
-    let (chat, msg) = parse_reply_id("33612@s.whatsapp.net:ABC:DEF").unwrap();
-    assert_eq!(chat, "33612@s.whatsapp.net");
-    assert_eq!(msg, "ABC:DEF");
-}
-
-#[test]
-fn parse_reply_id_trailing_colon_yields_empty_msg() {
-    let (chat, msg) = parse_reply_id("chat@g.us:").unwrap();
-    assert_eq!(chat, "chat@g.us");
-    assert_eq!(msg, "");
 }
 
 #[test]

@@ -13,6 +13,17 @@ pub enum MessageContent {
     },
 }
 
+impl MessageContent {
+    /// The textual payload to send: the body for [`Text`](Self::Text), or the
+    /// caption (empty when absent) for [`File`](Self::File).
+    pub fn text(&self) -> &str {
+        match self {
+            MessageContent::Text(text) => text.as_str(),
+            MessageContent::File { caption, .. } => caption.as_deref().unwrap_or(""),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthStatus {
     pub connection_id: String,

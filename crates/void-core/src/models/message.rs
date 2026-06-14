@@ -2,6 +2,21 @@ use serde::{Deserialize, Serialize};
 
 use super::serde_ts::{epoch_iso8601, epoch_iso8601_opt};
 
+/// Parse a connector reply ID of the form `{conversation_external_id}:{message_external_id}`.
+///
+/// Connectors address a reply target as `conv:msg`; this splits on the first
+/// `:` only, so external IDs that themselves contain `:` are preserved in the
+/// message portion. Returns an error (including the offending input) when no
+/// `:` is present.
+pub fn parse_reply_id(message_id: &str) -> anyhow::Result<(String, String)> {
+    let (conv, msg) = message_id.split_once(':').ok_or_else(|| {
+        anyhow::anyhow!(
+            "invalid reply ID format, expected 'conversation_id:message_id': {message_id}"
+        )
+    })?;
+    Ok((conv.to_string(), msg.to_string()))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,

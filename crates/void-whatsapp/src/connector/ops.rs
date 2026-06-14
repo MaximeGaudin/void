@@ -12,10 +12,11 @@ use wa_rs_proto::whatsapp::ContextInfo;
 
 use super::media::{download_media_with_client, upload_and_build_media_message};
 use super::self_chat::send_self_chat_message;
-use super::send::{build_wa_message, parse_jid, parse_reply_id};
+use super::send::{build_wa_message, parse_jid};
 use super::WhatsAppConnector;
 use crate::rpc::rpc_to_message_content;
 use crate::rpc::{RpcMethod, RpcResult};
+use void_core::models::parse_reply_id;
 
 impl WhatsAppConnector {
     pub fn connection_id(&self) -> &str {

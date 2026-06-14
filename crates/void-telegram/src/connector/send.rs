@@ -3,22 +3,8 @@ use grammers_client::message::InputMessage;
 use grammers_client::peer::Peer;
 use void_core::models::MessageContent;
 
-fn text_for_message_content(content: &MessageContent) -> &str {
-    match content {
-        MessageContent::Text(text) => text.as_str(),
-        MessageContent::File { caption, .. } => caption.as_deref().unwrap_or(""),
-    }
-}
-
 pub(crate) fn build_input_message(content: &MessageContent) -> InputMessage {
-    InputMessage::new().text(text_for_message_content(content))
-}
-
-pub(crate) fn parse_reply_id(message_id: &str) -> anyhow::Result<(String, String)> {
-    let (conv, msg) = message_id
-        .split_once(':')
-        .ok_or_else(|| anyhow::anyhow!("invalid reply ID format: {message_id}"))?;
-    Ok((conv.to_string(), msg.to_string()))
+    InputMessage::new().text(content.text())
 }
 
 /// Strip the `telegram_<connection_id>_` prefix from an external ID, returning
@@ -62,79 +48,6 @@ pub(crate) async fn resolve_peer(client: &Client, input: &str) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_reply_id_valid() {
-        let (conv, msg) = parse_reply_id("telegram_conn_1_-100123:telegram_conn_1_42").unwrap();
-        assert_eq!(conv, "telegram_conn_1_-100123");
-        assert_eq!(msg, "telegram_conn_1_42");
-    }
-
-    #[test]
-    fn parse_reply_id_splits_on_first_colon_only() {
-        let (a, b) = parse_reply_id("left:mid:right").unwrap();
-        assert_eq!(a, "left");
-        assert_eq!(b, "mid:right");
-    }
-
-    #[test]
-    fn parse_reply_id_invalid_no_colon() {
-        let err = parse_reply_id("no-separator-here").unwrap_err();
-        assert!(
-            err.to_string().contains("invalid reply ID format"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn parse_reply_id_empty_string_is_error() {
-        let err = parse_reply_id("").unwrap_err();
-        assert!(
-            err.to_string().contains("invalid reply ID format"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn parse_reply_id_leading_colon_yields_empty_conv() {
-        let (conv, msg) = parse_reply_id(":42").unwrap();
-        assert_eq!(conv, "");
-        assert_eq!(msg, "42");
-    }
-
-    #[test]
-    fn parse_reply_id_trailing_colon_yields_empty_msg() {
-        let (conv, msg) = parse_reply_id("chat:").unwrap();
-        assert_eq!(conv, "chat");
-        assert_eq!(msg, "");
-    }
-
-    #[test]
-    fn parse_reply_id_error_message_includes_input() {
-        let err = parse_reply_id("xyz").unwrap_err();
-        assert!(err.to_string().contains("xyz"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn text_for_message_content_text_empty() {
-        assert_eq!(
-            text_for_message_content(&MessageContent::Text(String::new())),
-            ""
-        );
-    }
-
-    #[test]
-    fn text_for_message_content_file_empty_caption() {
-        let path = std::env::temp_dir().join("y.bin");
-        assert_eq!(
-            text_for_message_content(&MessageContent::File {
-                path,
-                caption: Some(String::new()),
-                mime_type: Some("application/octet-stream".into()),
-            }),
-            ""
-        );
-    }
 
     #[test]
     fn strip_telegram_prefix_removes_matching_prefix() {
@@ -183,40 +96,6 @@ mod tests {
         assert_eq!(
             strip_telegram_prefix("telegram_c_telegram_c_5", "c"),
             "telegram_c_5"
-        );
-    }
-
-    #[test]
-    fn text_for_message_content_text() {
-        assert_eq!(
-            text_for_message_content(&MessageContent::Text("hello".into())),
-            "hello"
-        );
-    }
-
-    #[test]
-    fn text_for_message_content_file_with_caption() {
-        let path = std::env::temp_dir().join("x.png");
-        assert_eq!(
-            text_for_message_content(&MessageContent::File {
-                path,
-                caption: Some("see this".into()),
-                mime_type: None,
-            }),
-            "see this"
-        );
-    }
-
-    #[test]
-    fn text_for_message_content_file_without_caption() {
-        let path = std::env::temp_dir().join("x.png");
-        assert_eq!(
-            text_for_message_content(&MessageContent::File {
-                path,
-                caption: None,
-                mime_type: None,
-            }),
-            ""
         );
     }
 }
