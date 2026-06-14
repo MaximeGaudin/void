@@ -265,6 +265,66 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    #[tokio::test]
+    async fn has_handlers_reflects_registration() {
+        let dir = std::env::temp_dir().join(format!("void-wa-rpc-hh-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let server = Server::new(&dir);
+        assert!(!server.has_handlers().await);
+        let connector = Arc::new(WhatsAppConnector::new(
+            "c",
+            dir.join("c.db").to_str().unwrap(),
+        ));
+        server.register("c", connector).await;
+        assert!(server.has_handlers().await);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn run_returns_immediately_without_handlers() {
+        let dir = std::env::temp_dir().join(format!("void-wa-rpc-empty-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let server = Server::new(&dir);
+        // No handlers registered: run must return Ok without binding an endpoint
+        // and without waiting for cancellation.
+        let cancel = CancellationToken::new();
+        server.run(cancel).await.unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn empty_request_line_yields_error() {
+        use tokio::net::UnixStream;
+
+        let dir = std::env::temp_dir().join(format!("void-wa-rpc-emptyline-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let server = Server::new(&dir);
+        let connector = Arc::new(WhatsAppConnector::new(
+            "c",
+            dir.join("c.db").to_str().unwrap(),
+        ));
+        server.register("c", connector).await;
+
+        let cancel = CancellationToken::new();
+        let cancel_bg = cancel.clone();
+        let task = tokio::spawn(async move { server.run(cancel_bg).await.unwrap() });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Send a blank line; the server should close the connection with no
+        // response (handle_connection bails on the empty request).
+        let mut stream = UnixStream::connect(endpoint_path(&dir)).await.unwrap();
+        stream.write_all(b"\n").await.unwrap();
+        stream.shutdown().await.ok();
+        let mut buf = String::new();
+        stream.read_to_string(&mut buf).await.unwrap();
+        assert!(buf.is_empty(), "expected no response, got: {buf}");
+
+        cancel.cancel();
+        task.await.unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[cfg(unix)]
     async fn rpc_round_trip(dir: &Path, request: RpcRequest) -> anyhow::Result<RpcResponse> {
         use tokio::net::UnixStream;

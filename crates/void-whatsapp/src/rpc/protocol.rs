@@ -187,4 +187,96 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn request_round_trip_reply_in_thread() {
+        let req = RpcRequest {
+            id: 12,
+            connection_id: "wa".into(),
+            method: RpcMethod::Reply {
+                message_id: "120363@g.us:MSG1".into(),
+                content: RpcContent::Text { text: "re".into() },
+                in_thread: true,
+            },
+        };
+        let parsed = RpcRequest::decode_line(&req.encode_line().unwrap()).unwrap();
+        assert_eq!(parsed, req);
+    }
+
+    #[test]
+    fn request_round_trip_download_media() {
+        let req = RpcRequest {
+            id: 5,
+            connection_id: "wa".into(),
+            method: RpcMethod::DownloadMedia {
+                params: RpcDownloadParams {
+                    direct_path: "/v/t62".into(),
+                    media_key: "a2V5".into(),
+                    file_sha256: "c2hh".into(),
+                    file_enc_sha256: "ZW5j".into(),
+                    file_length: 4096,
+                    media_type: "image".into(),
+                },
+            },
+        };
+        let parsed = RpcRequest::decode_line(&req.encode_line().unwrap()).unwrap();
+        assert_eq!(parsed, req);
+    }
+
+    #[test]
+    fn decode_line_rejects_malformed_json() {
+        assert!(RpcRequest::decode_line("{not json").is_err());
+        assert!(RpcResponse::decode_line("garbage").is_err());
+    }
+
+    #[test]
+    fn message_content_round_trip_text() {
+        let original = MessageContent::Text("hello world".into());
+        match rpc_to_message_content(message_content_to_rpc(&original)) {
+            MessageContent::Text(t) => assert_eq!(t, "hello world"),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn message_content_round_trip_file_with_caption() {
+        let original = MessageContent::File {
+            path: "/tmp/pic.jpg".into(),
+            caption: Some("look".into()),
+            mime_type: Some("image/jpeg".into()),
+        };
+        match rpc_to_message_content(message_content_to_rpc(&original)) {
+            MessageContent::File {
+                path,
+                caption,
+                mime_type,
+            } => {
+                assert_eq!(path, std::path::PathBuf::from("/tmp/pic.jpg"));
+                assert_eq!(caption.as_deref(), Some("look"));
+                assert_eq!(mime_type.as_deref(), Some("image/jpeg"));
+            }
+            other => panic!("expected file, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn message_content_round_trip_file_without_optionals() {
+        let original = MessageContent::File {
+            path: "/tmp/doc.pdf".into(),
+            caption: None,
+            mime_type: None,
+        };
+        match rpc_to_message_content(message_content_to_rpc(&original)) {
+            MessageContent::File {
+                path,
+                caption,
+                mime_type,
+            } => {
+                assert_eq!(path, std::path::PathBuf::from("/tmp/doc.pdf"));
+                assert!(caption.is_none());
+                assert!(mime_type.is_none());
+            }
+            other => panic!("expected file, got {other:?}"),
+        }
+    }
 }

@@ -110,6 +110,27 @@ async fn client_unknown_connection_returns_error() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+#[tokio::test]
+async fn client_send_surfaces_connect_error_when_no_server() {
+    // A store dir with no running server: the client must fail to connect
+    // rather than hang or panic.
+    let dir = std::env::temp_dir().join(format!("void-wa-rpc-noserver-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let err = send_message(
+        &dir,
+        "whatsapp",
+        "33612345678",
+        MessageContent::Text("hi".into()),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("failed to connect"), "{err}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn end_to_end_protocol_on_unix_socket() {
