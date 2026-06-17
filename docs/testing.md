@@ -29,7 +29,7 @@ Tests are inline `#[cfg(test)] mod` modules next to the code (so they can reach 
 | Read paths | `void-cli/tests/read_paths.rs` | seeds an on-disk `void.db` in a tempdir, runs `inbox`/`search`/`messages`/… asserting seeded content |
 | Read-path JSON snapshots | `void-cli/tests/read_paths_snapshots.rs` | `insta` snapshots of `inbox` / `conversations` JSON envelopes (layout regressions) |
 | First run | `void-cli/tests/first_run.rs` | empty store / missing config never panics; `doctor --non-interactive` exits cleanly |
-| Sync engine | `void-core/src/sync.rs` | mock `Connector` drives orchestration, failure isolation, cancellation, `LOCK` release |
+| Sync engine | `void-core/src/sync/` | mock `Connector` drives orchestration, failure isolation, cancellation, `LOCK` release |
 | Database | `void-core/src/db/` | FTS5 search (incl. proptest fuzzing), `bulk_archive_before`, schema snapshot + migration data-preservation, dedup, mute |
 | Hooks | `void-core/src/hooks/` | trigger matching, cron scheduling, active windows, placeholders, and `execute_hook` against a stub agent binary |
 | Remote store | `void-core/src/store/` | fake `ssh`/`scp` on `PATH` verify argv, staging order, error surfacing; cache TTL |
