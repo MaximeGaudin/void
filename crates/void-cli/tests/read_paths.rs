@@ -10,7 +10,8 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
 use void_core::db::Database;
-use void_core::models::{Conversation, ConversationKind, Message};
+use void_core::models::ConversationKind;
+use void_core::test_fixtures::{make_conversation_named, make_message_with_sender};
 
 /// An isolated store with a config file whose `store.path` points at the store
 /// dir, plus a seeded `void.db`.
@@ -20,54 +21,17 @@ struct SeededStore {
     config: String,
 }
 
-fn make_conversation(id: &str, ext_id: &str, name: &str, kind: ConversationKind) -> Conversation {
-    Conversation {
-        id: id.into(),
-        connection_id: "test-slack".into(),
-        connector: "slack".into(),
-        external_id: ext_id.into(),
-        name: Some(name.into()),
-        kind,
-        last_message_at: Some(1_700_000_000),
-        unread_count: 0,
-        is_muted: false,
-        metadata: None,
-    }
-}
-
-fn make_message(id: &str, conv_id: &str, sender: &str, body: &str, ts: i64) -> Message {
-    Message {
-        id: id.into(),
-        conversation_id: conv_id.into(),
-        connection_id: "test-slack".into(),
-        connector: "slack".into(),
-        external_id: format!("ext-{id}"),
-        sender: sender.into(),
-        sender_name: Some("Alice Example".into()),
-        sender_avatar_url: None,
-        body: Some(body.into()),
-        timestamp: ts,
-        synced_at: None,
-        is_archived: false,
-        reply_to_id: None,
-        media_type: None,
-        metadata: None,
-        context_id: None,
-        context: None,
-    }
-}
-
 fn seed_db(db_path: &Path) {
     let db = Database::open(db_path).expect("open db for seeding");
 
     // A DM conversation (excluded from `channels`) and a channel conversation.
-    let dm = make_conversation(
+    let dm = make_conversation_named(
         "c-dm",
         "C-DM-EXT",
         "Direct With Alice",
         ConversationKind::Dm,
     );
-    let channel = make_conversation(
+    let channel = make_conversation_named(
         "c-chan",
         "C-CHAN-EXT",
         "general-announcements",
@@ -77,7 +41,7 @@ fn seed_db(db_path: &Path) {
     db.upsert_conversation(&channel).expect("upsert channel");
 
     // Messages. `sender != connection_id` so they surface as contacts too.
-    db.upsert_message(&make_message(
+    db.upsert_message(&make_message_with_sender(
         "m1",
         "c-dm",
         "alice@example.com",
@@ -85,7 +49,7 @@ fn seed_db(db_path: &Path) {
         1_700_000_100,
     ))
     .expect("upsert m1");
-    db.upsert_message(&make_message(
+    db.upsert_message(&make_message_with_sender(
         "m2",
         "c-chan",
         "bob@example.com",
