@@ -1,0 +1,39 @@
+---
+source: crates/void-cli/tests/read_paths_snapshots.rs
+expression: json
+---
+{
+  "data": [
+    {
+      "connection_id": "test-slack",
+      "connector": "slack",
+      "external_id": "C-DM-EXT",
+      "id": "c-dm",
+      "is_muted": false,
+      "kind": "dm",
+      "last_message_at": "2023-11-14T22:13:20Z",
+      "metadata": null,
+      "name": "Direct With Alice",
+      "unread_count": 0
+    },
+    {
+      "connection_id": "test-slack",
+      "connector": "slack",
+      "external_id": "C-CHAN-EXT",
+      "id": "c-chan",
+      "is_muted": false,
+      "kind": "channel",
+      "last_message_at": "2023-11-14T22:13:20Z",
+      "metadata": null,
+      "name": "general-announcements",
+      "unread_count": 0
+    }
+  ],
+  "error": null,
+  "pagination": {
+    "current_page": 1,
+    "page_size": 50,
+    "total_elements": 2,
+    "total_pages": 1
+  }
+}

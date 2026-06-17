@@ -27,6 +27,7 @@ Tests are inline `#[cfg(test)] mod` modules next to the code (so they can reach 
 |------|-------|------|
 | Binary CLI contract | `void-cli/tests/cli_contract.rs` | every command's `--help` exits 0; required-arg violations exit non-zero |
 | Read paths | `void-cli/tests/read_paths.rs` | seeds an on-disk `void.db` in a tempdir, runs `inbox`/`search`/`messages`/… asserting seeded content |
+| Read-path JSON snapshots | `void-cli/tests/read_paths_snapshots.rs` | `insta` snapshots of `inbox` / `conversations` JSON envelopes (layout regressions) |
 | First run | `void-cli/tests/first_run.rs` | empty store / missing config never panics; `doctor --non-interactive` exits cleanly |
 | Sync engine | `void-core/src/sync.rs` | mock `Connector` drives orchestration, failure isolation, cancellation, `LOCK` release |
 | Database | `void-core/src/db/` | FTS5 search (incl. proptest fuzzing), `bulk_archive_before`, schema snapshot + migration data-preservation, dedup, mute |
@@ -41,16 +42,13 @@ Tests are inline `#[cfg(test)] mod` modules next to the code (so they can reach 
 - **Mock `Connector`**: an in-crate test double implementing the async `Connector` trait, recording calls via `Arc<Mutex<…>>`/atomics with configurable behavior (succeed / fail / block-until-cancelled). See `void-core/src/sync.rs` tests.
 - **Stub agent** (hooks): a shell script written to a tempdir emitting canned Claude-style stream-json, gated `#[cfg(unix)]`.
 - **Fake `ssh`/`scp`** (remote store): scripts on a prepended `PATH`, gated `#[cfg(unix)]`, serialized on a mutex since `PATH` is process-global.
-- **HTTP connectors**: `wiremock::MockServer` via each client's `with_base_url(...)` test constructor. For a 429 retry test, set `Retry-After: 0` so retries exhaust without sleeping.
+- **HTTP connectors**: `wiremock::MockServer` via each client's `with_base_url(...)` test constructor (including Hacker News `HnClient::with_base_url`). For a 429 retry test, set `Retry-After: 0` so retries exhaust without sleeping.
 - **No `#[ignore]`**: a test that can't run is removed or `#[cfg]`-gated, not left ignored.
 
 ## Known coverage gaps
 
 Honest list of what is *not* covered and why — good first contributions:
 
-- **Telegram message extraction** (`void-telegram/src/connector/extract.rs`, parts of `sync.rs`): operate on grammers `Message`/`Peer`/`Update`, which have no public constructors and need a live MTProto client. Only the pure helpers (`send.rs`, `media.rs`) are unit-tested. A fake-client seam would unlock the rest.
-- **WhatsApp/Telegram async trait methods** (`connector_trait.rs`): require a live client + `Database`; the pure functions they delegate to are covered, but the orchestration methods are not driven end-to-end.
-- **Hacker News HTTP error paths**: `HnClient` has a hard-coded `BASE_URL` const, so the live fetch isn't interceptable by wiremock. Filtering/parsing is covered via inline-JSON fixtures; a `#[cfg(test)] with_base_url` seam would enable true 5xx/timeout tests.
-- **Output formatting snapshots**: read paths assert content presence, not exact table layout. Adding `insta` (or `trycmd`) snapshots would catch unintended formatting changes.
+- **Telegram/WhatsApp live sync** (`start_sync`, `authenticate`): still require a live MTProto/WhatsApp session; `health_check` and pure extract/send helpers are now unit-tested, but full orchestration is not driven end-to-end without a real client.
 
 When you close one of these, update this section.
