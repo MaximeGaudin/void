@@ -1,8 +1,7 @@
 use clap::{Args, Subcommand};
-use tracing::debug;
-use void_core::config::{ConnectionSettings, VoidConfig};
 use void_core::connector::Connector;
-use void_core::models::ConnectorType;
+
+use crate::commands::connector_factory::build_telegram_connector;
 
 #[derive(Debug, Args)]
 pub struct TelegramArgs {
@@ -80,7 +79,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         anyhow::bail!("No downloadable media in metadata.");
     }
 
-    let connector = build_tg_connector(args.connection.as_deref(), cfg)?;
+    let connector = build_telegram_connector(args.connection.as_deref(), cfg)?;
 
     let raw_msg_id_str = msg.external_id.rsplit('_').next().unwrap_or("0");
     let raw_msg_id: i32 = raw_msg_id_str.parse().unwrap_or(0);
@@ -116,7 +115,7 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
 
     let conn_id =
         super::resolve::resolve_forward_connection(args.connection.as_deref(), &msg.connection_id);
-    let connector = build_tg_connector(Some(conn_id), cfg)?;
+    let connector = build_telegram_connector(Some(conn_id), cfg)?;
 
     let fwd_id = connector
         .forward(
@@ -129,36 +128,4 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
 
     eprintln!("Message forwarded (id: {fwd_id})");
     Ok(())
-}
-
-fn build_tg_connector(
-    connection_filter: Option<&str>,
-    cfg: &VoidConfig,
-) -> anyhow::Result<void_telegram::connector::TelegramConnector> {
-    let connection = cfg
-        .connections
-        .iter()
-        .find(|a| {
-            let is_tg = a.connector_type == ConnectorType::Telegram;
-            let name_matches = connection_filter.is_none_or(|n| a.id == n);
-            is_tg && name_matches
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!("No Telegram connection found in config. Run `void setup` to add one.")
-        })?;
-
-    let (api_id, api_hash) = match &connection.settings {
-        ConnectionSettings::Telegram { api_id, api_hash } => (*api_id, api_hash.clone()),
-        _ => anyhow::bail!("connection '{}' has mismatched settings", connection.id),
-    };
-
-    let store_path = crate::context::store_path();
-    let session_path = store_path.join(format!("telegram-{}.json", connection.id));
-    debug!(connection_id = %connection.id, "building Telegram connector for CLI");
-    Ok(void_telegram::connector::TelegramConnector::new(
-        &connection.id,
-        session_path.to_str().unwrap_or(""),
-        api_id,
-        api_hash.as_deref(),
-    ))
 }
