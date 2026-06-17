@@ -3,6 +3,16 @@ use serde::de::Deserializer;
 use crate::models::ConnectorType;
 use serde::{Deserialize, Serialize};
 
+/// Default Google News UI language (`hl` parameter).
+pub(crate) fn default_gn_language() -> String {
+    "fr".to_string()
+}
+
+/// Default Google News country edition (`gl` parameter).
+pub(crate) fn default_gn_country() -> String {
+    "FR".to_string()
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ConnectionConfig {
     pub id: String,
@@ -46,6 +56,12 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
             ConnectorType::HackerNews => ConnectionSettings::HackerNews {
                 keywords: raw.keywords.unwrap_or_default(),
                 min_score: raw.min_score.unwrap_or(0),
+            },
+            ConnectorType::GoogleNews => ConnectionSettings::GoogleNews {
+                keywords: raw.keywords.unwrap_or_default(),
+                when: raw.when.unwrap_or_default(),
+                language: raw.language.unwrap_or_else(default_gn_language),
+                country: raw.country.unwrap_or_else(default_gn_country),
             },
             ConnectorType::LinkedIn => ConnectionSettings::LinkedIn {
                 api_key: raw
@@ -94,6 +110,12 @@ struct RawConnectionConfig {
     #[serde(default)]
     min_score: Option<u32>,
     #[serde(default)]
+    when: Option<String>,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    country: Option<String>,
+    #[serde(default)]
     api_key: Option<String>,
     #[serde(default)]
     dsn: Option<String>,
@@ -136,6 +158,16 @@ pub enum ConnectionSettings {
         keywords: Vec<String>,
         #[serde(default)]
         min_score: u32,
+    },
+    GoogleNews {
+        #[serde(default)]
+        keywords: Vec<String>,
+        #[serde(default)]
+        when: String,
+        #[serde(default = "default_gn_language")]
+        language: String,
+        #[serde(default = "default_gn_country")]
+        country: String,
     },
     LinkedIn {
         api_key: String,
@@ -191,6 +223,18 @@ impl std::fmt::Debug for ConnectionSettings {
                 .debug_struct("HackerNews")
                 .field("keywords", keywords)
                 .field("min_score", min_score)
+                .finish(),
+            Self::GoogleNews {
+                keywords,
+                when,
+                language,
+                country,
+            } => f
+                .debug_struct("GoogleNews")
+                .field("keywords", keywords)
+                .field("when", when)
+                .field("language", language)
+                .field("country", country)
                 .finish(),
             Self::LinkedIn {
                 api_key,

@@ -6,6 +6,7 @@ mod config_ui;
 pub(crate) mod connection_menu;
 mod gdrive;
 mod gmail;
+mod googlenews;
 mod hackernews;
 mod linkedin;
 pub(crate) mod prompt;

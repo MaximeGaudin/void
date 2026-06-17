@@ -9,6 +9,7 @@ pub enum ConnectorType {
     Calendar,
     Telegram,
     HackerNews,
+    GoogleNews,
     LinkedIn,
 }
 
@@ -21,6 +22,7 @@ impl std::fmt::Display for ConnectorType {
             Self::Calendar => write!(f, "calendar"),
             Self::Telegram => write!(f, "telegram"),
             Self::HackerNews => write!(f, "hackernews"),
+            Self::GoogleNews => write!(f, "googlenews"),
             Self::LinkedIn => write!(f, "linkedin"),
         }
     }
@@ -36,6 +38,7 @@ impl ConnectorType {
             Self::Calendar => "CA",
             Self::Telegram => "TG",
             Self::HackerNews => "HN",
+            Self::GoogleNews => "GN",
             Self::LinkedIn => "LI",
         }
     }

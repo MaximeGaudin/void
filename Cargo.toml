@@ -10,6 +10,7 @@ members = [
     "crates/void-telegram",
     "crates/void-gdrive",
     "crates/void-hackernews",
+    "crates/void-googlenews",
     "crates/void-linkedin",
 ]
 
@@ -53,6 +54,7 @@ tokio-util = "0.7"
 croner = "3"
 tabled = "0.17"
 reqwest = { version = "0.13", features = ["json", "multipart", "form", "query"] }
+quick-xml = { version = "0.40", features = ["serialize"] }
 tokio-tungstenite = { version = "0.29", features = ["native-tls"] }
 futures-util = "0.3"
 base64 = "0.22"
@@ -80,4 +82,5 @@ void-whatsapp = { path = "crates/void-whatsapp" }
 void-telegram = { path = "crates/void-telegram" }
 void-gdrive = { path = "crates/void-gdrive" }
 void-hackernews = { path = "crates/void-hackernews" }
+void-googlenews = { path = "crates/void-googlenews" }
 void-linkedin = { path = "crates/void-linkedin" }

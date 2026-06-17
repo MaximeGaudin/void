@@ -12,6 +12,7 @@ Every connector is added through the same flow: run `void setup`, pick the servi
 | [Google Drive](#google-drive) | Built-in OAuth (or your own) | On-demand (no sync) |
 | [LinkedIn](#linkedin-unipile) | Unipile API key | Unipile API polling |
 | [Hacker News](#hacker-news) | None — public API | HN API polling |
+| [Google News](#google-news) | None — public RSS | Google News RSS polling |
 
 ## WhatsApp
 
@@ -101,6 +102,32 @@ void hn keywords add "sqlite,local-first"
 void hn min-score 150
 void hn config
 ```
+
+## Google News
+
+No credentials needed — Google News exposes a public RSS search feed. Run `void setup`, select Google News, enter keywords to watch, a recency window, and the edition (language + country). Each keyword triggers its own Google News search; matching articles land in your inbox on each sync cycle.
+
+```toml
+[[connections]]
+id = "googlenews"
+type = "googlenews"
+keywords = ["intelligence artificielle", "startup"]
+when = "7d"          # recency window (e.g. 24h, 7d) — empty for no limit
+language = "fr"      # hl parameter
+country = "FR"       # gl parameter
+```
+
+Tune it later without editing the config:
+
+```bash
+void gn keywords add "open source,rust"
+void gn when 24h
+void gn language en
+void gn country US
+void gn config
+```
+
+To follow several editions (e.g. French and US news), add one connection per edition — each is targetable with `--connection <id>`.
 
 ## Multiple accounts
 

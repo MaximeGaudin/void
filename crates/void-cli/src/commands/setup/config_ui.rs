@@ -21,6 +21,10 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
         cfg.sync.hackernews_poll_interval_secs
     );
     eprintln!(
+        "  googlenews_poll_interval_secs = {}",
+        cfg.sync.googlenews_poll_interval_secs
+    );
+    eprintln!(
         "  linkedin_poll_interval_secs   = {}",
         cfg.sync.linkedin_poll_interval_secs
     );
@@ -89,6 +93,25 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                         eprintln!("    keywords:  {}", keywords.join(", "));
                     }
                     eprintln!("    min_score: {min_score}");
+                }
+                config::ConnectionSettings::GoogleNews {
+                    keywords,
+                    when,
+                    language,
+                    country,
+                } => {
+                    if keywords.is_empty() {
+                        eprintln!("    keywords:  (none)");
+                    } else {
+                        eprintln!("    keywords:  {}", keywords.join(", "));
+                    }
+                    if when.is_empty() {
+                        eprintln!("    when:      (no limit)");
+                    } else {
+                        eprintln!("    when:      {when}");
+                    }
+                    eprintln!("    language:  {language}");
+                    eprintln!("    country:   {country}");
                 }
                 config::ConnectionSettings::LinkedIn {
                     api_key,
