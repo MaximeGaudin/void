@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](Cargo.toml)
 
-**One inbox for everything.** `void` unifies WhatsApp, Telegram, Slack, Gmail, Google Calendar, Google Drive, LinkedIn, and Hacker News into a single local-first command-line tool — one inbox, one search index, one set of commands.
+**One inbox for everything.** `void` unifies WhatsApp, Telegram, Slack, Gmail, Google Calendar, Google Drive, LinkedIn, Hacker News, and Google News into a single local-first command-line tool — one inbox, one search index, one set of commands.
 
 It is built for terminals, shell scripts, and AI agents:
 
@@ -125,6 +125,17 @@ void hn keywords add "rust,local-first"
 void hn min-score 100
 ```
 
+### Google News
+
+Keyword-watched articles from the public Google News RSS feed land in your inbox — one search per keyword, filtered by recency:
+
+```bash
+void gn keywords add "intelligence artificielle,startup"
+void gn when 7d          # only articles from the last 7 days
+void gn language fr      # hl parameter
+void gn country FR       # gl parameter
+```
+
 ### Automation with hooks
 
 Hooks run an AI agent on new messages or cron schedules — and since the agent can call `void` itself, it can triage, draft, and notify on your behalf. Docs: [Hooks](docs/hooks.md)
@@ -148,14 +159,14 @@ A background daemon keeps a local SQLite database in sync with every connected s
   void ◄──────────► SQLite (FTS5) ◄────── sync daemon ──────► services
                                               │
         WhatsApp │ Telegram │ Slack ──── push (WebSocket / MTProto)
-        Gmail │ Calendar │ LinkedIn │ HN ──── polling
+        Gmail │ Calendar │ LinkedIn │ HN │ Google News ──── polling
 ```
 
 | Crate | Role |
 |-------|------|
 | `void-core` | Config, database, models, hooks, `Connector` trait, sync engine |
 | `void-cli` | The `void` binary: clap commands, output formatting |
-| `void-slack`, `void-gmail`, `void-calendar`, `void-whatsapp`, `void-telegram`, `void-gdrive`, `void-hackernews`, `void-linkedin` | One crate per connector |
+| `void-slack`, `void-gmail`, `void-calendar`, `void-whatsapp`, `void-telegram`, `void-gdrive`, `void-hackernews`, `void-googlenews`, `void-linkedin` | One crate per connector |
 
 All data stays on your machine in `~/.local/share/void` — no external database, no Docker, no cloud. Layout details: [Configuration](docs/configuration.md#data-storage-layout).
 

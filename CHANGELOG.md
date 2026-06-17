@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Google News** — New read-only connector that watches the public Google News RSS feed. Each configured keyword triggers its own search; matching articles land in your inbox, filtered by a recency window. Configure with `void gn keywords`, `void gn when`, `void gn language`, and `void gn country` (or interactively via `void setup`). Language/country default to `fr`/`FR`; add one connection per edition to follow several.
+
 ## [0.10.2] - 2026-06-15
 
 ### Fixed
