@@ -1,10 +1,42 @@
-use void_core::models::MessageContent;
+use void_core::connector::Connector;
+use void_core::models::{ConnectorType, MessageContent};
 
 use super::send::build_wa_message;
 use super::*;
 use wa_rs::download::MediaType as WaMediaType;
 use wa_rs_proto::whatsapp::message::ExtendedTextMessage;
 use wa_rs_proto::whatsapp::{ContextInfo, Message as WaMessage};
+
+#[tokio::test]
+async fn health_check_missing_session_db_suggests_setup() {
+    let session_path =
+        std::env::temp_dir().join(format!("void-wa-missing-{}.db", uuid::Uuid::new_v4()));
+    let connector = WhatsAppConnector::new("test-conn", &session_path.to_string_lossy());
+
+    let status = connector.health_check().await.unwrap();
+
+    assert!(!status.ok);
+    assert!(status.message.contains("setup"));
+    assert_eq!(status.connection_id, "test-conn");
+    assert_eq!(status.connector_type, ConnectorType::WhatsApp);
+}
+
+#[tokio::test]
+async fn health_check_empty_session_db_file_is_ok() {
+    let session_path =
+        std::env::temp_dir().join(format!("void-wa-empty-{}.db", uuid::Uuid::new_v4()));
+    std::fs::File::create(&session_path).unwrap();
+    let connector = WhatsAppConnector::new("test-conn", &session_path.to_string_lossy());
+
+    let status = connector.health_check().await.unwrap();
+
+    assert!(status.ok);
+    assert!(status.message.contains("session"));
+    assert_eq!(status.connection_id, "test-conn");
+    assert_eq!(status.connector_type, ConnectorType::WhatsApp);
+
+    let _ = std::fs::remove_file(&session_path);
+}
 
 #[test]
 fn parse_jid_phone_number() {
