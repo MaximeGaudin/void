@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use tracing::info;
 use wa_rs::client::Client;
-use wa_rs::store::signal_adapter::SignalProtocolStoreAdapter;
+use wa_rs::send::SendOptions;
 use wa_rs::types::message::MessageSource;
 use wa_rs::Jid;
 use wa_rs_binary::jid::JidExt;
-use wa_rs_core::send::{prepare_dm_stanza, SignalStores};
 use wa_rs_proto::whatsapp::ContextInfo;
 
 use super::send::{build_wa_message, normalize_phone, parse_jid};
@@ -91,6 +90,8 @@ impl OwnIdentity {
     }
 }
 
+/// Attributes for an inbound notes-to-self stanza (kept for reference / future use).
+#[allow(dead_code)]
 pub fn apply_self_chat_stanza_attrs(
     stanza: &mut wa_rs_binary::node::Node,
     own_lid: &Jid,
@@ -112,15 +113,9 @@ pub async fn send_self_chat_message(
     context_info: Option<ContextInfo>,
 ) -> anyhow::Result<String> {
     let identity = identity.enrich_from_client(client).await;
-    let own_lid = identity
-        .lid_jid
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("WhatsApp LID not available for notes-to-self send"))?;
     let own_pn = identity.phone_jid.as_deref().ok_or_else(|| {
         anyhow::anyhow!("WhatsApp phone JID not available for notes-to-self send")
     })?;
-
-    let own_lid = parse_jid(own_lid)?;
     let own_pn = parse_jid(own_pn)?;
 
     let msg = match &content {
@@ -130,44 +125,18 @@ pub async fn send_self_chat_message(
         _ => build_wa_message(&content, context_info)?,
     };
 
-    let request_id = client.generate_message_id().await;
     info!(
-        own_lid = %own_lid,
         own_pn = %own_pn,
-        message_id = %request_id,
         "sending WhatsApp notes-to-self message"
     );
 
-    let pm = client.persistence_manager();
-    let device_store_arc = pm.get_device_arc().await;
-    let device_snapshot = pm.get_device_snapshot().await;
-    let account_info = device_snapshot.account.clone();
-
-    let mut store_adapter = SignalProtocolStoreAdapter::new(device_store_arc);
-    let mut stores = SignalStores {
-        session_store: &mut store_adapter.session_store,
-        identity_store: &mut store_adapter.identity_store,
-        prekey_store: &mut store_adapter.pre_key_store,
-        signed_prekey_store: &store_adapter.signed_pre_key_store,
-        sender_key_store: &mut store_adapter.sender_key_store,
-    };
-
-    let mut stanza = prepare_dm_stanza(
-        &mut stores,
-        client.as_ref(),
-        &own_lid,
-        account_info.as_ref(),
-        own_lid.clone(),
-        &msg,
-        request_id.clone(),
-        None,
-        vec![],
-    )
-    .await?;
-
-    apply_self_chat_stanza_attrs(&mut stanza, &own_lid, &own_pn);
-    client.send_node(stanza).await?;
-    Ok(request_id)
+    // Use the same DM path as wa-rs for regular sends. The custom LID-targeted
+    // stanza from 0.10.1 encrypted only for linked-device LIDs and never reached
+    // the primary phone.
+    let msg_id = client
+        .send_message_with_options(own_pn, msg, SendOptions::default())
+        .await?;
+    Ok(msg_id)
 }
 
 fn jid_same_user(a: &str, b: &str) -> bool {
