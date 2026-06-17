@@ -78,6 +78,7 @@ path = "{}"
 gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
 hackernews_poll_interval_secs = 3600
+googlenews_poll_interval_secs = 3600
 linkedin_poll_interval_secs = 1800
 linkedin_backfill_days = 15
 
@@ -118,6 +119,14 @@ linkedin_backfill_days = 15
 # type = "hackernews"
 # keywords = ["rust", "ai", "startup"]
 # min_score = 100
+#
+# [[connections]]
+# id = "googlenews"
+# type = "googlenews"
+# keywords = ["intelligence artificielle", "startup"]
+# when = "7d"          # recency window (e.g. 24h, 7d) — empty for no limit
+# language = "fr"      # hl parameter
+# country = "FR"       # gl parameter
 #
 # [[connections]]
 # id = "linkedin"

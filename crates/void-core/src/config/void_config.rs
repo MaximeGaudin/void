@@ -144,6 +144,8 @@ pub struct SyncConfig {
     pub calendar_poll_interval_secs: u64,
     #[serde(default = "default_hackernews_poll")]
     pub hackernews_poll_interval_secs: u64,
+    #[serde(default = "default_googlenews_poll")]
+    pub googlenews_poll_interval_secs: u64,
     #[serde(default = "default_linkedin_poll")]
     pub linkedin_poll_interval_secs: u64,
     #[serde(default = "default_linkedin_backfill_days")]
@@ -156,6 +158,7 @@ impl Default for SyncConfig {
             gmail_poll_interval_secs: default_gmail_poll(),
             calendar_poll_interval_secs: default_calendar_poll(),
             hackernews_poll_interval_secs: default_hackernews_poll(),
+            googlenews_poll_interval_secs: default_googlenews_poll(),
             linkedin_poll_interval_secs: default_linkedin_poll(),
             linkedin_backfill_days: default_linkedin_backfill_days(),
         }
@@ -171,6 +174,10 @@ fn default_calendar_poll() -> u64 {
 }
 
 fn default_hackernews_poll() -> u64 {
+    3600
+}
+
+fn default_googlenews_poll() -> u64 {
     3600
 }
 
@@ -264,6 +271,7 @@ impl VoidConfig {
             "calendar" => ConnectorType::Calendar,
             "telegram" => ConnectorType::Telegram,
             "hackernews" => ConnectorType::HackerNews,
+            "googlenews" => ConnectorType::GoogleNews,
             "linkedin" => ConnectorType::LinkedIn,
             _ => return None,
         };
