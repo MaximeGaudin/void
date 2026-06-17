@@ -7,6 +7,7 @@ pub mod doctor;
 pub mod forward;
 pub mod gdrive;
 pub mod gmail;
+pub mod googlenews;
 pub mod hackernews;
 pub mod hook;
 pub mod inbox;

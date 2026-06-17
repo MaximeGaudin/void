@@ -99,6 +99,27 @@ pub fn build_connector(
             ))
         }
         (
+            ConnectorType::GoogleNews,
+            ConnectionSettings::GoogleNews {
+                keywords,
+                when,
+                language,
+                country,
+            },
+        ) => {
+            let poll_secs = crate::context::config().sync.googlenews_poll_interval_secs;
+            Ok(Arc::new(
+                void_googlenews::connector::GoogleNewsConnector::new(
+                    &connection.id,
+                    keywords.clone(),
+                    when,
+                    language,
+                    country,
+                    poll_secs,
+                ),
+            ))
+        }
+        (
             ConnectorType::LinkedIn,
             ConnectionSettings::LinkedIn {
                 api_key,

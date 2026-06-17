@@ -83,16 +83,18 @@ pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {
         "calendar" | "cal" | "ca" => Some(ConnectorType::Calendar),
         "telegram" | "tg" => Some(ConnectorType::Telegram),
         "hackernews" | "hn" => Some(ConnectorType::HackerNews),
+        "googlenews" | "gn" => Some(ConnectorType::GoogleNews),
         "linkedin" | "li" => Some(ConnectorType::LinkedIn),
         _ => None,
     }
 }
 
-const KNOWN_CONNECTORS: &str = "whatsapp, slack, gmail, calendar, telegram, hackernews, linkedin";
+const KNOWN_CONNECTORS: &str =
+    "whatsapp, slack, gmail, calendar, telegram, hackernews, googlenews, linkedin";
 
 /// Shared `--connector` flag description for list/search commands (see [`resolve_connector_filter`]).
 pub const CONNECTOR_FILTER_HELP: &str =
-    "Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews, linkedin)";
+    "Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews, googlenews, linkedin)";
 
 pub fn resolve_connector_filter(raw: Option<&str>) -> anyhow::Result<Option<String>> {
     match raw {

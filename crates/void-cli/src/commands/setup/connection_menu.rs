@@ -4,7 +4,7 @@ use void_core::config::VoidConfig;
 
 use super::auth::authenticate_connection;
 use super::prompt::{prompt, select, separator};
-use super::{calendar, gdrive, gmail, hackernews, linkedin, slack, telegram, whatsapp};
+use super::{calendar, gdrive, gmail, googlenews, hackernews, linkedin, slack, telegram, whatsapp};
 
 pub(crate) async fn add_connection(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
     let choice = select(
@@ -17,6 +17,7 @@ pub(crate) async fn add_connection(cfg: &mut VoidConfig, store_path: &Path) -> a
             "Google Calendar",
             "Google Drive",
             "Hacker News",
+            "Google News",
             "LinkedIn",
         ],
     );
@@ -30,7 +31,8 @@ pub(crate) async fn add_connection(cfg: &mut VoidConfig, store_path: &Path) -> a
         4 => calendar::setup_calendar(cfg, store_path, true).await?,
         5 => gdrive::setup_gdrive(cfg, store_path).await?,
         6 => hackernews::setup_hackernews(cfg, true)?,
-        7 => linkedin::setup_linkedin(cfg, store_path, true).await?,
+        7 => googlenews::setup_googlenews(cfg, true)?,
+        8 => linkedin::setup_linkedin(cfg, store_path, true).await?,
         _ => {}
     }
     Ok(())

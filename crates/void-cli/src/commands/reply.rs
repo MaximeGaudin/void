@@ -159,6 +159,7 @@ fn build_reply_id(
         ConnectorType::Gmail => msg_external_id.to_string(),
         ConnectorType::Calendar => msg_external_id.to_string(),
         ConnectorType::HackerNews => msg_external_id.to_string(),
+        ConnectorType::GoogleNews => msg_external_id.to_string(),
         ConnectorType::LinkedIn => format!("{conv_external_id}:{msg_external_id}"),
     }
 }
@@ -206,5 +207,11 @@ mod tests {
     fn build_reply_id_hackernews_uses_message_external_id_only() {
         let id = build_reply_id(ConnectorType::HackerNews, "story-1", "comment-42");
         assert_eq!(id, "comment-42");
+    }
+
+    #[test]
+    fn build_reply_id_googlenews_uses_message_external_id_only() {
+        let id = build_reply_id(ConnectorType::GoogleNews, "feed", "article-7");
+        assert_eq!(id, "article-7");
     }
 }
