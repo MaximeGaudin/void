@@ -21,7 +21,7 @@ CI (`.github/workflows/ci.yml`) also runs, on every push and PR:
 
 ## Layout
 
-Tests are inline `#[cfg(test)] mod` modules next to the code (so they can reach private items), except `void-cli` binary tests which live in `crates/void-cli/tests/` as integration tests.
+Tests are inline `#[cfg(test)] mod` modules next to the code (so they can reach private items), except `void-cli` binary tests which live in `crates/void-cli/tests/` as integration tests. Shared DB seed fixtures (`make_conversation`, `make_message`, …) live in `void_core::test_fixtures` (feature `test-fixtures`).
 
 | Area | Where | What |
 |------|-------|------|
