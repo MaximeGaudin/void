@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-06-17
+
+### Fixed
+
+- **WhatsApp** — Notes-to-self sends (`--to` your own number or `--conversation` for "Message yourself") were acknowledged by linked devices but never delivered to the primary phone; sends now use the regular DM path to your phone JID instead of a broken custom LID stanza.
+
 ## [0.10.2] - 2026-06-15
 
 ### Fixed
