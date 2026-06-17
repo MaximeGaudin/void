@@ -1,9 +1,11 @@
 use void_core::connector::Connector;
 
+use crate::commands::connector_factory::build_gmail_connector;
+
 use super::{
-    build_gmail_connector, strip_void_id_prefix, AttachmentArgs, BatchModifyArgs, DraftAction,
-    DraftCommand, DraftsArgs, ForwardArgs, GmailArgs, GmailCommand, LabelModifyArgs, LabelsArgs,
-    SearchArgs, ThreadArgs, UrlArgs,
+    strip_void_id_prefix, AttachmentArgs, BatchModifyArgs, DraftAction, DraftCommand, DraftsArgs,
+    ForwardArgs, GmailArgs, GmailCommand, LabelModifyArgs, LabelsArgs, SearchArgs, ThreadArgs,
+    UrlArgs,
 };
 
 pub(super) async fn dispatch(args: &GmailArgs) -> anyhow::Result<()> {

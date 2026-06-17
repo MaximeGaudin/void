@@ -5,10 +5,6 @@ mod handlers;
 
 pub use args::*;
 
-use tracing::debug;
-use void_core::config::expand_tilde;
-use void_core::models::ConnectorType;
-
 pub async fn run(args: &GmailArgs) -> anyhow::Result<()> {
     handlers::dispatch(args).await
 }
@@ -19,50 +15,13 @@ pub async fn run(args: &GmailArgs) -> anyhow::Result<()> {
 /// `mgaudin@gladia.io-19c9ae5982d4b217`. Gmail IDs are pure hex and
 /// never contain `@`, so the presence of `@` is an unambiguous indicator
 /// that the void prefix must be stripped before passing the ID to the API.
-fn strip_void_id_prefix(id: &str) -> &str {
+pub(super) fn strip_void_id_prefix(id: &str) -> &str {
     if let Some(at_pos) = id.find('@') {
         if let Some(dash_offset) = id[at_pos..].find('-') {
             return &id[at_pos + dash_offset + 1..];
         }
     }
     id
-}
-
-fn build_gmail_connector(
-    connection_filter: Option<&str>,
-) -> anyhow::Result<void_gmail::connector::GmailConnector> {
-    let cfg = crate::context::void_config();
-
-    let connection = cfg
-        .connections
-        .iter()
-        .find(|a| {
-            let is_gmail = a.connector_type == ConnectorType::Gmail;
-            let name_matches = connection_filter.is_none_or(|n| a.id == n);
-            is_gmail && name_matches
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!("No Gmail connection found in config. Run `void setup` to add one.")
-        })?;
-
-    let credentials_file = match &connection.settings {
-        void_core::config::ConnectionSettings::Gmail { credentials_file } => {
-            credentials_file.clone()
-        }
-        _ => anyhow::bail!(
-            "Mismatched connection settings for Gmail connection '{}'",
-            connection.id
-        ),
-    };
-
-    let cred_path = credentials_file.as_ref().map(|f| expand_tilde(f));
-    let store_path = crate::context::store_path();
-    debug!(connection_id = %connection.id, "building Gmail connector for CLI");
-    Ok(void_gmail::connector::GmailConnector::new(
-        &connection.id,
-        cred_path.as_deref().and_then(|p| p.to_str()),
-        &store_path,
-    ))
 }
 
 #[cfg(test)]

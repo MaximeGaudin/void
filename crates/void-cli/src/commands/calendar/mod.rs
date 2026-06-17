@@ -2,7 +2,6 @@
 
 mod api;
 mod args;
-mod connector;
 mod list;
 mod parsing;
 

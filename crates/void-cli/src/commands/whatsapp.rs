@@ -1,8 +1,7 @@
 use clap::{Args, Subcommand};
-use tracing::debug;
-use void_core::config::VoidConfig;
-use void_core::models::ConnectorType;
 use void_core::sync::is_daemon_running;
+
+use crate::commands::connector_factory::build_whatsapp_connector_for_cli;
 
 #[derive(Debug, Args)]
 pub struct WhatsAppArgs {
@@ -71,7 +70,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("No media_type in metadata."))?;
 
-    let connector = build_wa_connector(args.connection.as_deref(), cfg)?;
+    let connector = build_whatsapp_connector_for_cli(args.connection.as_deref(), cfg)?;
     let store_path = crate::context::store_path();
     let connection_id = connector.connection_id();
 
@@ -112,29 +111,4 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
     crate::commands::write_download(&args.out, &data)?;
     eprintln!("Saved to {} ({} bytes).", args.out, data.len());
     Ok(())
-}
-
-fn build_wa_connector(
-    connection_filter: Option<&str>,
-    cfg: &VoidConfig,
-) -> anyhow::Result<void_whatsapp::connector::WhatsAppConnector> {
-    let connection = cfg
-        .connections
-        .iter()
-        .find(|a| {
-            let is_wa = a.connector_type == ConnectorType::WhatsApp;
-            let name_matches = connection_filter.is_none_or(|n| a.id == n);
-            is_wa && name_matches
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!("No WhatsApp connection found in config. Run `void setup` to add one.")
-        })?;
-
-    let store_path = crate::context::store_path();
-    let session_db = store_path.join(format!("whatsapp-{}.db", connection.id));
-    debug!(connection_id = %connection.id, "building WhatsApp connector for CLI");
-    Ok(void_whatsapp::connector::WhatsAppConnector::new(
-        &connection.id,
-        session_db.to_str().unwrap_or(""),
-    ))
 }
