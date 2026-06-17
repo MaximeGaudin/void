@@ -39,7 +39,7 @@ Tests are inline `#[cfg(test)] mod` modules next to the code (so they can reach 
 ## Conventions
 
 - **Determinism**: no real network, no wall-clock (`Utc::now()`) in assertions — inject fixed `chrono` instants. No real user filesystem — use `tempfile::tempdir()`.
-- **Mock `Connector`**: an in-crate test double implementing the async `Connector` trait, recording calls via `Arc<Mutex<…>>`/atomics with configurable behavior (succeed / fail / block-until-cancelled). See `void-core/src/sync.rs` tests.
+- **Mock `Connector`**: an in-crate test double implementing the async `Connector` trait, recording calls via `Arc<Mutex<…>>`/atomics with configurable behavior (succeed / fail / block-until-cancelled). See `void-core/src/sync/tests.rs`.
 - **Stub agent** (hooks): a shell script written to a tempdir emitting canned Claude-style stream-json, gated `#[cfg(unix)]`.
 - **Fake `ssh`/`scp`** (remote store): scripts on a prepended `PATH`, gated `#[cfg(unix)]`, serialized on a mutex since `PATH` is process-global.
 - **HTTP connectors**: `wiremock::MockServer` via each client's `with_base_url(...)` test constructor (including Hacker News `HnClient::with_base_url`). For a 429 retry test, set `Retry-After: 0` so retries exhaust without sleeping.
