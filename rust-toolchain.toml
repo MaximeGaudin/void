@@ -2,8 +2,12 @@
 # Prevents "works locally, fails in CI" surprises caused by clippy lints that
 # get upgraded or added between stable releases.
 #
-# To upgrade: run `rustup update stable`, then bump the channel below if you
-# want to pin a specific version (e.g. "1.93.0") instead of tracking stable.
+# Workspace MSRV is 1.95 (see root Cargo.toml rust-version). `stable` must be
+# >= 1.95 for local builds and ./scripts/check.sh (e.g. sysinfo 0.39).
+#
+# To upgrade: run `rustup update stable` (or your package manager's rust update),
+# then bump the channel below if you want to pin a specific version (e.g.
+# "1.96.0") instead of tracking stable.
 [toolchain]
 channel = "stable"
 components = ["rustfmt", "clippy"]

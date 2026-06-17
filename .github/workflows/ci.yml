@@ -64,12 +64,12 @@ jobs:
   # Build against the declared MSRV so a dependency bump that silently needs a
   # newer rustc fails here instead of in a user's `cargo install`.
   msrv:
-    name: MSRV (1.89)
+    name: MSRV (1.95)
     needs: fmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
