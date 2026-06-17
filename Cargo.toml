@@ -18,7 +18,7 @@ members = [
 version = "0.10.3"
 edition = "2021"
 license = "AGPL-3.0-only"
-rust-version = "1.89"
+rust-version = "1.95"
 repository = "https://github.com/MaximeGaudin/void"
 
 [workspace.dependencies]
