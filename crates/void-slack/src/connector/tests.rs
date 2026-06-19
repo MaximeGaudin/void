@@ -539,14 +539,30 @@ async fn backfill_saves_done_state() {
 }
 
 #[tokio::test]
-async fn start_sync_skips_backfill_when_already_done() {
+async fn start_sync_runs_saved_sync_without_backfill_or_catch_up() {
+    // backfill_done is set and the DB has no messages, so catch-up exits early.
+    // start_sync must still run saved-sync (users.list + search.messages) but must
+    // not hit backfill/catch-up endpoints (conversations.list/history).
     let server = wiremock::MockServer::start().await;
 
+    let users = serde_json::json!({"ok": true, "members": []});
     wiremock::Mock::given(wiremock::matchers::method("GET"))
         .and(wiremock::matchers::path("/users.list"))
-        .respond_with(wiremock::ResponseTemplate::new(200))
-        .expect(0)
-        .named("users.list")
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+        .expect(1)
+        .named("users.list (saved sync)")
+        .mount(&server)
+        .await;
+
+    let saved = serde_json::json!({
+        "ok": true,
+        "messages": {"matches": [], "pagination": {}}
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/search.messages"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(saved))
+        .expect(1)
+        .named("search.messages (saved sync)")
         .mount(&server)
         .await;
 
@@ -554,7 +570,15 @@ async fn start_sync_skips_backfill_when_already_done() {
         .and(wiremock::matchers::path("/conversations.list"))
         .respond_with(wiremock::ResponseTemplate::new(200))
         .expect(0)
-        .named("conversations.list")
+        .named("conversations.list (backfill/catch-up)")
+        .mount(&server)
+        .await;
+
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.history"))
+        .respond_with(wiremock::ResponseTemplate::new(200))
+        .expect(0)
+        .named("conversations.history (catch-up)")
         .mount(&server)
         .await;
 
