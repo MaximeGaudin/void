@@ -262,13 +262,7 @@ impl Database {
         offset: i64,
     ) -> Result<(Vec<Message>, i64), DbError> {
         let conn = self.conn()?;
-        let rows = messages::list_saved(
-            &conn,
-            connection_filter,
-            connector_filter,
-            limit,
-            offset,
-        )?;
+        let rows = messages::list_saved(&conn, connection_filter, connector_filter, limit, offset)?;
         let total = messages::count_saved(&conn, connection_filter, connector_filter)?;
         Ok((rows, total))
     }

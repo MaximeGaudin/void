@@ -17,9 +17,7 @@ fn reconcile_saved_marks_correct_messages() {
     db.upsert_message(&m2).unwrap();
 
     let saved = HashSet::from(["ts-1".to_string()]);
-    let (newly_saved, newly_unsaved) = db
-        .reconcile_saved("test-slack", "slack", &saved)
-        .unwrap();
+    let (newly_saved, newly_unsaved) = db.reconcile_saved("test-slack", "slack", &saved).unwrap();
     assert_eq!(newly_saved, 1);
     assert_eq!(newly_unsaved, 0);
 
@@ -40,13 +38,10 @@ fn reconcile_saved_clears_previously_saved() {
     db.upsert_message(&m1).unwrap();
 
     let saved = HashSet::from(["ts-1".to_string()]);
-    db.reconcile_saved("test-slack", "slack", &saved)
-        .unwrap();
+    db.reconcile_saved("test-slack", "slack", &saved).unwrap();
 
     let empty = HashSet::new();
-    let (newly_saved, newly_unsaved) = db
-        .reconcile_saved("test-slack", "slack", &empty)
-        .unwrap();
+    let (newly_saved, newly_unsaved) = db.reconcile_saved("test-slack", "slack", &empty).unwrap();
     assert_eq!(newly_saved, 0);
     assert_eq!(newly_unsaved, 1);
 
@@ -98,9 +93,7 @@ fn list_saved_respects_connection_filter() {
     db.reconcile_saved("home-slack", "slack", &HashSet::from(["ts-2".to_string()]))
         .unwrap();
 
-    let (rows, total) = db
-        .list_saved_messages(Some("work"), None, 50, 0)
-        .unwrap();
+    let (rows, total) = db.list_saved_messages(Some("work"), None, 50, 0).unwrap();
     assert_eq!(total, 1);
     assert_eq!(rows[0].connection_id, "work-slack");
 }

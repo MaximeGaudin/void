@@ -28,7 +28,6 @@ pub use inbox::{
     backfill_avatar_urls, enrich_with_context, messages_pending_file_download, reconcile_inbox,
     senders_missing_avatar,
 };
-pub use saved::{count_saved, list_saved, reconcile_saved};
 pub use lookup::{
     find_by_external_id, find_by_slack_link, find_slack_conversation_by_external_id,
     last_in_conversation,
@@ -36,4 +35,5 @@ pub use lookup::{
 pub use read::{
     count_for_conversation, count_recent, get, latest_timestamp, list_for_conversation, list_recent,
 };
+pub use saved::{count_saved, list_saved, reconcile_saved};
 pub use upsert::{message_exists, upsert_row};

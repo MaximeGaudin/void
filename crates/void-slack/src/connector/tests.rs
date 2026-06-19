@@ -983,8 +983,14 @@ async fn sync_saved_fetches_missing_message_and_marks_saved() {
     wiremock::Mock::given(wiremock::matchers::method("GET"))
         .and(wiremock::matchers::path("/conversations.history"))
         .and(wiremock::matchers::query_param("channel", "C1"))
-        .and(wiremock::matchers::query_param("latest", "1741700000.000100"))
-        .and(wiremock::matchers::query_param("oldest", "1741700000.000100"))
+        .and(wiremock::matchers::query_param(
+            "latest",
+            "1741700000.000100",
+        ))
+        .and(wiremock::matchers::query_param(
+            "oldest",
+            "1741700000.000100",
+        ))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
         .mount(&server)
         .await;

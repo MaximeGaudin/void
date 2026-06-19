@@ -655,11 +655,9 @@ fn migrations_preserve_existing_data() {
     assert_eq!(body, "preserved body");
 
     let is_saved: i32 = conn
-        .query_row(
-            "SELECT is_saved FROM messages WHERE id = 'mg1'",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT is_saved FROM messages WHERE id = 'mg1'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(is_saved, 0, "is_saved should default to 0 after migration");
 

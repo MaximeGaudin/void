@@ -29,12 +29,8 @@ pub fn run(args: &SavedArgs) -> anyhow::Result<()> {
     let formatter = OutputFormatter::new();
     let offset = parse_page(args.size, args.page)?;
 
-    let (mut messages, total_elements) = db.list_saved_messages(
-        args.connection.as_deref(),
-        Some("slack"),
-        args.size,
-        offset,
-    )?;
+    let (mut messages, total_elements) =
+        db.list_saved_messages(args.connection.as_deref(), Some("slack"), args.size, offset)?;
     messages.reverse();
     let meta = build_meta(args.page, args.size, total_elements);
     formatter.print_paginated(&messages, meta)
