@@ -4,8 +4,8 @@ use super::args::{
     AvailabilityArgs, CreateEventArgs, DeleteEventArgs, RespondEventArgs, SearchEventArgs,
     UpdateEventArgs,
 };
-use super::connector::build_calendar_connector;
 use super::parsing::{normalize_datetime, parse_datetime_or_date};
+use crate::commands::connector_factory::build_calendar_connector;
 use crate::output::OutputFormatter;
 
 pub(super) async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {

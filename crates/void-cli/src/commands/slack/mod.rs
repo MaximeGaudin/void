@@ -5,10 +5,10 @@ mod args;
 pub use args::*;
 
 use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
-use tracing::debug;
 use void_core::config::VoidConfig;
 use void_core::connector::Connector;
-use void_core::models::ConnectorType;
+
+use crate::commands::connector_factory::build_slack_connector;
 
 pub async fn run(args: &SlackArgs) -> anyhow::Result<()> {
     match &args.command {
@@ -198,46 +198,6 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
 
 fn load_config() -> &'static VoidConfig {
     crate::context::void_config()
-}
-
-fn build_slack_connector(
-    connection_filter: Option<&str>,
-    cfg: &VoidConfig,
-) -> anyhow::Result<void_slack::connector::SlackConnector> {
-    let connection = cfg
-        .connections
-        .iter()
-        .find(|a| {
-            let is_slack = a.connector_type == ConnectorType::Slack;
-            let name_matches = connection_filter.is_none_or(|n| a.id == n);
-            is_slack && name_matches
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!("No Slack connection found in config. Run `void setup` to add one.")
-        })?;
-
-    let (user_token, app_token) = match &connection.settings {
-        void_core::config::ConnectionSettings::Slack {
-            user_token,
-            app_token,
-            ..
-        } => (user_token.clone(), app_token.clone()),
-        _ => anyhow::bail!(
-            "Mismatched connection settings for Slack connection '{}'",
-            connection.id
-        ),
-    };
-
-    debug!(connection_id = %connection.id, "building Slack connector for CLI");
-    Ok(void_slack::connector::SlackConnector::new(
-        &connection.id,
-        &user_token,
-        &app_token,
-        None,
-        None,
-        std::env::temp_dir().as_path(),
-        None,
-    )?)
 }
 
 #[cfg(test)]

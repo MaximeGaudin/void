@@ -18,7 +18,7 @@ members = [
 version = "0.10.3"
 edition = "2021"
 license = "AGPL-3.0-only"
-rust-version = "1.89"
+rust-version = "1.95"
 repository = "https://github.com/MaximeGaudin/void"
 
 [workspace.dependencies]
@@ -72,6 +72,7 @@ assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
 proptest = "1"
+insta = { version = "1", features = ["json"] }
 
 # Internal crates
 void-core = { path = "crates/void-core" }

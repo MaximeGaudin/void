@@ -11,7 +11,7 @@ name = "void"
 path = "src/main.rs"
 
 [dependencies]
-void-core = { workspace = true }
+void-core = { workspace = true, features = ["test-fixtures"] }
 void-slack = { workspace = true }
 void-gmail = { workspace = true }
 void-calendar = { workspace = true }
@@ -41,3 +41,4 @@ predicates = { workspace = true }
 tempfile = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+insta = { workspace = true }

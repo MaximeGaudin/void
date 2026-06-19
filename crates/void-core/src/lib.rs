@@ -1,3 +1,6 @@
+#[cfg(any(test, feature = "test-fixtures"))]
+pub mod test_fixtures;
+
 pub mod config;
 pub mod connector;
 pub mod db;

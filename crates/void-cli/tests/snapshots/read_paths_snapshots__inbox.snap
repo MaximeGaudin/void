@@ -1,0 +1,51 @@
+---
+source: crates/void-cli/tests/read_paths_snapshots.rs
+expression: json
+---
+{
+  "data": [
+    {
+      "body": "ZEBRAFISH lunch plans",
+      "connection_id": "test-slack",
+      "connector": "slack",
+      "context_id": null,
+      "conversation_id": "c-dm",
+      "external_id": "ext-m1",
+      "id": "m1",
+      "is_archived": false,
+      "media_type": null,
+      "metadata": null,
+      "reply_to_id": null,
+      "sender": "alice@example.com",
+      "sender_avatar_url": null,
+      "sender_name": "Alice Example",
+      "synced_at": "2023-11-14T22:15:10Z",
+      "timestamp": "2023-11-14T22:15:00Z"
+    },
+    {
+      "body": "QUOKKA deploy is live",
+      "connection_id": "test-slack",
+      "connector": "slack",
+      "context_id": null,
+      "conversation_id": "c-chan",
+      "external_id": "ext-m2",
+      "id": "m2",
+      "is_archived": false,
+      "media_type": null,
+      "metadata": null,
+      "reply_to_id": null,
+      "sender": "bob@example.com",
+      "sender_avatar_url": null,
+      "sender_name": "Alice Example",
+      "synced_at": "2023-11-14T22:16:50Z",
+      "timestamp": "2023-11-14T22:16:40Z"
+    }
+  ],
+  "error": null,
+  "pagination": {
+    "current_page": 1,
+    "page_size": 50,
+    "total_elements": 2,
+    "total_pages": 1
+  }
+}
