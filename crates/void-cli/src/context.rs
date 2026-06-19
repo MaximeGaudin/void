@@ -136,6 +136,7 @@ pub(crate) fn runs_with_local_cache(command: &crate::Command) -> bool {
         | Command::Remote(_) => true,
         Command::Calendar(args) => calendar_reads_local_cache(args),
         Command::Hn(args) => hackernews_reads_local_cache(args),
+        Command::Slack(args) => slack_reads_local_cache(args),
         Command::Sync(args) => args.status,
         Command::Setup => false,
         _ => false,
@@ -147,6 +148,12 @@ fn calendar_reads_local_cache(args: &crate::commands::calendar::CalendarArgs) ->
     use crate::commands::calendar::CalendarCommand;
 
     matches!(args.command, None | Some(CalendarCommand::Week))
+}
+
+fn slack_reads_local_cache(args: &crate::commands::slack::SlackArgs) -> bool {
+    use crate::commands::slack::SlackCommand;
+
+    matches!(args.command, SlackCommand::Saved(_))
 }
 
 fn hackernews_reads_local_cache(args: &crate::commands::hackernews::HackerNewsArgs) -> bool {

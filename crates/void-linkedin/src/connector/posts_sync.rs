@@ -408,6 +408,7 @@ fn comment_to_void(input: CommentVoidInput<'_>) -> Message {
         timestamp: comment_timestamp(comment),
         synced_at: Some(chrono::Utc::now().timestamp()),
         is_archived: false,
+        is_saved: false,
         reply_to_id: None,
         media_type: None,
         metadata: Some(serde_json::json!({

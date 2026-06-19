@@ -1,6 +1,7 @@
 //! Slack CLI helpers (react, edit, schedule, open DM/group).
 
 mod args;
+mod saved;
 
 pub use args::*;
 
@@ -17,6 +18,7 @@ pub async fn run(args: &SlackArgs) -> anyhow::Result<()> {
         SlackCommand::Schedule(a) => run_schedule(a).await,
         SlackCommand::Open(a) => run_open(a).await,
         SlackCommand::Forward(a) => run_forward(a).await,
+        SlackCommand::Saved(a) => saved::run(a),
     }
 }
 

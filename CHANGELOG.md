@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Slack** — Sync "Saved for Later" items from the Later view during background sync; view with `void slack saved`. Setup wizard documents the required `search:read` scope.
 - **Google News** — New read-only connector that watches the public Google News RSS feed. Each configured keyword triggers its own search; matching articles land in your inbox, filtered by a recency window. Configure with `void gn keywords`, `void gn when`, `void gn language`, and `void gn country` (or interactively via `void setup`). Language/country default to `fr`/`FR`; add one connection per edition to follow several.
 
 ## [0.10.3] - 2026-06-17
@@ -388,3 +389,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI commands** — `inbox`, `conversations`, `messages`, `search`, `contacts`, `channels`, `calendar`, `send`, `reply`, `archive`, `doctor`, `status`
 - **Output formatting** — JSON mode and human-readable tables
 - **Skills** — daily routine, calendar, Gmail, Slack, WhatsApp skill files
+

@@ -214,4 +214,27 @@ impl SlackApiClient {
         debug!(channel_id = ?result.channel.id, "slack: conversations.open success");
         Ok(result)
     }
+
+    /// Search for messages saved for later (`is:saved` modifier).
+    pub async fn search_messages_saved(
+        &self,
+        cursor: Option<&str>,
+        count: u32,
+    ) -> Result<SearchMessagesResponse, SlackError> {
+        let mut params: Vec<(&str, String)> = vec![
+            ("query", "is:saved".into()),
+            ("sort", "timestamp".into()),
+            ("sort_dir", "desc".into()),
+            ("count", count.to_string()),
+        ];
+        if let Some(c) = cursor {
+            params.push(("cursor", c.to_string()));
+        }
+        self.get_with_retry(
+            &format!("{}/search.messages", self.base_url),
+            &params,
+            "search.messages (saved)",
+        )
+        .await
+    }
 }

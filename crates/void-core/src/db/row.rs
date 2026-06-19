@@ -53,6 +53,7 @@ pub(crate) fn row_to_message(row: &Row) -> rusqlite::Result<Message> {
         metadata: parse_json_opt(row.get(14)?),
         context_id: row.get(15)?,
         context: None,
+        is_saved: row.get::<_, i32>(16)? != 0,
     })
 }
 

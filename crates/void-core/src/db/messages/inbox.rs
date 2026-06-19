@@ -20,7 +20,7 @@ pub fn enrich_with_context(conn: &Connection, messages: &mut [Message]) -> Resul
     let mut context_map: HashMap<String, Vec<Message>> = HashMap::new();
 
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
          FROM messages WHERE context_id = ?1 ORDER BY timestamp ASC LIMIT 50",
     )?;
 
@@ -90,7 +90,7 @@ pub fn messages_pending_file_download(
     limit: i64,
 ) -> Result<Vec<Message>, DbError> {
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
          FROM messages
          WHERE connection_id = ?1 AND connector = ?2
            AND metadata LIKE '%url_private%'

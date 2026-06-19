@@ -16,7 +16,7 @@ pub fn list_for_conversation(
 ) -> Result<Vec<Message>, DbError> {
     let suffix_pattern = format!("%-{conversation_id}");
     let mut sql = String::from(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
          FROM messages WHERE (conversation_id = ?1 OR conversation_id LIKE ?2)",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
@@ -89,7 +89,7 @@ pub fn count_for_conversation(
 pub fn get(conn: &Connection, id: &str) -> Result<Option<Message>, DbError> {
     let suffix_pattern = format!("%-{id}");
     conn.query_row(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
          FROM messages WHERE id = ?1 OR id LIKE ?2",
         params![id, suffix_pattern],
         row::row_to_message,
@@ -123,7 +123,7 @@ pub fn list_recent(
     dedup_context: bool,
 ) -> Result<Vec<Message>, DbError> {
     let mut sql = String::from(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
          FROM messages WHERE 1=1",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();

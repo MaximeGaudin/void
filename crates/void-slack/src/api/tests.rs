@@ -199,3 +199,35 @@ async fn malformed_history_missing_messages_is_clean_err() {
         "got {err:?}"
     );
 }
+
+#[tokio::test]
+async fn search_messages_saved_parses_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/search.messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+            "messages": {
+                "matches": [
+                    {
+                        "ts": "1700000000.000100",
+                        "channel": {"id": "C1"},
+                        "user": "U1",
+                        "text": "saved item",
+                        "permalink": "https://example.slack.com/archives/C1/p1700000000000100"
+                    }
+                ],
+                "pagination": {"next_cursor": "cursor-2"}
+            },
+            "response_metadata": {"next_cursor": "cursor-2"}
+        })))
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let resp = api.search_messages_saved(None, 20).await.unwrap();
+    assert_eq!(resp.messages.matches.len(), 1);
+    assert_eq!(resp.messages.matches[0].ts, "1700000000.000100");
+    assert_eq!(resp.messages.matches[0].channel.id, "C1");
+    assert_eq!(resp.messages.matches[0].text.as_deref(), Some("saved item"));
+}

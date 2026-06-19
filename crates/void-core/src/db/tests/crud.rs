@@ -232,6 +232,7 @@ fn find_slack_message_by_link_ignores_connection_naming() {
         timestamp: 1_776_936_528,
         synced_at: None,
         is_archived: false,
+        is_saved: false,
         reply_to_id: None,
         media_type: None,
         metadata: None,
@@ -393,6 +394,15 @@ fn migrate_whatsapp_jid_connections_merges_jid_rows_into_config_name() {
         .unwrap();
     db.conn()
         .unwrap()
+        .execute_batch(
+            "
+            DROP INDEX IF EXISTS idx_messages_is_saved;
+            ALTER TABLE messages DROP COLUMN is_saved;
+            ",
+        )
+        .unwrap();
+    db.conn()
+        .unwrap()
         .execute(
             "INSERT OR REPLACE INTO schema_version (version) VALUES (11)",
             [],
@@ -471,7 +481,7 @@ fn schema_snapshot_matches_expected() {
 
     let names: Vec<&str> = rows.iter().map(|(n, _)| n.as_str()).collect();
 
-    // Expected object names at SCHEMA_VERSION = 11. Includes FTS5 shadow tables
+    // Expected object names at SCHEMA_VERSION = 13. Includes FTS5 shadow tables
     // (messages_fts_*) created automatically by the virtual table.
     let expected = [
         "conversations",
@@ -479,6 +489,7 @@ fn schema_snapshot_matches_expected() {
         "hook_logs",
         "idx_hook_logs_started",
         "idx_messages_context_id",
+        "idx_messages_is_saved",
         "messages",
         "messages_ad",
         "messages_ai",
@@ -517,6 +528,7 @@ fn schema_snapshot_core_table_columns_present() {
         "connector",
         "synced_at",
         "is_archived",
+        "is_saved",
         "context_id",
         "sender_avatar_url",
     ] {
@@ -641,6 +653,15 @@ fn migrations_preserve_existing_data() {
         .unwrap();
     assert_eq!(conn_id, "legacy-acct");
     assert_eq!(body, "preserved body");
+
+    let is_saved: i32 = conn
+        .query_row(
+            "SELECT is_saved FROM messages WHERE id = 'mg1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(is_saved, 0, "is_saved should default to 0 after migration");
 
     let conv_conn: String = conn
         .query_row(

@@ -251,6 +251,7 @@ fn build_message(
         timestamp,
         synced_at: Some(chrono::Utc::now().timestamp()),
         is_archived: false,
+        is_saved: false,
         reply_to_id: None,
         media_type: None,
         metadata: Some(metadata),

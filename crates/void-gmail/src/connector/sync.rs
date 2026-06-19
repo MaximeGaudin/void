@@ -316,6 +316,7 @@ impl GmailConnector {
                 .label_ids
                 .as_ref()
                 .is_some_and(|labels| labels.iter().any(|l| l == "INBOX")),
+            is_saved: false,
             reply_to_id: msg
                 .get_header("In-Reply-To")
                 .map(|v| format!("{}-{v}", connection_id)),

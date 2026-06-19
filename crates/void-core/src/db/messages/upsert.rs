@@ -24,8 +24,8 @@ pub fn upsert_row(conn: &Connection, msg: &Message) -> Result<bool, DbError> {
     let is_new = !message_exists(conn, &msg.connection_id, &msg.external_id)?;
     let now = chrono::Utc::now().timestamp();
     conn.execute(
-        "INSERT INTO messages (id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+        "INSERT INTO messages (id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, is_saved, reply_to_id, media_type, metadata, context_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
          ON CONFLICT(connection_id, external_id) DO UPDATE SET
             body = excluded.body,
             connector = excluded.connector,
@@ -48,6 +48,7 @@ pub fn upsert_row(conn: &Connection, msg: &Message) -> Result<bool, DbError> {
             msg.timestamp,
             msg.synced_at.unwrap_or(now),
             msg.is_archived as i32,
+            msg.is_saved as i32,
             msg.reply_to_id,
             msg.media_type,
             msg.metadata.as_ref().map(|v| v.to_string()),

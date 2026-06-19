@@ -254,6 +254,136 @@ impl SlackConnector {
         Ok(())
     }
 
+    pub(crate) async fn sync_saved(&self, db: &Database) -> anyhow::Result<()> {
+        use std::collections::HashSet;
+
+        use tracing::warn;
+
+        info!(connection_id = %self.connection_id, "syncing Slack saved-for-later items");
+
+        let user_cache = self.prefetch_users().await?;
+
+        let mut saved_external_ids = HashSet::new();
+        let mut cursor: Option<String> = None;
+        let page_size = 100u32;
+        let mut slack_matches = 0usize;
+        let mut ingested = 0usize;
+
+        loop {
+            let resp = self
+                .api
+                .search_messages_saved(cursor.as_deref(), page_size)
+                .await?;
+
+            for m in &resp.messages.matches {
+                slack_matches += 1;
+                if db
+                    .find_message_by_external_id(&self.connection_id, &m.ts)?
+                    .is_some()
+                {
+                    saved_external_ids.insert(m.ts.clone());
+                } else if self
+                    .ingest_saved_match(db, &m.channel.id, &m.ts, &user_cache)
+                    .await?
+                {
+                    ingested += 1;
+                    saved_external_ids.insert(m.ts.clone());
+                } else {
+                    warn!(
+                        connection_id = %self.connection_id,
+                        channel_id = %m.channel.id,
+                        ts = %m.ts,
+                        "saved message could not be ingested"
+                    );
+                }
+            }
+
+            let next = resp
+                .response_metadata
+                .as_ref()
+                .and_then(|m| m.next_cursor.as_ref())
+                .or_else(|| {
+                    resp.messages
+                        .pagination
+                        .as_ref()
+                        .and_then(|p| p.next_cursor.as_ref())
+                })
+                .filter(|c| !c.is_empty())
+                .cloned();
+
+            if next.is_none() {
+                break;
+            }
+            cursor = next;
+        }
+
+        let (newly_saved, newly_unsaved) =
+            db.reconcile_saved(&self.connection_id, "slack", &saved_external_ids)?;
+
+        void_core::status!(
+            "[slack:{}] saved sync — {} matched ({} fetched), {} newly saved, {} unsaved",
+            self.connection_id,
+            saved_external_ids.len(),
+            ingested,
+            newly_saved,
+            newly_unsaved
+        );
+
+        info!(
+            connection_id = %self.connection_id,
+            slack_matches,
+            matched = saved_external_ids.len(),
+            ingested,
+            newly_saved,
+            newly_unsaved,
+            "saved-for-later sync complete"
+        );
+
+        Ok(())
+    }
+
+    /// Fetch a saved-for-later message from Slack and store it locally.
+    async fn ingest_saved_match(
+        &self,
+        db: &Database,
+        channel_id: &str,
+        ts: &str,
+        user_cache: &HashMap<String, CachedUser>,
+    ) -> anyhow::Result<bool> {
+        use tracing::debug;
+
+        debug!(
+            connection_id = %self.connection_id,
+            channel_id,
+            ts,
+            "fetching saved message not in local DB"
+        );
+
+        let slack_conv = self.api.conversations_info(channel_id).await?;
+        let conversation = map_conversation(&slack_conv, &self.connection_id, user_cache);
+        db.upsert_conversation(&conversation)?;
+
+        let conv_id = conversation.id.clone();
+        let Some(slack_msg) = self.api.get_single_message(channel_id, ts).await? else {
+            return Ok(false);
+        };
+
+        let Some(message) = map_message_cached(
+            &slack_msg,
+            &slack_conv,
+            &conv_id,
+            &self.connection_id,
+            user_cache,
+        ) else {
+            return Ok(false);
+        };
+
+        let mut batch = [message];
+        self.download_message_files(&mut batch).await;
+        db.upsert_message(&batch[0])?;
+        Ok(true)
+    }
+
     /// Backfill avatar URLs: first from the prefetched user cache, then resolve
     /// remaining unknown senders individually via `users.info`.
     async fn backfill_avatars(&self, db: &Database, user_cache: &HashMap<String, CachedUser>) {

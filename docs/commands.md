@@ -110,6 +110,7 @@ All Slack subcommands accept `--connection <id>`.
 | `void slack schedule --channel <c> --message <m> --at <time>` | Schedule a message. `--at` accepts `HH:MM` (today), `YYYY-MM-DD HH:MM`, or a Unix timestamp. `--thread <ts>` for threaded |
 | `void slack open --users <u1,u2,...>` | Open a DM or group DM with one or more users |
 | `void slack forward <id> --to <channel-or-user>` | Forward a message. `--comment` |
+| `void slack saved` | Messages saved for later (Later view). Synced during background sync; requires `search:read` user scope. Items outside the sync window are fetched on demand. `--connection`, `-n`, `--page` |
 
 ## WhatsApp
 

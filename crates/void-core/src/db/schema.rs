@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::error::DbError;
 
-pub const SCHEMA_VERSION: i32 = 12;
+pub const SCHEMA_VERSION: i32 = 13;
 
 /// Run all pending migrations on the database connection.
 pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
@@ -60,6 +60,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     }
     if version < 12 {
         migrate_v12(conn)?;
+    }
+    if version < 13 {
+        migrate_v13(conn)?;
     }
     Ok(())
 }
@@ -299,6 +302,19 @@ fn migrate_v12(conn: &Connection) -> Result<(), DbError> {
     conn.execute(
         "INSERT OR REPLACE INTO schema_version (version) VALUES (12)",
         [],
+    )?;
+    Ok(())
+}
+
+fn migrate_v13(conn: &Connection) -> Result<(), DbError> {
+    debug!("running migration v13: add is_saved to messages");
+    conn.execute_batch(
+        "
+        ALTER TABLE messages ADD COLUMN is_saved INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX IF NOT EXISTS idx_messages_is_saved ON messages(is_saved, timestamp DESC);
+
+        INSERT OR REPLACE INTO schema_version (version) VALUES (13);
+    ",
     )?;
     Ok(())
 }

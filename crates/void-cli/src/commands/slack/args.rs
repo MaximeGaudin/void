@@ -18,6 +18,8 @@ pub enum SlackCommand {
     Open(OpenArgs),
     /// Forward a message to another channel or user
     Forward(ForwardArgs),
+    /// Show messages saved for later (Slack Later view)
+    Saved(super::saved::SavedArgs),
 }
 
 #[derive(Debug, Args)]

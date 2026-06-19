@@ -75,6 +75,13 @@ impl Connector for SlackConnector {
                     warn!(connection_id = %self.connection_id, error = %e, "Slack catch-up failed");
                 }
             }
+            if let Err(e) = self.sync_saved(&db).await {
+                warn!(
+                    connection_id = %self.connection_id,
+                    error = %e,
+                    "saved sync failed (non-fatal)"
+                );
+            }
         };
 
         let (_, socket_result) = tokio::join!(backfill_task, self.run_socket_mode(&db, &cancel));

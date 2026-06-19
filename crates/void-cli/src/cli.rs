@@ -301,6 +301,55 @@ mod tests {
         assert!(context::runs_with_local_cache(cmd));
     }
 
+    #[test]
+    fn slack_saved_uses_local_cache() {
+        let cli = parse(&["void", "slack", "saved"]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
+    fn parse_slack_saved_minimal() {
+        let cli = parse(&["void", "slack", "saved"]);
+        match cli.command {
+            Some(Command::Slack(ref args)) => match &args.command {
+                commands::slack::SlackCommand::Saved(saved) => {
+                    assert!(saved.connection.is_none());
+                    assert_eq!(saved.size, 50);
+                    assert_eq!(saved.page, 1);
+                }
+                other => panic!("expected Saved, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_saved_with_filters() {
+        let cli = parse(&[
+            "void",
+            "slack",
+            "saved",
+            "--connection",
+            "slack-gladia",
+            "-n",
+            "10",
+            "--page",
+            "2",
+        ]);
+        match cli.command {
+            Some(Command::Slack(ref args)) => match &args.command {
+                commands::slack::SlackCommand::Saved(saved) => {
+                    assert_eq!(saved.connection.as_deref(), Some("slack-gladia"));
+                    assert_eq!(saved.size, 10);
+                    assert_eq!(saved.page, 2);
+                }
+                other => panic!("expected Saved, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
     // --- Gmail forward parsing ---
 
     #[test]

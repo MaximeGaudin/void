@@ -267,6 +267,7 @@ fn tg_message_to_void(
         timestamp: msg.date().timestamp(),
         synced_at: Some(chrono::Utc::now().timestamp()),
         is_archived: false,
+        is_saved: false,
         reply_to_id,
         media_type: extract::extract_media_type(msg),
         metadata: extract::extract_media_metadata(msg),

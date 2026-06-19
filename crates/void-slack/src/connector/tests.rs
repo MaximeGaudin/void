@@ -881,6 +881,7 @@ async fn catch_up_fetches_messages_since_latest() {
         timestamp: 1_741_700_000,
         synced_at: None,
         is_archived: false,
+        is_saved: false,
         reply_to_id: None,
         media_type: None,
         metadata: None,
@@ -907,6 +908,111 @@ async fn catch_up_fetches_messages_since_latest() {
         .unwrap();
     assert_eq!(new_msg.body.as_deref(), Some("Caught up message"));
     assert_eq!(new_msg.sender_name.as_deref(), Some("Alice"));
+}
+
+#[tokio::test]
+async fn sync_saved_fetches_missing_message_and_marks_saved() {
+    let server = wiremock::MockServer::start().await;
+
+    let users = serde_json::json!({
+        "ok": true,
+        "members": [
+            {
+                "id": "U1",
+                "name": "alice",
+                "real_name": "Alice",
+                "profile": {"display_name": "Alice", "real_name": "Alice"}
+            }
+        ]
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/users.list"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(users))
+        .mount(&server)
+        .await;
+
+    let search = serde_json::json!({
+        "ok": true,
+        "messages": {
+            "matches": [
+                {
+                    "ts": "1741700000.000100",
+                    "channel": {"id": "C1"},
+                    "user": "U1",
+                    "text": "Saved item"
+                }
+            ]
+        }
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/search.messages"))
+        .and(wiremock::matchers::query_param("query", "is:saved"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(search))
+        .mount(&server)
+        .await;
+
+    let channel_info = serde_json::json!({
+        "ok": true,
+        "channel": {
+            "id": "C1",
+            "name": "general",
+            "is_channel": true,
+            "is_group": false,
+            "is_im": false,
+            "is_mpim": false,
+            "is_private": false
+        }
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.info"))
+        .and(wiremock::matchers::query_param("channel", "C1"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(channel_info))
+        .mount(&server)
+        .await;
+
+    let history = serde_json::json!({
+        "ok": true,
+        "messages": [
+            {
+                "ts": "1741700000.000100",
+                "user": "U1",
+                "text": "Saved item"
+            }
+        ]
+    });
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/conversations.history"))
+        .and(wiremock::matchers::query_param("channel", "C1"))
+        .and(wiremock::matchers::query_param("latest", "1741700000.000100"))
+        .and(wiremock::matchers::query_param("oldest", "1741700000.000100"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(history))
+        .mount(&server)
+        .await;
+
+    let connector = SlackConnector {
+        connection_id: "test-slack".to_string(),
+        api: crate::api::SlackApiClient::with_base_url("test-token", &server.uri()).unwrap(),
+        app_token: "xapp-test".to_string(),
+        app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
+        store_path: std::env::temp_dir(),
+    };
+
+    let db = void_core::db::Database::open_in_memory().unwrap();
+    connector.sync_saved(&db).await.unwrap();
+
+    let msg = db
+        .get_message("test-slack-1741700000.000100")
+        .unwrap()
+        .expect("message should be ingested");
+    assert_eq!(msg.body.as_deref(), Some("Saved item"));
+    assert!(msg.is_saved);
+
+    let (rows, total) = db.list_saved_messages(None, None, 50, 0).unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "test-slack-1741700000.000100");
 }
 
 #[tokio::test]
@@ -987,6 +1093,7 @@ async fn start_sync_runs_catch_up_when_backfill_done() {
         timestamp: 1_741_700_000,
         synced_at: None,
         is_archived: false,
+        is_saved: false,
         reply_to_id: None,
         media_type: None,
         metadata: None,

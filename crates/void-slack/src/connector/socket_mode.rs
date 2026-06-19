@@ -172,6 +172,13 @@ impl SlackConnector {
                     "catch-up after reconnect failed"
                 );
             }
+            if let Err(e) = self.sync_saved(db).await {
+                warn!(
+                    connection_id = %self.connection_id,
+                    error = %e,
+                    "saved sync after reconnect failed"
+                );
+            }
 
             void_core::status!(
                 "[slack:{}] reconnecting Socket Mode in 2s...",
@@ -361,8 +368,9 @@ impl SlackConnector {
             body: Some(body),
             timestamp,
             synced_at: None,
-            is_archived: false,
-            reply_to_id: thread_ts.map(|tts| format!("{}-{tts}", self.connection_id)),
+        is_archived: false,
+        is_saved: false,
+        reply_to_id: thread_ts.map(|tts| format!("{}-{tts}", self.connection_id)),
             media_type,
             metadata,
             context_id,

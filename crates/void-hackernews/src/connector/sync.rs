@@ -240,6 +240,7 @@ fn build_message(item: &HnItem, connection_id: &str, conv_id: &str) -> Message {
         timestamp: item.time.unwrap_or_else(|| chrono::Utc::now().timestamp()),
         synced_at: Some(chrono::Utc::now().timestamp()),
         is_archived: false,
+        is_saved: false,
         reply_to_id: None,
         media_type: None,
         metadata: Some(metadata),

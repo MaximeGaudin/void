@@ -202,3 +202,34 @@ pub struct FilesUploadUrlResponse {
     pub upload_url: String,
     pub file_id: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct SearchMessagesResponse {
+    pub messages: SearchMessagesMatches,
+    pub response_metadata: Option<ResponseMetadata>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchMessagesMatches {
+    pub matches: Vec<SearchMatch>,
+    pub pagination: Option<SearchPagination>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchMatch {
+    pub channel: SearchMatchChannel,
+    pub ts: String,
+    pub text: Option<String>,
+    pub user: Option<String>,
+    pub permalink: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchMatchChannel {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchPagination {
+    pub next_cursor: Option<String>,
+}

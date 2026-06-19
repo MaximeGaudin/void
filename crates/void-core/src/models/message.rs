@@ -35,6 +35,8 @@ pub struct Message {
     #[serde(with = "epoch_iso8601_opt")]
     pub synced_at: Option<i64>,
     pub is_archived: bool,
+    #[serde(default)]
+    pub is_saved: bool,
     pub reply_to_id: Option<String>,
     pub media_type: Option<String>,
     pub metadata: Option<serde_json::Value>,

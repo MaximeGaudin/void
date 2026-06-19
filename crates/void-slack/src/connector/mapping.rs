@@ -152,6 +152,7 @@ pub(crate) fn map_message_cached(
         timestamp: parse_ts(&msg.ts).unwrap_or(0),
         synced_at: None,
         is_archived: false,
+        is_saved: false,
         reply_to_id: msg
             .thread_ts
             .as_ref()

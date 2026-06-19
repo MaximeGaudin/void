@@ -571,6 +571,7 @@ pub(super) fn message_to_void(
         timestamp: extract::parse_timestamp(msg.timestamp.as_deref()),
         synced_at: Some(chrono::Utc::now().timestamp()),
         is_archived: false,
+        is_saved: false,
         reply_to_id: None,
         media_type: extract::extract_media_type(msg),
         metadata: build_message_metadata(msg, profile),

@@ -243,6 +243,36 @@ impl Database {
         messages::reconcile_inbox(&*self.conn()?, connection_id, connector, inbox_external_ids)
     }
 
+    /// Reconcile `is_saved` for all messages of a connection to match the given saved set.
+    /// Returns (newly_saved_count, newly_unsaved_count).
+    pub fn reconcile_saved(
+        &self,
+        connection_id: &str,
+        connector: &str,
+        saved_external_ids: &std::collections::HashSet<String>,
+    ) -> Result<(usize, usize), DbError> {
+        messages::reconcile_saved(&*self.conn()?, connection_id, connector, saved_external_ids)
+    }
+
+    pub fn list_saved_messages(
+        &self,
+        connection_filter: Option<&str>,
+        connector_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<(Vec<Message>, i64), DbError> {
+        let conn = self.conn()?;
+        let rows = messages::list_saved(
+            &conn,
+            connection_filter,
+            connector_filter,
+            limit,
+            offset,
+        )?;
+        let total = messages::count_saved(&conn, connection_filter, connector_filter)?;
+        Ok((rows, total))
+    }
+
     pub fn find_message_by_external_id(
         &self,
         connection_id: &str,

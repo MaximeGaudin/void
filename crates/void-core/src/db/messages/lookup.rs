@@ -10,7 +10,7 @@ pub fn find_by_external_id(
     external_id: &str,
 ) -> Result<Option<Message>, DbError> {
     conn.query_row(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
          FROM messages WHERE connection_id = ?1 AND external_id = ?2",
         params![connection_id, external_id],
         row::row_to_message,
@@ -32,7 +32,7 @@ pub fn find_by_slack_link(
     message_ts: &str,
 ) -> Result<Option<Message>, DbError> {
     conn.query_row(
-        "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.sender_avatar_url, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id
+        "SELECT m.id, m.conversation_id, m.connection_id, m.connector, m.external_id, m.sender, m.sender_name, m.sender_avatar_url, m.body, m.timestamp, m.synced_at, m.is_archived, m.reply_to_id, m.media_type, m.metadata, m.context_id, m.is_saved
          FROM messages m
          JOIN conversations c ON m.conversation_id = c.id
          WHERE m.connector = 'slack'
@@ -69,7 +69,7 @@ pub fn last_in_conversation(
     conversation_id: &str,
 ) -> Result<Option<Message>, DbError> {
     conn.query_row(
-        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
          FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT 1",
         params![conversation_id],
         row::row_to_message,

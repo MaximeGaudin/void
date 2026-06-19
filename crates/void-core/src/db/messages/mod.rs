@@ -4,6 +4,7 @@ mod archive;
 mod inbox;
 mod lookup;
 mod read;
+mod saved;
 mod upsert;
 
 /// SQL clause that keeps only the most recent message per `context_id`,
@@ -27,6 +28,7 @@ pub use inbox::{
     backfill_avatar_urls, enrich_with_context, messages_pending_file_download, reconcile_inbox,
     senders_missing_avatar,
 };
+pub use saved::{count_saved, list_saved, reconcile_saved};
 pub use lookup::{
     find_by_external_id, find_by_slack_link, find_slack_conversation_by_external_id,
     last_in_conversation,

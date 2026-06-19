@@ -161,6 +161,7 @@ mod tests {
             timestamp: 1,
             synced_at: None,
             is_archived: false,
+            is_saved: false,
             reply_to_id: None,
             media_type: None,
             metadata: None,

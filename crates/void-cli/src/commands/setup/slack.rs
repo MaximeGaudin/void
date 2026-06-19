@@ -94,6 +94,7 @@ pub(crate) async fn setup_slack(
     eprintln!("    mpim:read           — View basic info about group DMs");
     eprintln!("    reactions:read      — View emoji reactions");
     eprintln!("    reactions:write     — Add emoji reactions");
+    eprintln!("    search:read         — Search workspace content (Saved for Later)");
     eprintln!("    users:read          — View people in the workspace");
     eprintln!();
     if !confirm_default_yes("Done? Continue to next step") {
@@ -145,7 +146,8 @@ pub(crate) async fn setup_slack(
     eprintln!("STEP 5 — Install the App & Collect Tokens");
     eprintln!();
     eprintln!("  Go to \"Install App\" in the left sidebar and install to your workspace.");
-    eprintln!("  (If already installed, click \"Reinstall to Workspace\" to apply scope changes.)");
+    eprintln!("  (If already installed, click \"Reinstall to Workspace\" to apply scope changes,");
+    eprintln!("   including search:read for Saved for Later sync.)");
     eprintln!();
     eprintln!("  You need two tokens:");
     eprintln!("  • User OAuth Token (xoxp-...)  →  found under \"OAuth & Permissions\"");
