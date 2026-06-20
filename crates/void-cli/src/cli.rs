@@ -84,6 +84,8 @@ pub(crate) enum Command {
     Hook(commands::hook::HookArgs),
     /// Remote store utilities (status, cache refresh)
     Remote(commands::remote::RemoteArgs),
+    /// Model Context Protocol server (stdio) for AI agents
+    Mcp(commands::mcp::McpArgs),
 }
 
 fn refresh_policy_for_cli(cli: &Cli) -> void_core::store::RefreshPolicy {
@@ -199,6 +201,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Remote(args)) => {
             commands::remote::run(args, cli.config.as_deref(), cli.store.as_deref())
         }
+        Some(Command::Mcp(args)) => commands::mcp::run(args).await,
         None => {
             commands::status::run();
             Ok(())

@@ -133,7 +133,8 @@ pub(crate) fn runs_with_local_cache(command: &crate::Command) -> bool {
         | Command::Channels(_)
         | Command::Search(_)
         | Command::Doctor(_)
-        | Command::Remote(_) => true,
+        | Command::Remote(_)
+        | Command::Mcp(_) => true,
         Command::Calendar(args) => calendar_reads_local_cache(args),
         Command::Hn(args) => hackernews_reads_local_cache(args),
         Command::Reddit(args) => reddit_reads_local_cache(args),

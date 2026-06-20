@@ -74,6 +74,7 @@ const TOP_LEVEL_COMMANDS: &[&str] = &[
     "sync",
     "doctor",
     "remote",
+    "mcp",
     "setup",
 ];
 
