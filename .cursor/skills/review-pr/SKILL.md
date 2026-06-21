@@ -5,9 +5,10 @@ description: >-
   against CONTRIBUTING.md and project philosophy, run a paranoid security audit
   to catch malicious or risky code, verify test coverage is merge-worthy,
   confirm the diff follows existing implementation patterns, and review for
-  correctness, style, and quality. Uses gh to fetch the PR, diff, and CI. Use
-  when the user asks to review a PR, vet a contribution, security-check a pull
-  request, or decide whether to merge external code.
+  correctness, style, and quality. Uses gh to fetch the PR, diff, and CI, and
+  self-updates with durable lessons learned after each review. Use when the user
+  asks to review a PR, vet a contribution, security-check a pull request, or
+  decide whether to merge external code.
 ---
 
 # Review a Submitted PR
@@ -31,6 +32,23 @@ gh pr checks "$PR"                     # CI status
 
 For larger PRs, also skim commit-by-commit (`gh pr view "$PR" --json commits`) — malicious changes are sometimes buried in a noisy "formatting" commit.
 
+#### Determine the *effective* delta (not just the raw diff)
+
+A PR's diff is only meaningful relative to a current `main`. Branches are often cut from an old `main`, which inflates and confuses the diff. Before reviewing, establish what is genuinely new:
+
+```bash
+git fetch origin main "$headRefName"
+gh pr view "$PR" --json mergeable,mergeStateStatus,commits
+# Are any of the PR's commits already on main (merged independently)?
+gh pr view "$PR" --json commits --jq '.commits[].messageHeadline' \
+  | while read -r h; do git log origin/main --oneline | rg -qF "$h" && echo "ALREADY ON MAIN: $h"; done
+# Or per touched file:
+gh pr diff "$PR" --name-only | while read -r f; do echo "== $f =="; git log origin/main --oneline -1 -- "$f"; done
+```
+
+- **`mergeable: CONFLICTING`** almost always means a stale base. Find out *why* it conflicts — frequently because some of the PR's commits already landed on `main` separately, leaving only one genuinely-new commit buried in noise.
+- Review the **effective delta** (the novel commit[s]), and call out the redundant/already-merged commits as a focus problem (Step 1) rather than reviewing them as if new.
+
 ## Workflow
 
 ```
@@ -42,6 +60,7 @@ Review Progress:
   - [ ] Step 3a: Implementation pattern conformance
   - [ ] Step 3b: Test coverage assessment
 - [ ] Step 4: Verdict & report
+- [ ] Step 5: Capture lessons learned into this skill (always)
 ```
 
 ---
@@ -56,7 +75,7 @@ Read `CONTRIBUTING.md`, `README.md` (philosophy), and the relevant `docs/` page.
 |----------|------------------------|
 | Is the intent clear? | PR body is empty or doesn't explain *what* and *why*. |
 | Does it fit the philosophy? | Breaks **local-first** (adds a phone-home, external DB, cloud dependency, telemetry), or **agent/terminal-first** ergonomics. |
-| Is it focused? | Bundles unrelated changes — CONTRIBUTING requires "one logical change per PR". |
+| Is it focused? | Bundles unrelated changes — CONTRIBUTING requires "one logical change per PR". Also flag commits already merged into `main` (see *effective delta* above): they add nothing and cause conflicts. |
 | New connector? | Should follow `docs/adding-a-connector.md` and ideally have had a prior issue to agree on the approach (auth model, push vs. polling). |
 | Cross-platform? | Introduces Unix-only behavior, hardcoded `/tmp`/`~/.config`/`HOME`, or non-portable deps without `#[cfg]` gating (CI tests Linux/macOS/Windows). |
 | Conventions | Commits not [Conventional Commits]; user-visible change missing a `CHANGELOG.md` `[Unreleased]` entry; behavior change missing docs. |
@@ -140,6 +159,19 @@ Only meaningful after Steps 1–2. Review the diff for:
 - **Docs & changelog:** updated when behavior changes.
 - **Cross-platform:** path handling via `std::path`, no Unix-only assumptions without `#[cfg]` gating.
 
+For **removal / refactor PRs**, verify the change is *complete against current `main`*, not just internally consistent with its own diff:
+
+```bash
+# Leftover references anywhere in the tree (symbols, modules, commands, docs, config tables, issue templates)
+rg -n '<feature-or-crate-name>' --glob '!CHANGELOG.md'
+# A file the PR deletes may have been restructured on main (e.g. api.rs split into api/). After a conceptual
+# rebase the stale deletion won't cover the new files — confirm the path is truly gone:
+git ls-files crates/<removed-crate>/
+```
+
+- Removals routinely miss: `docs/configuration.md` tables, `docs/commands.md`, `.github/ISSUE_TEMPLATE/*`, the README feature line, and the CHANGELOG `Removed` entry. Grep docs for the feature name.
+- Exclude unrelated false-positives (e.g. a Slack `gdrive` filetype string is unrelated to a `void-gdrive` crate) — read each hit, don't trust the match.
+
 Then complete **Step 3a** and **Step 3b** before classifying findings — a correct implementation that ignores project patterns or ships without adequate tests is not merge-ready.
 
 #### Step 3a: Implementation pattern conformance
@@ -211,9 +243,15 @@ gh pr checks "$PR"
 # If unsure, reproduce locally on the PR branch:
 gh pr checkout "$PR"
 ./scripts/check.sh                          # fmt + clippy + test
-cargo +1.89.0 check --workspace --locked    # MSRV gate
+cargo +1.95.0 check --workspace --locked    # MSRV gate (match rust-version in Cargo.toml)
 git checkout main
 ```
+
+Reading CI state:
+
+- **"no checks reported"** = CI never ran for this branch tip (often a stale branch that was never re-pushed). Don't read it as "passing" — reproduce locally or push to trigger.
+- **`mergeStateStatus: UNSTABLE` with `mergeable: MERGEABLE`** = non-required checks are pending/failing but nothing blocks the merge. If checks aren't configured as *required* in branch protection, `gh pr merge --auto` merges **immediately** rather than waiting for the visible checks — so a local `./scripts/check.sh` pass is your real gate.
+- The MSRV moves over time; read `rust-version` in `Cargo.toml` instead of hardcoding a toolchain.
 
 Classify each code finding by severity:
 
@@ -260,9 +298,22 @@ Produce a single report. Lead with the recommendation.
 <2–4 sentences: overall quality, what must change before merge, any follow-ups>
 ```
 
+---
+
+### Step 5: Capture lessons learned (always)
+
+**After every review, update this skill with any durable, reusable knowledge the review surfaced.** This is mandatory, not optional — the skill should get sharper with each PR it reviews.
+
+- Add only **generalizable** insights that would speed up or improve a *future* review: a repo convention you discovered, a recurring failure mode, a faster command, a gotcha in CI/merge mechanics, a class of bug to watch for.
+- Do **not** record PR-specific trivia (file names, one-off details, the verdict of this particular PR).
+- Put each lesson where it belongs: fold command/process tips into the relevant step, and log the rest under **## Lessons learned** below (newest first, one concise bullet each). Refine or merge existing bullets rather than letting the list sprawl.
+- Make the edit with the file-edit tool and mention in your final summary that you updated the skill (and what you added). If the review genuinely surfaced nothing new, say so explicitly instead of forcing an edit.
+
+---
+
 ## Guardrails
 
-- **Read-only by default.** Reviewing means inspecting, not editing the PR. Do not push to the author's branch or merge unless the user explicitly asks.
+- **Read-only by default.** Reviewing means inspecting, not editing the PR — except for Step 5, which always updates *this skill file*. Do not push to the author's branch or merge unless the user explicitly asks.
 - **Never run untrusted PR code outside vetting commands.** `cargo build`/`test` on a PR branch executes that branch's `build.rs`, proc-macros, and test code on this machine. Complete Step 2a (inspect `build.rs`, deps) *before* building. If anything looks malicious, do **not** build/test locally — report instead.
 - Always return to `main` after `gh pr checkout`.
 - A `clean` security verdict requires that **every** anomaly was explained. Unexplained ≠ clean.
@@ -285,6 +336,15 @@ git diff main...HEAD | rg -n 'Command::new|unsafe|transmute|reqwest|ureq|env::va
 
 # Quality (only after security clears)
 ./scripts/check.sh
-cargo +1.89.0 check --workspace --locked
+cargo +"$(rg '^rust-version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')" check --workspace --locked
 git checkout main
 ```
+
+## Lessons learned
+
+Append new, durable review insights here (newest first), per Step 5.
+
+- **Stale branches masquerade as big PRs.** A `CONFLICTING` PR with a noisy multi-commit diff is usually cut from an old `main` with one or more commits already merged independently. Compute the effective delta first (commit-headline / per-file `git log origin/main` checks) — the real change is often a single commit.
+- **Removal PRs are easy to leave half-done.** Verify completeness against *current* `main`: grep the whole tree for leftover references and check docs/config tables, `.github/ISSUE_TEMPLATE`, README, and CHANGELOG. Watch for files the PR deletes that `main` has since restructured (e.g. `api.rs` → `api/`) — the stale deletion misses the new files.
+- **CI signals are subtle.** "no checks reported" ≠ passing (CI never ran); `UNSTABLE` + `MERGEABLE` means non-required checks aren't blocking and `--auto` merges immediately. Treat a local `./scripts/check.sh` pass as the real gate.
+- **Read the MSRV from `Cargo.toml` (`rust-version`)** rather than hardcoding a toolchain — it moves (1.89 → 1.95 → …).
