@@ -8,13 +8,15 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
+use crate::CONNECTOR_ID;
+
 use super::types::CalendarConnector;
 use crate::api::CalendarApiClient;
 
 #[async_trait]
 impl Connector for CalendarConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::Calendar
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -70,7 +72,7 @@ impl Connector for CalendarConnector {
                     let count = cals.items.as_ref().map(|i| i.len()).unwrap_or(0);
                     Ok(HealthStatus {
                         connection_id: self.connection_id.clone(),
-                        connector_type: ConnectorType::Calendar,
+                        connector_type: ConnectorType::from_static(CONNECTOR_ID),
                         ok: true,
                         message: format!("{count} calendar(s) accessible"),
                         last_sync: None,
@@ -81,7 +83,7 @@ impl Connector for CalendarConnector {
                     warn!(connection_id = %self.connection_id, error = %e, "Calendar health check API error");
                     Ok(HealthStatus {
                         connection_id: self.connection_id.clone(),
-                        connector_type: ConnectorType::Calendar,
+                        connector_type: ConnectorType::from_static(CONNECTOR_ID),
                         ok: false,
                         message: format!("API error: {e}"),
                         last_sync: None,
@@ -93,7 +95,7 @@ impl Connector for CalendarConnector {
                 warn!(connection_id = %self.connection_id, error = %e, "Calendar health check auth error");
                 Ok(HealthStatus {
                     connection_id: self.connection_id.clone(),
-                    connector_type: ConnectorType::Calendar,
+                    connector_type: ConnectorType::from_static(CONNECTOR_ID),
                     ok: false,
                     message: format!("Auth error: {e}"),
                     last_sync: None,

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{empty_settings, ConnectionConfig, VoidConfig};
 use void_core::models::ConnectorType;
 
 use super::auth::{authenticate_connection, pick_connector_action, ConnectorAction};
@@ -16,12 +16,13 @@ pub(crate) async fn setup_whatsapp(
     eprintln!("Connects WhatsApp via QR code (like WhatsApp Web).");
     eprintln!("No credentials or API keys needed.");
 
+    let wa_type = ConnectorType::from_static(void_whatsapp::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::WhatsApp)
+            .filter(|(_, a)| a.connector_type == wa_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -40,9 +41,9 @@ pub(crate) async fn setup_whatsapp(
 
     let connection = ConnectionConfig {
         id: connection_id.clone(),
-        connector_type: ConnectorType::WhatsApp,
+        connector_type: wa_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::WhatsApp {},
+        settings: empty_settings(),
     };
 
     eprintln!();

@@ -19,6 +19,7 @@ use void_core::models::{ConnectorType, HealthStatus, MessageContent};
 
 use crate::api::UnipileClient;
 use crate::error::LinkedInError;
+use crate::CONNECTOR_ID;
 
 pub struct LinkedInConnector {
     config_id: String,
@@ -64,7 +65,7 @@ impl LinkedInConnector {
 #[async_trait]
 impl Connector for LinkedInConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::LinkedIn
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -108,7 +109,7 @@ impl Connector for LinkedInConnector {
                 let account_type = account.r#type.as_deref().unwrap_or("unknown");
                 Ok(HealthStatus {
                     connection_id: self.config_id.clone(),
-                    connector_type: ConnectorType::LinkedIn,
+                    connector_type: ConnectorType::from_static(CONNECTOR_ID),
                     ok: true,
                     message: format!(
                         "Unipile account {} connected ({account_type})",
@@ -120,7 +121,7 @@ impl Connector for LinkedInConnector {
             }
             Err(e) => Ok(HealthStatus {
                 connection_id: self.config_id.clone(),
-                connector_type: ConnectorType::LinkedIn,
+                connector_type: ConnectorType::from_static(CONNECTOR_ID),
                 ok: false,
                 message: format!("Unipile health check failed: {e}"),
                 last_sync: None,

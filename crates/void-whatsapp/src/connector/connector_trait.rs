@@ -12,13 +12,15 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
+use crate::CONNECTOR_ID;
+
 use super::sync::{handle_history_sync, handle_message, render_qr};
 use super::WhatsAppConnector;
 
 #[async_trait]
 impl Connector for WhatsAppConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::WhatsApp
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -226,7 +228,7 @@ impl Connector for WhatsAppConnector {
         };
         Ok(HealthStatus {
             connection_id: self.config_id.clone(),
-            connector_type: ConnectorType::WhatsApp,
+            connector_type: ConnectorType::from_static(CONNECTOR_ID),
             ok,
             message,
             last_sync: None,

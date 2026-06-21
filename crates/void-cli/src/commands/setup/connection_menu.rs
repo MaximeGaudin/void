@@ -1,40 +1,27 @@
 use std::path::Path;
 
-use void_core::config::VoidConfig;
+use void_core::config::{
+    settings_set_opt_string, settings_set_string, settings_string, VoidConfig,
+};
+
+use crate::connectors::{self, SetupCtx};
 
 use super::auth::authenticate_connection;
 use super::prompt::{prompt, select, separator};
-use super::{calendar, github, gmail, googlenews, hackernews, linkedin, slack, telegram, whatsapp};
 
 pub(crate) async fn add_connection(cfg: &mut VoidConfig, store_path: &Path) -> anyhow::Result<()> {
-    let choice = select(
-        "Which connector type?",
-        &[
-            "Gmail",
-            "Slack",
-            "WhatsApp",
-            "Telegram",
-            "Google Calendar",
-            "Hacker News",
-            "Google News",
-            "LinkedIn",
-            "GitHub",
-        ],
-    );
+    let plugins = connectors::all();
+    let labels: Vec<&str> = plugins.iter().map(|p| p.menu_label).collect();
+    let choice = select("Which connector type?", &labels);
 
     separator();
-    match choice {
-        0 => gmail::setup_gmail(cfg, store_path, true).await?,
-        1 => slack::setup_slack(cfg, store_path, true).await?,
-        2 => whatsapp::setup_whatsapp(cfg, store_path, true).await?,
-        3 => telegram::setup_telegram(cfg, store_path, true).await?,
-        4 => calendar::setup_calendar(cfg, store_path, true).await?,
-        5 => hackernews::setup_hackernews(cfg, true)?,
-        6 => googlenews::setup_googlenews(cfg, true)?,
-        7 => linkedin::setup_linkedin(cfg, store_path, true).await?,
-        8 => github::setup_github(cfg, true).await?,
-        _ => {}
-    }
+    let plugin = plugins[choice];
+    let ctx = SetupCtx {
+        cfg,
+        store_path,
+        add_only: true,
+    };
+    (plugin.setup)(ctx).await?;
     Ok(())
 }
 
@@ -79,7 +66,7 @@ pub(crate) fn rename_connection(
     }
 
     let old_name = cfg.connections[choice].id.clone();
-    let connector_type = &cfg.connections[choice].connector_type;
+    let connector_type = cfg.connections[choice].connector_type;
 
     // Rename token files (Gmail / Calendar)
     let old_token = store_path.join(format!("{old_name}-token.json"));
@@ -93,31 +80,20 @@ pub(crate) fn rename_connection(
         );
     }
 
-    // Rename WhatsApp session DB
-    if connector_type.to_string() == "whatsapp" {
-        let old_wa = store_path.join(format!("whatsapp-{old_name}.db"));
-        let new_wa = store_path.join(format!("whatsapp-{new_name}.db"));
-        if old_wa.exists() {
-            std::fs::rename(&old_wa, &new_wa)?;
-            eprintln!(
-                "  Renamed session: {} → {}",
-                old_wa.display(),
-                new_wa.display()
-            );
-        }
-    }
-
-    // Rename Telegram session file
-    if connector_type.to_string() == "telegram" {
-        let old_tg = store_path.join(format!("telegram-{old_name}.json"));
-        let new_tg = store_path.join(format!("telegram-{new_name}.json"));
-        if old_tg.exists() {
-            std::fs::rename(&old_tg, &new_tg)?;
-            eprintln!(
-                "  Renamed session: {} → {}",
-                old_tg.display(),
-                new_tg.display()
-            );
+    if let Some(plugin) = connectors::by_id(connector_type.as_str()) {
+        for old_path in (plugin.session_files)(store_path, &old_name) {
+            if let Some(file_name) = old_path.file_name() {
+                let new_path = old_path
+                    .with_file_name(file_name.to_string_lossy().replace(&old_name, &new_name));
+                if old_path.exists() {
+                    std::fs::rename(&old_path, &new_path)?;
+                    eprintln!(
+                        "  Renamed session: {} → {}",
+                        old_path.display(),
+                        new_path.display()
+                    );
+                }
+            }
         }
     }
 
@@ -165,46 +141,19 @@ pub(crate) async fn reauthenticate_specific_connection(
     choice: usize,
 ) -> anyhow::Result<()> {
     let connection = cfg.connections[choice].clone();
+    let plugin = connectors::by_id(connection.connector_type.as_str());
 
-    if connection.connector_type == void_core::models::ConnectorType::Slack {
+    if plugin.is_some_and(|p| p.prompt_token_reauth) {
         eprintln!("  You need to provide your Slack tokens again.");
         eprintln!("  (Press Enter to keep the existing value)");
+
         let current_app_token =
-            if let void_core::config::ConnectionSettings::Slack { ref app_token, .. } =
-                connection.settings
-            {
-                app_token.clone()
-            } else {
-                String::new()
-            };
-
+            settings_string(&connection.settings, "app_token").unwrap_or_default();
         let current_user_token =
-            if let void_core::config::ConnectionSettings::Slack { ref user_token, .. } =
-                connection.settings
-            {
-                user_token.clone()
-            } else {
-                String::new()
-            };
-
-        let current_app_id =
-            if let void_core::config::ConnectionSettings::Slack { ref app_id, .. } =
-                connection.settings
-            {
-                app_id.clone().unwrap_or_default()
-            } else {
-                String::new()
-            };
-
-        let current_refresh_token = if let void_core::config::ConnectionSettings::Slack {
-            ref config_refresh_token,
-            ..
-        } = connection.settings
-        {
-            config_refresh_token.clone().unwrap_or_default()
-        } else {
-            String::new()
-        };
+            settings_string(&connection.settings, "user_token").unwrap_or_default();
+        let current_app_id = settings_string(&connection.settings, "app_id").unwrap_or_default();
+        let current_refresh_token =
+            settings_string(&connection.settings, "config_refresh_token").unwrap_or_default();
 
         let user_token =
             super::prompt::prompt_default("User OAuth Token (xoxp-...)", &current_user_token);
@@ -217,34 +166,41 @@ pub(crate) async fn reauthenticate_specific_connection(
             &current_refresh_token,
         );
 
-        if let void_core::config::ConnectionSettings::Slack {
-            app_token: ref mut at,
-            user_token: ref mut ut,
-            app_id: ref mut aid,
-            config_refresh_token: ref mut crt,
-        } = cfg.connections[choice].settings
-        {
-            if !app_token.trim().is_empty() {
-                *at = app_token.trim().to_string();
-            }
-            if !user_token.trim().is_empty() {
-                *ut = user_token.trim().to_string();
-            }
-            *aid = if app_id.trim().is_empty() {
+        if !app_token.trim().is_empty() {
+            settings_set_string(
+                &mut cfg.connections[choice].settings,
+                "app_token",
+                app_token.trim(),
+            );
+        }
+        if !user_token.trim().is_empty() {
+            settings_set_string(
+                &mut cfg.connections[choice].settings,
+                "user_token",
+                user_token.trim(),
+            );
+        }
+        settings_set_opt_string(
+            &mut cfg.connections[choice].settings,
+            "app_id",
+            if app_id.trim().is_empty() {
                 None
             } else {
                 Some(app_id.trim().to_string())
-            };
-            *crt = if refresh_token.trim().is_empty() {
+            },
+        );
+        settings_set_opt_string(
+            &mut cfg.connections[choice].settings,
+            "config_refresh_token",
+            if refresh_token.trim().is_empty() {
                 None
             } else {
                 Some(refresh_token.trim().to_string())
-            };
-        }
+            },
+        );
 
         cfg.save(config_path)?;
 
-        // Also verify the tokens
         let mut conn = crate::commands::connector_factory::build_connector(
             &cfg.connections[choice],
             store_path,

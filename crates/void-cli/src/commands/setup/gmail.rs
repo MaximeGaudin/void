@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use void_core::config::{self, ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{
+    self, empty_settings, settings_set_opt_string, ConnectionConfig, VoidConfig,
+};
 use void_core::models::ConnectorType;
 
 use super::auth::{authenticate_connection, pick_connector_action, ConnectorAction};
@@ -16,12 +18,13 @@ pub(crate) async fn setup_gmail(
     eprintln!("Connects your Gmail inbox. Void syncs your recent emails and");
     eprintln!("lets you search, read, reply, and archive from the CLI.");
 
+    let gmail_type = ConnectorType::from_static(void_gmail::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::Gmail)
+            .filter(|(_, a)| a.connector_type == gmail_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -61,13 +64,14 @@ pub(crate) async fn setup_gmail(
 
     let connection_id = prompt_default("Connection name", "gmail");
 
+    let mut settings = empty_settings();
+    settings_set_opt_string(&mut settings, "credentials_file", custom_creds);
+
     let connection = ConnectionConfig {
         id: connection_id.clone(),
-        connector_type: ConnectorType::Gmail,
+        connector_type: gmail_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::Gmail {
-            credentials_file: custom_creds,
-        },
+        settings,
     };
 
     if confirm_default_yes("Authenticate now? (opens browser for Google sign-in)") {

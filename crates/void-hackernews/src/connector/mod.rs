@@ -8,6 +8,8 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::{ConnectorType, HealthStatus, MessageContent};
 
+use crate::CONNECTOR_ID;
+
 pub struct HackerNewsConnector {
     config_id: String,
     keywords: Vec<String>,
@@ -34,7 +36,7 @@ impl HackerNewsConnector {
 #[async_trait]
 impl Connector for HackerNewsConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::HackerNews
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -60,7 +62,7 @@ impl Connector for HackerNewsConnector {
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
         Ok(HealthStatus {
             connection_id: self.config_id.clone(),
-            connector_type: ConnectorType::HackerNews,
+            connector_type: ConnectorType::from_static(CONNECTOR_ID),
             ok: true,
             message: "HN API is public, no auth required".to_string(),
             last_sync: None,

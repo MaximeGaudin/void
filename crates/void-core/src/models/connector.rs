@@ -1,48 +1,63 @@
-use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::fmt;
+use std::sync::{LazyLock, Mutex};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ConnectorType {
-    WhatsApp,
-    Slack,
-    Gmail,
-    Calendar,
-    Telegram,
-    HackerNews,
-    GoogleNews,
-    LinkedIn,
-    GitHub,
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+static INTERN_POOL: LazyLock<Mutex<HashSet<&'static str>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn intern(s: &str) -> &'static str {
+    let mut pool = INTERN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+    for &existing in pool.iter() {
+        if existing == s {
+            return existing;
+        }
+    }
+    let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
+    pool.insert(leaked);
+    leaked
 }
 
-impl std::fmt::Display for ConnectorType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::WhatsApp => write!(f, "whatsapp"),
-            Self::Slack => write!(f, "slack"),
-            Self::Gmail => write!(f, "gmail"),
-            Self::Calendar => write!(f, "calendar"),
-            Self::Telegram => write!(f, "telegram"),
-            Self::HackerNews => write!(f, "hackernews"),
-            Self::GoogleNews => write!(f, "googlenews"),
-            Self::LinkedIn => write!(f, "linkedin"),
-            Self::GitHub => write!(f, "github"),
-        }
+/// Registry-agnostic connector identity stored as an interned string.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConnectorType(&'static str);
+
+impl ConnectorType {
+    pub const fn from_static(s: &'static str) -> Self {
+        Self(s)
+    }
+
+    pub fn new(s: &str) -> Self {
+        Self(intern(s))
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        self.0
     }
 }
 
-impl ConnectorType {
-    /// Short badge for display in unified views (e.g. "[WA]", "[SL]").
-    pub fn badge(&self) -> &'static str {
-        match self {
-            Self::WhatsApp => "WA",
-            Self::Slack => "SL",
-            Self::Gmail => "GM",
-            Self::Calendar => "CA",
-            Self::Telegram => "TG",
-            Self::HackerNews => "HN",
-            Self::GoogleNews => "GN",
-            Self::LinkedIn => "LI",
-            Self::GitHub => "GH",
-        }
+impl fmt::Debug for ConnectorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl fmt::Display for ConnectorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ConnectorType {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConnectorType {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Ok(ConnectorType::new(&s))
     }
 }

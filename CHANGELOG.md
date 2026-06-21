@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Internal** — Connector wiring uses a compile-time plugin registry (`inventory`). `ConnectorType` is a string newtype; connection settings are a generic TOML table. Adding a connector no longer edits ~13 central files. No user-facing CLI behavior change.
 - **Build** — Bump minimum supported Rust version to 1.95 (required by sysinfo 0.39).
 
 ### Added

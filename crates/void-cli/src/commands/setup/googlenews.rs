@@ -1,4 +1,6 @@
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{
+    empty_settings, settings_set_string, settings_set_string_list, ConnectionConfig, VoidConfig,
+};
 use void_core::models::ConnectorType;
 
 use super::auth::{pick_connector_action, ConnectorAction};
@@ -10,12 +12,13 @@ pub(crate) fn setup_googlenews(cfg: &mut VoidConfig, add_only: bool) -> anyhow::
     eprintln!("Monitors Google News for articles matching your keywords.");
     eprintln!("Matching articles appear in your inbox (read-only, no auth needed).");
 
+    let gn_type = ConnectorType::from_static(void_googlenews::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::GoogleNews)
+            .filter(|(_, a)| a.connector_type == gn_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -54,16 +57,17 @@ pub(crate) fn setup_googlenews(cfg: &mut VoidConfig, add_only: bool) -> anyhow::
 
     let connection_id = prompt_default("\nAccount name", "googlenews");
 
+    let mut settings = empty_settings();
+    settings_set_string_list(&mut settings, "keywords", &keywords);
+    settings_set_string(&mut settings, "when", &when);
+    settings_set_string(&mut settings, "language", &language);
+    settings_set_string(&mut settings, "country", &country);
+
     let connection = ConnectionConfig {
         id: connection_id,
-        connector_type: ConnectorType::GoogleNews,
+        connector_type: gn_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::GoogleNews {
-            keywords,
-            when,
-            language,
-            country,
-        },
+        settings,
     };
 
     cfg.connections.push(connection);

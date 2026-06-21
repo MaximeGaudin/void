@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{empty_settings, ConnectionConfig, VoidConfig};
 use void_core::models::ConnectorType;
 
 use super::auth::{authenticate_connection, pick_connector_action, ConnectorAction};
@@ -16,12 +16,13 @@ pub(crate) async fn setup_telegram(
     eprintln!("Connects Telegram via QR code (like WhatsApp).");
     eprintln!("No credentials or API keys needed.");
 
+    let tg_type = ConnectorType::from_static(void_telegram::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::Telegram)
+            .filter(|(_, a)| a.connector_type == tg_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -40,12 +41,9 @@ pub(crate) async fn setup_telegram(
 
     let connection = ConnectionConfig {
         id: connection_id.clone(),
-        connector_type: ConnectorType::Telegram,
+        connector_type: tg_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::Telegram {
-            api_id: None,
-            api_hash: None,
-        },
+        settings: empty_settings(),
     };
 
     eprintln!();

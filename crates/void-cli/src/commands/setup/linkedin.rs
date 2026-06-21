@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{empty_settings, settings_set_string, ConnectionConfig, VoidConfig};
 use void_core::models::ConnectorType;
 
 use super::auth::{authenticate_connection, pick_connector_action, ConnectorAction};
@@ -19,12 +19,13 @@ pub(crate) async fn setup_linkedin(
     eprintln!("  https://dashboard.unipile.com");
     eprintln!();
 
+    let li_type = ConnectorType::from_static(void_linkedin::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::LinkedIn)
+            .filter(|(_, a)| a.connector_type == li_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -59,15 +60,16 @@ pub(crate) async fn setup_linkedin(
 
     let connection_id = prompt_default("\nConnection name", "linkedin");
 
+    let mut settings = empty_settings();
+    settings_set_string(&mut settings, "api_key", api_key.trim());
+    settings_set_string(&mut settings, "dsn", dsn.trim());
+    settings_set_string(&mut settings, "account_id", account_id.trim());
+
     let connection = ConnectionConfig {
         id: connection_id,
-        connector_type: ConnectorType::LinkedIn,
+        connector_type: li_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::LinkedIn {
-            api_key: api_key.trim().to_string(),
-            dsn: dsn.trim().to_string(),
-            account_id: account_id.trim().to_string(),
-        },
+        settings,
     };
 
     eprintln!();

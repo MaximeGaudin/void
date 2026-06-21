@@ -1,18 +1,18 @@
 //! Interactive setup wizard: per-connector flows, config inspection, and connection management.
 
 pub(crate) mod auth;
-mod calendar;
+pub(crate) mod calendar;
 mod config_ui;
 pub(crate) mod connection_menu;
-mod github;
-mod gmail;
-mod googlenews;
-mod hackernews;
-mod linkedin;
+pub(crate) mod github;
+pub(crate) mod gmail;
+pub(crate) mod googlenews;
+pub(crate) mod hackernews;
+pub(crate) mod linkedin;
 pub(crate) mod prompt;
-mod slack;
-mod telegram;
-mod whatsapp;
+pub(crate) mod slack;
+pub(crate) mod telegram;
+pub(crate) mod whatsapp;
 mod wizard;
 
 use void_core::config::{self, VoidConfig};

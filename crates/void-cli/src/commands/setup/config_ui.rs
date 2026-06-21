@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use void_core::config::{self, VoidConfig};
+use void_core::config::VoidConfig;
+
+use crate::connectors;
 
 pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
     eprintln!("Config file: {}", config_path.display());
@@ -8,33 +10,18 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
     eprintln!();
 
     eprintln!("[sync]");
-    eprintln!(
-        "  gmail_poll_interval_secs    = {}",
-        cfg.sync.gmail_poll_interval_secs
-    );
-    eprintln!(
-        "  calendar_poll_interval_secs = {}",
-        cfg.sync.calendar_poll_interval_secs
-    );
-    eprintln!(
-        "  hackernews_poll_interval_secs = {}",
-        cfg.sync.hackernews_poll_interval_secs
-    );
-    eprintln!(
-        "  googlenews_poll_interval_secs = {}",
-        cfg.sync.googlenews_poll_interval_secs
-    );
-    eprintln!(
-        "  linkedin_poll_interval_secs   = {}",
-        cfg.sync.linkedin_poll_interval_secs
-    );
+    for plugin in connectors::all() {
+        if let Some(default) = plugin.default_poll_interval_secs {
+            let secs = cfg.sync.poll_interval_secs(plugin.id, default);
+            eprintln!(
+                "  {plugin_id}_poll_interval_secs = {secs}",
+                plugin_id = plugin.id
+            );
+        }
+    }
     eprintln!(
         "  linkedin_backfill_days        = {}",
-        cfg.sync.linkedin_backfill_days
-    );
-    eprintln!(
-        "  github_poll_interval_secs     = {}",
-        cfg.sync.github_poll_interval_secs
+        cfg.sync.linkedin_backfill_days()
     );
     eprintln!();
 
@@ -47,88 +34,10 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
             if !acc.ignore_conversations.is_empty() {
                 eprintln!("    ignore_conversations: {:?}", acc.ignore_conversations);
             }
-            match &acc.settings {
-                config::ConnectionSettings::Slack {
-                    app_token,
-                    user_token,
-                    app_id,
-                    config_refresh_token,
-                } => {
-                    eprintln!("    app_token:  {}", config::redact_token(app_token));
-                    eprintln!("    user_token: {}", config::redact_token(user_token));
-                    if let Some(id) = app_id {
-                        eprintln!("    app_id:     {id}");
-                    }
-                    if let Some(token) = config_refresh_token {
-                        eprintln!("    config_refresh_token: {}", config::redact_token(token));
-                    }
-                }
-                config::ConnectionSettings::Gmail { credentials_file } => {
-                    let label = credentials_file.as_deref().unwrap_or("(built-in)");
-                    eprintln!("    credentials: {label}");
-                }
-                config::ConnectionSettings::Calendar {
-                    credentials_file,
-                    calendar_ids,
-                } => {
-                    let label = credentials_file.as_deref().unwrap_or("(built-in)");
-                    eprintln!("    credentials:  {label}");
-                    eprintln!("    calendar_ids: {calendar_ids:?}");
-                }
-                config::ConnectionSettings::WhatsApp {} => {}
-                config::ConnectionSettings::Telegram { api_id, api_hash } => {
-                    if let Some(id) = api_id {
-                        eprintln!("    api_id:   {id}");
-                    }
-                    if let Some(hash) = api_hash {
-                        eprintln!("    api_hash: {}", config::redact_token(hash));
-                    }
-                    if api_id.is_none() && api_hash.is_none() {
-                        eprintln!("    (using built-in API credentials)");
-                    }
-                }
-                config::ConnectionSettings::HackerNews {
-                    keywords,
-                    min_score,
-                } => {
-                    if keywords.is_empty() {
-                        eprintln!("    keywords:  (none — all stories)");
-                    } else {
-                        eprintln!("    keywords:  {}", keywords.join(", "));
-                    }
-                    eprintln!("    min_score: {min_score}");
-                }
-                config::ConnectionSettings::GoogleNews {
-                    keywords,
-                    when,
-                    language,
-                    country,
-                } => {
-                    if keywords.is_empty() {
-                        eprintln!("    keywords:  (none)");
-                    } else {
-                        eprintln!("    keywords:  {}", keywords.join(", "));
-                    }
-                    if when.is_empty() {
-                        eprintln!("    when:      (no limit)");
-                    } else {
-                        eprintln!("    when:      {when}");
-                    }
-                    eprintln!("    language:  {language}");
-                    eprintln!("    country:   {country}");
-                }
-                config::ConnectionSettings::LinkedIn {
-                    api_key,
-                    dsn,
-                    account_id,
-                } => {
-                    eprintln!("    api_key:    {}", config::redact_token(api_key));
-                    eprintln!("    dsn:        {dsn}");
-                    eprintln!("    account_id: {account_id}");
-                }
-                config::ConnectionSettings::GitHub { token, username } => {
-                    eprintln!("    token:    {}", config::redact_token(token));
-                    eprintln!("    username: {username}");
+            if let Some(plugin) = connectors::by_id(acc.connector_type.as_str()) {
+                let mut out = String::new();
+                if (plugin.show_config)(&acc.settings, &mut out).is_ok() && !out.is_empty() {
+                    eprint!("{out}");
                 }
             }
         }
@@ -148,7 +57,7 @@ pub(crate) fn edit_config_file(config_path: &Path) -> anyhow::Result<()> {
         .arg(config_path)
         .status()?;
     if !status.success() {
-        anyhow::bail!("{editor} exited with status {status}");
+        anyhow::bail!("Editor exited with status: {}", status);
     }
     Ok(())
 }

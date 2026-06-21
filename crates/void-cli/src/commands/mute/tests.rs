@@ -1,6 +1,6 @@
 use super::migrate::{migrate_db_mutes_to_config, resolve_migration_connection, MigratedMute};
 use void_core::config::{
-    ConnectionConfig, ConnectionSettings, StoreConfig, SyncConfig, VoidConfig,
+    empty_settings, settings_set_string, ConnectionConfig, StoreConfig, SyncConfig, VoidConfig,
 };
 use void_core::db::Database;
 use void_core::models::{ConnectorType, Conversation, ConversationKind};
@@ -9,23 +9,18 @@ fn test_db() -> Database {
     Database::open_in_memory().unwrap()
 }
 
-fn make_config(connection_id: &str, connector: ConnectorType) -> VoidConfig {
-    let settings = match connector {
-        ConnectorType::Slack => ConnectionSettings::Slack {
-            app_token: "xapp".into(),
-            user_token: "xoxp".into(),
-            app_id: None,
-            config_refresh_token: None,
-        },
-        ConnectorType::WhatsApp => ConnectionSettings::WhatsApp {},
-        _ => ConnectionSettings::WhatsApp {},
-    };
+fn make_config(connection_id: &str, connector_id: &str) -> VoidConfig {
+    let mut settings = empty_settings();
+    if connector_id == "slack" {
+        settings_set_string(&mut settings, "app_token", "xapp");
+        settings_set_string(&mut settings, "user_token", "xoxp");
+    }
     VoidConfig {
         store: StoreConfig::default(),
         sync: SyncConfig::default(),
         connections: vec![ConnectionConfig {
             id: connection_id.into(),
-            connector_type: connector,
+            connector_type: ConnectorType::new(connector_id),
             ignore_conversations: vec![],
             settings,
         }],
@@ -55,7 +50,7 @@ fn make_muted_conversation(
 
 #[test]
 fn resolve_migration_connection_matches_by_connection_id() {
-    let cfg = make_config("work-slack", ConnectorType::Slack);
+    let cfg = make_config("work-slack", "slack");
     let conv = make_muted_conversation("c1", "work-slack", "slack", "C123", Some("random"));
     assert_eq!(
         resolve_migration_connection(&cfg, &conv).as_deref(),
@@ -65,7 +60,7 @@ fn resolve_migration_connection_matches_by_connection_id() {
 
 #[test]
 fn resolve_migration_connection_falls_back_to_single_connector_match() {
-    let cfg = make_config("my-slack", ConnectorType::Slack);
+    let cfg = make_config("my-slack", "slack");
     let conv = make_muted_conversation("c1", "legacy-id", "slack", "C123", Some("random"));
     assert_eq!(
         resolve_migration_connection(&cfg, &conv).as_deref(),
@@ -75,17 +70,15 @@ fn resolve_migration_connection_falls_back_to_single_connector_match() {
 
 #[test]
 fn resolve_migration_connection_ambiguous_connector_returns_none() {
-    let mut cfg = make_config("slack-a", ConnectorType::Slack);
+    let mut cfg = make_config("slack-a", "slack");
+    let mut settings = empty_settings();
+    settings_set_string(&mut settings, "app_token", "xapp");
+    settings_set_string(&mut settings, "user_token", "xoxp");
     cfg.connections.push(ConnectionConfig {
         id: "slack-b".into(),
-        connector_type: ConnectorType::Slack,
+        connector_type: ConnectorType::from_static("slack"),
         ignore_conversations: vec![],
-        settings: ConnectionSettings::Slack {
-            app_token: "xapp".into(),
-            user_token: "xoxp".into(),
-            app_id: None,
-            config_refresh_token: None,
-        },
+        settings,
     });
     let conv = make_muted_conversation("c1", "unknown", "slack", "C123", None);
     assert!(resolve_migration_connection(&cfg, &conv).is_none());
@@ -97,7 +90,7 @@ fn migrate_db_mutes_to_config_imports_muted_conversations() {
     std::fs::create_dir_all(&dir).unwrap();
     let config_path = dir.join("config.toml");
 
-    let mut cfg = make_config("work-slack", ConnectorType::Slack);
+    let mut cfg = make_config("work-slack", "slack");
     let db = test_db();
     let conv = make_muted_conversation("c1", "work-slack", "slack", "C-noisy", Some("noisy"));
     db.upsert_conversation(&conv).unwrap();
@@ -118,7 +111,7 @@ fn migrate_db_mutes_to_config_skips_already_ignored() {
     std::fs::create_dir_all(&dir).unwrap();
     let config_path = dir.join("config.toml");
 
-    let mut cfg = make_config("work-slack", ConnectorType::Slack);
+    let mut cfg = make_config("work-slack", "slack");
     cfg.connections[0]
         .ignore_conversations
         .push("C-noisy".into());

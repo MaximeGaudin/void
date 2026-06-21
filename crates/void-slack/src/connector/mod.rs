@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use anyhow::Context;
 
-use void_core::config::{default_config_path, ConnectionSettings, VoidConfig};
+use void_core::config::{default_config_path, VoidConfig};
 
 use crate::api::SlackApiClient;
 use crate::error::SlackError;
@@ -123,14 +123,8 @@ impl SlackConnector {
     ) -> Option<Option<String>> {
         let cfg = VoidConfig::load(config_path).ok()?;
         let conn = cfg.connections.iter().find(|c| c.id == connection_id)?;
-        let ConnectionSettings::Slack {
-            config_refresh_token,
-            ..
-        } = &conn.settings
-        else {
-            return None;
-        };
-        Some(config_refresh_token.clone())
+        let token = void_core::config::settings_string(&conn.settings, "config_refresh_token");
+        Some(token)
     }
 
     fn persist_config_refresh_token(&self, token: &str) {
