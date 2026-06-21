@@ -93,20 +93,38 @@ Void handles sensitive data (OAuth tokens, message contents, session files store
 
 #### 2a. Dependency & supply-chain changes
 
-Inspect every change to `Cargo.toml`, `Cargo.lock`, and `deny.toml`.
+A new dependency is the single easiest way to slip attacker-controlled code into the project: it runs with full process privileges, can ship a `build.rs` that executes at compile time, and updates outside this PR's review. **Default posture: every newly added crate is a blocker until proven both _necessary_ and _trustworthy_.** "It compiles" / "it works" is not a justification — nothing stops a contributor from adding a dependency they control to do shady things later.
+
+Inspect every change to `Cargo.toml`, `Cargo.lock`, and `deny.toml`, and enumerate exactly what entered the tree (direct **and** transitive):
 
 ```bash
 gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml'
+# Every crate newly added to the lockfile (catches transitive deps the PR didn't name):
+git diff "main...HEAD" -- Cargo.lock | rg '^\+name = ' | sort -u
 gh pr checkout "$PR"
 cargo audit                          # RUSTSEC advisories
 cargo deny check advisories licenses bans sources
+cargo tree -i <new-crate>            # who pulls it in, and why?
 git checkout "$baseRefName" 2>/dev/null || git checkout main
 ```
 
+**For each newly added crate (direct or transitive), ALL of the following must hold. If any fails, it is a Blocker — push back before merge:**
+
+1. **Necessary.** The PR cannot reasonably reach its goal with `std`, an already-vendored crate, or a few lines of local code. Reject deps added for trivial convenience (left-pad–class), or a heavyweight crate pulled in for one helper function. Ask explicitly: "what does *removing* this dependency cost?"
+2. **Reputable source.** Published on **crates.io** (never a `git` / `path` / alternate-registry source), owned by a recognizable publisher/org, links to a real public repo, and **actively maintained** (recent releases, responsive issues). Sanity-check scale: meaningful download counts and reverse-dependencies — not a days-old crate with a single `0.0.x` version.
+3. **Not a typo-squat / impersonation.** The crate name *and* its repo match the well-known crate it appears to be (`reqwest` vs `request`, `tokio` vs `tokey`, `serde` look-alikes). Open the repo link and confirm it actually hosts that crate.
+4. **Clean advisories & license.** No open RUSTSEC advisory (`cargo audit`); license is on the `deny.toml` allow-list (`cargo deny`).
+5. **Proportional blast radius.** Note how many transitive crates it drags in and whether any ship a `build.rs` / `proc-macro`. A one-line feature that adds dozens of transitive crates is itself a red flag.
+
+Record a one-line justification per new crate in the report: `name · why necessary · source/publisher · downloads/maintenance · advisories`. An unexplained or unjustified dependency means the security verdict **cannot** be `clean`.
+
 | Red flag | Action |
 |----------|--------|
-| New dependency | Verify it on crates.io: real publisher, not yanked, download count, repo link. Watch for **typo-squats** (e.g. `reqwest` vs `request`, `tokio` vs `tokey`). |
-| Dep pulled from a `git`/`path` source instead of crates.io | High suspicion — inspect the target repo/commit. |
+| New dependency with no necessity justification | **Blocker** — request removal or justification; prefer `std`/existing deps. |
+| Obscure / new / unmaintained crate (low downloads, single version, dead or missing repo) | **Blocker** until a reputable equivalent is used or ownership is verified. |
+| Dep from a `git` / `path` / alt-registry source instead of crates.io | **Blocker** — inspect the target repo/commit; do not accept opaque sources. |
+| Name or repo resembles a typo-squat / impersonation | **Do-not-merge** until the crate's identity is confirmed. |
+| Version bound widened, wildcarded (`*`), or pointed at a pre-release | Flag — loosened bounds let a future malicious release in silently. |
 | Lockfile churn unrelated to the stated change | Investigate why; a PR "fixing a typo" should not rewrite `Cargo.lock`. |
 | New license outside `deny.toml` allow-list | Block until intentionally allow-listed. |
 | `build.rs` added or modified | Read it line by line — build scripts run arbitrary code at compile time on the maintainer's/CI machine. |
@@ -275,6 +293,7 @@ Produce a single report. Lead with the recommendation.
 <fits / needs changes / out of scope> — <1–3 sentences of reasoning>
 
 ## 2. Security  ·  Verdict: clean / concerns / do-not-merge
+- **Dependencies:** <none added> — or one line per new crate: `name · necessary? · source/publisher · downloads/maintenance · advisories`
 - [severity] <finding> — `path:line` — <why it's risky> — <resolution>
 - (or) No security concerns found after auditing deps, exec/network/unsafe surface, file perms, and CI workflows.
 
@@ -317,6 +336,7 @@ Produce a single report. Lead with the recommendation.
 - **Never run untrusted PR code outside vetting commands.** `cargo build`/`test` on a PR branch executes that branch's `build.rs`, proc-macros, and test code on this machine. Complete Step 2a (inspect `build.rs`, deps) *before* building. If anything looks malicious, do **not** build/test locally — report instead.
 - Always return to `main` after `gh pr checkout`.
 - A `clean` security verdict requires that **every** anomaly was explained. Unexplained ≠ clean.
+- **Every new dependency is guilty until proven necessary _and_ reputable** (Step 2a). Vet direct and transitive crates; an unjustified or obscure dep blocks the merge regardless of how clean the code looks.
 - Don't let a polished diff lower your guard — clean code is the easiest place to hide a malicious line.
 - Be specific: every finding cites `file:line` and explains impact, not just "looks off".
 
@@ -330,8 +350,10 @@ gh pr checks "$PR"
 
 # Security sweeps (inspect deps BEFORE checkout/build)
 gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml' '.github/'
+git diff "main...HEAD" -- Cargo.lock | rg '^\+name = ' | sort -u   # every new (incl. transitive) crate
 gh pr checkout "$PR"
 cargo audit && cargo deny check advisories licenses bans sources
+cargo tree -i <new-crate>                                          # justify each new dep
 git diff main...HEAD | rg -n 'Command::new|unsafe|transmute|reqwest|ureq|env::var|build\.rs|base64'
 
 # Quality (only after security clears)
