@@ -16,14 +16,13 @@ pub(super) async fn run_sync(
     db: &Arc<Database>,
     connection_id: &str,
     token: &str,
-    username: &str,
     poll_interval_secs: u64,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
     let client = GitHubClient::new(token);
 
     info!(connection_id, "running initial GitHub sync");
-    if let Err(e) = poll_github(&client, db, connection_id, username, &cancel).await {
+    if let Err(e) = poll_github(&client, db, connection_id, &cancel).await {
         error!(connection_id, error = %e, "initial GitHub sync failed");
     }
 
@@ -52,7 +51,7 @@ pub(super) async fn run_sync(
                 } else {
                     info!(connection_id, "polling GitHub");
                 }
-                if let Err(e) = poll_github(&client, db, connection_id, username, &cancel).await {
+                if let Err(e) = poll_github(&client, db, connection_id, &cancel).await {
                     error!(connection_id, error = %e, "GitHub poll error");
                 }
                 last_poll = SystemTime::now();
@@ -66,14 +65,13 @@ async fn poll_github(
     client: &GitHubClient,
     db: &Arc<Database>,
     connection_id: &str,
-    username: &str,
     cancel: &CancellationToken,
 ) -> anyhow::Result<()> {
     if cancel.is_cancelled() {
         return Ok(());
     }
 
-    sync_review_requests(client, db, connection_id, username).await?;
+    sync_review_requests(client, db, connection_id).await?;
     if cancel.is_cancelled() {
         return Ok(());
     }
@@ -85,7 +83,6 @@ async fn sync_review_requests(
     client: &GitHubClient,
     db: &Arc<Database>,
     connection_id: &str,
-    username: &str,
 ) -> anyhow::Result<()> {
     let prs = client.review_requested_prs().await?;
     for pr in prs {
@@ -142,7 +139,6 @@ async fn sync_review_requests(
         );
     }
 
-    let _ = username;
     Ok(())
 }
 
@@ -159,13 +155,17 @@ async fn sync_notifications(
     let mut latest_updated: Option<String> = since;
 
     for notification in notifications {
+        // Advance the cursor for every notification (even filtered-out ones) so a
+        // batch that contains only irrelevant notifications still moves `since`
+        // forward instead of re-fetching the same window every poll.
+        update_latest_cursor(&mut latest_updated, &notification.updated_at);
+
         if !should_include_notification(&notification) {
             continue;
         }
 
         let external_id = format!("github_{connection_id}_notification_{}", notification.id);
         if db.message_exists(connection_id, &external_id)? {
-            update_latest_cursor(&mut latest_updated, &notification.updated_at);
             continue;
         }
 
@@ -231,7 +231,6 @@ async fn sync_notifications(
             &sender,
             &notification.subject.title,
         );
-        update_latest_cursor(&mut latest_updated, &notification.updated_at);
     }
 
     if let Some(latest) = latest_updated {

@@ -252,4 +252,87 @@ mod tests {
         let notifs = client.notifications(None).await.unwrap();
         assert!(notifs.is_empty());
     }
+
+    #[tokio::test]
+    async fn current_user_errors_on_unauthorized() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/user"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+
+        let client = GitHubClient::with_base_url(server.uri(), "bad-token");
+        let err = client.current_user().await.unwrap_err();
+        assert!(err.to_string().contains("invalid or expired"));
+    }
+
+    #[tokio::test]
+    async fn current_user_errors_on_server_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/user"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = GitHubClient::with_base_url(server.uri(), "test-token");
+        let err = client.current_user().await.unwrap_err();
+        assert!(err.to_string().contains("500"));
+    }
+
+    #[tokio::test]
+    async fn review_requested_prs_errors_on_unauthorized() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/search/issues"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+
+        let client = GitHubClient::with_base_url(server.uri(), "bad-token");
+        let err = client.review_requested_prs().await.unwrap_err();
+        assert!(err.to_string().contains("invalid or expired"));
+    }
+
+    #[tokio::test]
+    async fn review_requested_prs_errors_on_rate_limit() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/search/issues"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("rate limit exceeded"))
+            .mount(&server)
+            .await;
+
+        let client = GitHubClient::with_base_url(server.uri(), "test-token");
+        let err = client.review_requested_prs().await.unwrap_err();
+        assert!(err.to_string().contains("403"));
+    }
+
+    #[tokio::test]
+    async fn notifications_errors_on_server_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/notifications"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .mount(&server)
+            .await;
+
+        let client = GitHubClient::with_base_url(server.uri(), "test-token");
+        let err = client.notifications(None).await.unwrap_err();
+        assert!(err.to_string().contains("500"));
+    }
+
+    #[tokio::test]
+    async fn current_user_errors_on_malformed_json() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/user"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+
+        let client = GitHubClient::with_base_url(server.uri(), "test-token");
+        assert!(client.current_user().await.is_err());
+    }
 }

@@ -59,7 +59,6 @@ impl Connector for GitHubConnector {
             &db,
             &self.config_id,
             &self.token,
-            &self.username,
             self.poll_interval_secs,
             cancel,
         )
