@@ -161,6 +161,8 @@ void reply <message-id> --message "Thanks for sharing!"
 void send --via reddit --to reddit_reddit_post_abc123 --message "Great post!"
 ```
 
+`void reply` targets a post-body or comment message inside a synced thread (the conversations created when commenting is enabled). To comment on a post that only appears in the subreddit feed, use `void send --via reddit --to <post-id>` instead.
+
 ## Multiple accounts
 
 Add as many connections as you want, including several of the same type. Target a specific one anywhere with `--connection <id>`:
