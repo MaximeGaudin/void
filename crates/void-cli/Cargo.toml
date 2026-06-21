@@ -20,6 +20,7 @@ void-telegram = { workspace = true }
 void-hackernews = { workspace = true }
 void-googlenews = { workspace = true }
 void-linkedin = { workspace = true }
+void-reddit = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

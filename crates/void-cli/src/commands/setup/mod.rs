@@ -9,6 +9,7 @@ mod googlenews;
 mod hackernews;
 mod linkedin;
 pub(crate) mod prompt;
+mod reddit;
 mod slack;
 mod telegram;
 mod whatsapp;

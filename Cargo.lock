@@ -4436,6 +4436,7 @@ dependencies = [
  "void-googlenews",
  "void-hackernews",
  "void-linkedin",
+ "void-reddit",
  "void-slack",
  "void-telegram",
  "void-whatsapp",
@@ -4545,6 +4546,26 @@ dependencies = [
  "tokio-util",
  "tracing",
  "urlencoding",
+ "void-core",
+ "wiremock",
+]
+
+[[package]]
+name = "void-reddit"
+version = "0.10.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "void-core",
  "wiremock",
 ]

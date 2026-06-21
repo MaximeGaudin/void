@@ -148,6 +148,8 @@ pub struct SyncConfig {
     pub googlenews_poll_interval_secs: u64,
     #[serde(default = "default_linkedin_poll")]
     pub linkedin_poll_interval_secs: u64,
+    #[serde(default = "default_reddit_poll")]
+    pub reddit_poll_interval_secs: u64,
     #[serde(default = "default_linkedin_backfill_days")]
     pub linkedin_backfill_days: u64,
 }
@@ -160,6 +162,7 @@ impl Default for SyncConfig {
             hackernews_poll_interval_secs: default_hackernews_poll(),
             googlenews_poll_interval_secs: default_googlenews_poll(),
             linkedin_poll_interval_secs: default_linkedin_poll(),
+            reddit_poll_interval_secs: default_reddit_poll(),
             linkedin_backfill_days: default_linkedin_backfill_days(),
         }
     }
@@ -183,6 +186,10 @@ fn default_googlenews_poll() -> u64 {
 
 fn default_linkedin_poll() -> u64 {
     30 * 60
+}
+
+fn default_reddit_poll() -> u64 {
+    3600
 }
 
 fn default_linkedin_backfill_days() -> u64 {
@@ -273,6 +280,7 @@ impl VoidConfig {
             "hackernews" => ConnectorType::HackerNews,
             "googlenews" => ConnectorType::GoogleNews,
             "linkedin" => ConnectorType::LinkedIn,
+            "reddit" => ConnectorType::Reddit,
             _ => return None,
         };
         self.connections.iter().find(|a| a.connector_type == target)

@@ -74,6 +74,17 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
                     .account_id
                     .ok_or_else(|| serde::de::Error::missing_field("account_id"))?,
             },
+            ConnectorType::Reddit => ConnectionSettings::Reddit {
+                client_id: raw
+                    .client_id
+                    .ok_or_else(|| serde::de::Error::missing_field("client_id"))?,
+                client_secret: raw
+                    .client_secret
+                    .ok_or_else(|| serde::de::Error::missing_field("client_secret"))?,
+                subreddits: raw.subreddits.unwrap_or_default(),
+                keywords: raw.keywords.unwrap_or_default(),
+                min_score: raw.min_score.unwrap_or(0),
+            },
         };
         Ok(ConnectionConfig {
             id: raw.id,
@@ -121,6 +132,12 @@ struct RawConnectionConfig {
     dsn: Option<String>,
     #[serde(default)]
     account_id: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    client_secret: Option<String>,
+    #[serde(default)]
+    subreddits: Option<Vec<String>>,
     #[serde(default)]
     ignore_conversations: Option<Vec<String>>,
 }
@@ -173,6 +190,16 @@ pub enum ConnectionSettings {
         api_key: String,
         dsn: String,
         account_id: String,
+    },
+    Reddit {
+        client_id: String,
+        client_secret: String,
+        #[serde(default)]
+        subreddits: Vec<String>,
+        #[serde(default)]
+        keywords: Vec<String>,
+        #[serde(default)]
+        min_score: u32,
     },
 }
 
@@ -245,6 +272,20 @@ impl std::fmt::Debug for ConnectionSettings {
                 .field("api_key", &redact_token(api_key))
                 .field("dsn", dsn)
                 .field("account_id", account_id)
+                .finish(),
+            Self::Reddit {
+                client_id,
+                client_secret,
+                subreddits,
+                keywords,
+                min_score,
+            } => f
+                .debug_struct("Reddit")
+                .field("client_id", &redact_token(client_id))
+                .field("client_secret", &redact_token(client_secret))
+                .field("subreddits", subreddits)
+                .field("keywords", keywords)
+                .field("min_score", min_score)
                 .finish(),
         }
     }

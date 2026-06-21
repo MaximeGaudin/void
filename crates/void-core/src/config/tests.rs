@@ -444,6 +444,83 @@ type = "hackernews"
 }
 
 #[test]
+fn sync_config_reddit_default() {
+    let sync = SyncConfig::default();
+    assert_eq!(sync.reddit_poll_interval_secs, 3600);
+}
+
+#[test]
+fn parse_reddit_config() {
+    let toml = r#"
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "my-client-id"
+client_secret = "my-client-secret"
+subreddits = ["rust", "programming"]
+keywords = ["ai", "llm"]
+min_score = 50
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    assert_eq!(config.connections[0].connector_type, ConnectorType::Reddit);
+    match &config.connections[0].settings {
+        ConnectionSettings::Reddit {
+            client_id,
+            client_secret,
+            subreddits,
+            keywords,
+            min_score,
+        } => {
+            assert_eq!(client_id, "my-client-id");
+            assert_eq!(client_secret, "my-client-secret");
+            assert_eq!(subreddits, &["rust", "programming"]);
+            assert_eq!(keywords, &["ai", "llm"]);
+            assert_eq!(*min_score, 50);
+        }
+        other => panic!("expected Reddit settings, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_reddit_without_optional_fields() {
+    let toml = r#"
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "id"
+client_secret = "secret"
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    match &config.connections[0].settings {
+        ConnectionSettings::Reddit {
+            subreddits,
+            keywords,
+            min_score,
+            ..
+        } => {
+            assert!(subreddits.is_empty());
+            assert!(keywords.is_empty());
+            assert_eq!(*min_score, 0);
+        }
+        other => panic!("expected Reddit settings, got {other:?}"),
+    }
+}
+
+#[test]
+fn reddit_settings_debug_redacts_secrets() {
+    let settings = ConnectionSettings::Reddit {
+        client_id: "super-secret-client-id".into(),
+        client_secret: "super-secret-client-secret".into(),
+        subreddits: vec!["rust".into()],
+        keywords: vec![],
+        min_score: 10,
+    };
+    let debug = format!("{settings:?}");
+    assert!(!debug.contains("super-secret-client-secret"));
+    assert!(debug.contains("super-se..."));
+}
+
+#[test]
 fn resolve_config_path_expands_tilde() {
     let path = super::resolve_config_path(Some(std::path::Path::new("~/.config/void/config.toml")));
     assert!(path.exists() || !path.to_string_lossy().contains('~'));

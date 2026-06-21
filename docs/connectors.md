@@ -12,6 +12,7 @@ Every connector is added through the same flow: run `void setup`, pick the servi
 | [LinkedIn](#linkedin-unipile) | Unipile API key | Unipile API polling |
 | [Hacker News](#hacker-news) | None — public API | HN API polling |
 | [Google News](#google-news) | None — public RSS | Google News RSS polling |
+| [Reddit](#reddit) | Reddit app OAuth | Reddit API polling |
 
 ## WhatsApp
 
@@ -118,6 +119,23 @@ void gn config
 ```
 
 To follow several editions (e.g. French and US news), add one connection per edition — each is targetable with `--connection <id>`.
+
+## Reddit
+
+Reddit requires a **script** app registered at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) (redirect URI: `http://localhost:8080`). Void uses application-only OAuth (`client_credentials`) — no Reddit username or password needed.
+
+Run `void setup`, select Reddit, and enter your client ID, client secret, subreddits to watch, keywords, and minimum score. Matching posts land in your inbox on each sync cycle (one conversation per subreddit).
+
+```toml
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "your-reddit-app-client-id"
+client_secret = "your-reddit-app-client-secret"
+subreddits = ["rust", "programming", "startups"]
+keywords = ["ai", "llm"]
+min_score = 50
+```
 
 ## Multiple accounts
 

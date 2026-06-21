@@ -3,7 +3,7 @@ use std::path::Path;
 use void_core::config::VoidConfig;
 
 use super::prompt::{confirm_default_yes, separator};
-use super::{calendar, gmail, googlenews, hackernews, linkedin, slack, telegram, whatsapp};
+use super::{calendar, gmail, googlenews, hackernews, linkedin, reddit, slack, telegram, whatsapp};
 use crate::commands::sync;
 
 pub(crate) async fn run_full_wizard(
@@ -14,7 +14,7 @@ pub(crate) async fn run_full_wizard(
     eprintln!();
     eprintln!("This wizard will guide you through connecting your");
     eprintln!("communication services (Gmail, Slack, WhatsApp, Telegram,");
-    eprintln!("Google Calendar, Hacker News, Google News, LinkedIn) to Void.");
+    eprintln!("Google Calendar, Hacker News, Google News, LinkedIn, Reddit) to Void.");
     eprintln!();
 
     separator();
@@ -33,6 +33,8 @@ pub(crate) async fn run_full_wizard(
     googlenews::setup_googlenews(cfg, false)?;
     separator();
     linkedin::setup_linkedin(cfg, store_path, false).await?;
+    separator();
+    reddit::setup_reddit(cfg, false)?;
     separator();
 
     cfg.save(config_path)?;

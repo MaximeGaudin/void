@@ -85,16 +85,17 @@ pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {
         "hackernews" | "hn" => Some(ConnectorType::HackerNews),
         "googlenews" | "gn" => Some(ConnectorType::GoogleNews),
         "linkedin" | "li" => Some(ConnectorType::LinkedIn),
+        "reddit" | "rd" => Some(ConnectorType::Reddit),
         _ => None,
     }
 }
 
 const KNOWN_CONNECTORS: &str =
-    "whatsapp, slack, gmail, calendar, telegram, hackernews, googlenews, linkedin";
+    "whatsapp, slack, gmail, calendar, telegram, hackernews, googlenews, linkedin, reddit";
 
 /// Shared `--connector` flag description for list/search commands (see [`resolve_connector_filter`]).
 pub const CONNECTOR_FILTER_HELP: &str =
-    "Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews, googlenews, linkedin)";
+    "Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews, googlenews, linkedin, reddit)";
 
 pub fn resolve_connector_filter(raw: Option<&str>) -> anyhow::Result<Option<String>> {
     match raw {
@@ -203,6 +204,13 @@ mod tests {
             Some(ConnectorType::HackerNews)
         );
         assert_eq!(parse_connector_type("hn"), Some(ConnectorType::HackerNews));
+    }
+
+    #[test]
+    fn parse_connector_type_reddit() {
+        assert_eq!(parse_connector_type("reddit"), Some(ConnectorType::Reddit));
+        assert_eq!(parse_connector_type("rd"), Some(ConnectorType::Reddit));
+        assert_eq!(parse_connector_type("RD"), Some(ConnectorType::Reddit));
     }
 
     #[test]

@@ -9,6 +9,7 @@ fn connector_type_display() {
     assert_eq!(ConnectorType::Telegram.to_string(), "telegram");
     assert_eq!(ConnectorType::HackerNews.to_string(), "hackernews");
     assert_eq!(ConnectorType::LinkedIn.to_string(), "linkedin");
+    assert_eq!(ConnectorType::Reddit.to_string(), "reddit");
 }
 
 #[test]
@@ -20,6 +21,7 @@ fn connector_type_badges() {
     assert_eq!(ConnectorType::Telegram.badge(), "TG");
     assert_eq!(ConnectorType::HackerNews.badge(), "HN");
     assert_eq!(ConnectorType::LinkedIn.badge(), "LI");
+    assert_eq!(ConnectorType::Reddit.badge(), "RD");
 }
 
 #[test]

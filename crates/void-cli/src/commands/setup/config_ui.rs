@@ -25,6 +25,10 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
         cfg.sync.googlenews_poll_interval_secs
     );
     eprintln!(
+        "  reddit_poll_interval_secs     = {}",
+        cfg.sync.reddit_poll_interval_secs
+    );
+    eprintln!(
         "  linkedin_poll_interval_secs   = {}",
         cfg.sync.linkedin_poll_interval_secs
     );
@@ -121,6 +125,27 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                     eprintln!("    api_key:    {}", config::redact_token(api_key));
                     eprintln!("    dsn:        {dsn}");
                     eprintln!("    account_id: {account_id}");
+                }
+                config::ConnectionSettings::Reddit {
+                    client_id,
+                    client_secret,
+                    subreddits,
+                    keywords,
+                    min_score,
+                } => {
+                    eprintln!("    client_id:     {}", config::redact_token(client_id));
+                    eprintln!("    client_secret: {}", config::redact_token(client_secret));
+                    if subreddits.is_empty() {
+                        eprintln!("    subreddits:    (none)");
+                    } else {
+                        eprintln!("    subreddits:    {}", subreddits.join(", "));
+                    }
+                    if keywords.is_empty() {
+                        eprintln!("    keywords:      (none — all posts)");
+                    } else {
+                        eprintln!("    keywords:      {}", keywords.join(", "));
+                    }
+                    eprintln!("    min_score:     {min_score}");
                 }
             }
         }

@@ -304,6 +304,27 @@ pub fn build_connector(
                 sync_cfg.linkedin_backfill_days,
             )))
         }
+        (
+            ConnectorType::Reddit,
+            ConnectionSettings::Reddit {
+                client_id,
+                client_secret,
+                subreddits,
+                keywords,
+                min_score,
+            },
+        ) => {
+            let poll_secs = crate::context::config().sync.reddit_poll_interval_secs;
+            Ok(Arc::new(void_reddit::connector::RedditConnector::new(
+                &connection.id,
+                client_id.clone(),
+                client_secret.clone(),
+                subreddits.clone(),
+                keywords.clone(),
+                *min_score,
+                poll_secs,
+            )))
+        }
         _ => anyhow::bail!(
             "Mismatched connector type and settings for '{}': type={}, settings don't match",
             connection.id,

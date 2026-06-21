@@ -30,6 +30,7 @@ path = "~/.local/share/void"
 gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
 hackernews_poll_interval_secs = 3600
+reddit_poll_interval_secs = 3600
 linkedin_poll_interval_secs = 1800
 linkedin_backfill_days = 15
 
@@ -67,6 +68,15 @@ keywords = ["rust", "ai", "startup"]
 min_score = 100
 
 [[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "your-reddit-app-client-id"
+client_secret = "your-reddit-app-client-secret"
+subreddits = ["rust", "programming"]
+keywords = ["ai", "startup"]
+min_score = 50
+
+[[connections]]
 id = "linkedin"
 type = "linkedin"
 api_key = "your-unipile-api-key"
@@ -90,6 +100,7 @@ Polling intervals for connectors that poll (push-based connectors — WhatsApp, 
 | `gmail_poll_interval_secs` | 30 |
 | `calendar_poll_interval_secs` | 60 |
 | `hackernews_poll_interval_secs` | 3600 |
+| `reddit_poll_interval_secs` | 3600 |
 | `linkedin_poll_interval_secs` | 1800 |
 | `linkedin_backfill_days` | 15 |
 
@@ -100,7 +111,7 @@ Each connection is one account on one service. Every connection has:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | yes | Unique name you choose — used by `--connection <id>` |
-| `type` | yes | One of `whatsapp`, `telegram`, `slack`, `gmail`, `calendar`, `hackernews`, `linkedin` |
+| `type` | yes | One of `whatsapp`, `telegram`, `slack`, `gmail`, `calendar`, `hackernews`, `googlenews`, `linkedin`, `reddit` |
 | `ignore_conversations` | no | List of conversations to auto-mute (see below) |
 
 Per-type fields:
@@ -113,6 +124,8 @@ Per-type fields:
 | `gmail` | — | `credentials_file` (custom Google OAuth client) |
 | `calendar` | — | `credentials_file`, `calendar_ids` (default: primary) |
 | `hackernews` | — | `keywords` (default: `[]`), `min_score` (default: 0) |
+| `googlenews` | — | `keywords`, `when`, `language`, `country` |
+| `reddit` | `client_id`, `client_secret` | `subreddits` (default: `[]`), `keywords` (default: `[]`), `min_score` (default: 0) |
 | `linkedin` | `api_key`, `dsn`, `account_id` (Unipile) | — |
 
 You can declare multiple connections of the same type (two Slack workspaces, several Gmail accounts, …) — give each a distinct `id`.
