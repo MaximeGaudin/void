@@ -136,6 +136,7 @@ pub(crate) fn runs_with_local_cache(command: &crate::Command) -> bool {
         | Command::Remote(_) => true,
         Command::Calendar(args) => calendar_reads_local_cache(args),
         Command::Hn(args) => hackernews_reads_local_cache(args),
+        Command::Reddit(args) => reddit_reads_local_cache(args),
         Command::Sync(args) => args.status,
         Command::Setup => false,
         _ => false,
@@ -156,6 +157,17 @@ fn hackernews_reads_local_cache(args: &crate::commands::hackernews::HackerNewsAr
         HnCommand::Config => true,
         HnCommand::Keywords(kw) => matches!(kw.action, KeywordsAction::List),
         HnCommand::MinScore(_) => false,
+    }
+}
+
+fn reddit_reads_local_cache(args: &crate::commands::reddit::RedditArgs) -> bool {
+    use crate::commands::reddit::{KeywordsAction, RedditCommand, SubredditsAction};
+
+    match &args.command {
+        RedditCommand::Config => true,
+        RedditCommand::Keywords(kw) => matches!(kw.action, KeywordsAction::List),
+        RedditCommand::Subreddits(sr) => matches!(sr.action, SubredditsAction::List),
+        RedditCommand::MinScore(_) => false,
     }
 }
 

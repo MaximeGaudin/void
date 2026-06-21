@@ -142,6 +142,25 @@ Tune the watched-keywords feed without editing `config.toml`. See [Connector set
 | `void hn keywords set <csv>` | Replace all keywords (empty to clear) |
 | `void hn min-score <N>` | Set the minimum score threshold for stories |
 
+## Reddit
+
+Tune watched subreddits, keywords, and score threshold without editing `config.toml`. See [Connector setup](connectors.md#reddit).
+
+| Command | Description |
+|---------|-------------|
+| `void reddit config` | Show current subreddits, keywords, and minimum score (credentials redacted) |
+| `void reddit subreddits list` | List watched subreddits |
+| `void reddit subreddits add <csv>` | Add one or more subreddits (comma-separated) |
+| `void reddit subreddits remove <csv>` | Remove one or more subreddits (comma-separated) |
+| `void reddit subreddits set <csv>` | Replace all subreddits |
+| `void reddit keywords list` | List watched keywords |
+| `void reddit keywords add <csv>` | Add one or more keywords (comma-separated) |
+| `void reddit keywords remove <csv>` | Remove one or more keywords (comma-separated) |
+| `void reddit keywords set <csv>` | Replace all keywords (empty to clear) |
+| `void reddit min-score <N>` | Set the minimum score threshold for posts |
+
+Alias: `void rd …`
+
 ## Hooks
 
 LLM automations triggered by new messages or cron schedules. See the full [Hooks guide](hooks.md).

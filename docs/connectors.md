@@ -137,6 +137,16 @@ keywords = ["ai", "llm"]
 min_score = 50
 ```
 
+Tune it later without editing the config:
+
+```bash
+void reddit subreddits add "rust,local-first"
+void reddit subreddits remove "startups"
+void reddit keywords add "ai,llm"
+void reddit min-score 100
+void reddit config
+```
+
 ## Multiple accounts
 
 Add as many connections as you want, including several of the same type. Target a specific one anywhere with `--connection <id>`:

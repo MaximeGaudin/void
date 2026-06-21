@@ -120,6 +120,13 @@ void hn min-score 100
 
 Keyword- and score-filtered posts from watched subreddits land in your inbox like any other message. Configure via `void setup` (Reddit app credentials from https://www.reddit.com/prefs/apps).
 
+```bash
+void reddit subreddits add "rust,programming"
+void reddit keywords add "ai,llm"
+void reddit min-score 50
+void reddit config
+```
+
 ### Google News
 
 Keyword-watched articles from the public Google News RSS feed land in your inbox — one search per keyword, filtered by recency:
