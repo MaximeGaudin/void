@@ -61,10 +61,13 @@ jobs:
       - name: Test
         run: cargo test --locked
 
-  # Build against the declared MSRV so a dependency bump that silently needs a
-  # newer rustc fails here instead of in a user's `cargo install`.
+  # Build against the declared MSRV (currently 1.95) so a dependency bump that
+  # silently needs a newer rustc fails here instead of in a user's `cargo install`.
+  # The check name is kept static ("MSRV") so required-status-check branch
+  # protection keeps working when the version is bumped — update the toolchain
+  # below and the rust-version in Cargo.toml, not the job name.
   msrv:
-    name: MSRV (1.95)
+    name: MSRV
     needs: fmt
     runs-on: ubuntu-latest
     steps:
