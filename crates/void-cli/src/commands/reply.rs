@@ -161,7 +161,7 @@ fn build_reply_id(
         ConnectorType::HackerNews => msg_external_id.to_string(),
         ConnectorType::GoogleNews => msg_external_id.to_string(),
         ConnectorType::LinkedIn => format!("{conv_external_id}:{msg_external_id}"),
-        ConnectorType::Reddit => msg_external_id.to_string(),
+        ConnectorType::Reddit => format!("{conv_external_id}:{msg_external_id}"),
     }
 }
 
@@ -217,12 +217,12 @@ mod tests {
     }
 
     #[test]
-    fn build_reply_id_reddit_uses_message_external_id_only() {
+    fn build_reply_id_reddit_joins_conv_and_message_external_ids() {
         let id = build_reply_id(
             ConnectorType::Reddit,
-            "reddit_reddit_rust",
-            "reddit_reddit_abc123",
+            "reddit_reddit_post_abc123",
+            "reddit_reddit_comment_c1",
         );
-        assert_eq!(id, "reddit_reddit_abc123");
+        assert_eq!(id, "reddit_reddit_post_abc123:reddit_reddit_comment_c1");
     }
 }

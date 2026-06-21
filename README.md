@@ -118,13 +118,14 @@ void hn min-score 100
 
 ### Reddit
 
-Keyword- and score-filtered posts from watched subreddits land in your inbox like any other message. Configure via `void setup` (Reddit app credentials from https://www.reddit.com/prefs/apps).
+Keyword- and score-filtered posts from watched subreddits land in your inbox like any other message. Enable commenting during `void setup` to sync thread comments and reply from the CLI (browser OAuth, stores `refresh_token`).
 
 ```bash
 void reddit subreddits add "rust,programming"
 void reddit keywords add "ai,llm"
 void reddit min-score 50
 void reddit config
+void reply <message-id> --message "Thanks!"
 ```
 
 ### Google News

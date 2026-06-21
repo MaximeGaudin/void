@@ -122,9 +122,15 @@ To follow several editions (e.g. French and US news), add one connection per edi
 
 ## Reddit
 
-Reddit requires a **script** app registered at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) (redirect URI: `http://localhost:8080`). Void uses application-only OAuth (`client_credentials`) — no Reddit username or password needed.
+Reddit requires a **web** app registered at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) with redirect URI `http://localhost:8765`.
 
-Run `void setup`, select Reddit, and enter your client ID, client secret, subreddits to watch, keywords, and minimum score. Matching posts land in your inbox on each sync cycle (one conversation per subreddit).
+**Read-only mode** uses application-only OAuth (`client_credentials`) with just `client_id` and `client_secret`. Posts from watched subreddits appear in your inbox (one channel conversation per subreddit).
+
+**Commenting mode** (optional during `void setup`) runs a browser OAuth flow and stores a `refresh_token` in config. When enabled, matching posts also sync as thread conversations with comments, and you can reply from the CLI.
+
+OAuth setup tries a local callback on `localhost:8765` first. If the port is busy, the browser cannot open, or you are on a remote machine, setup falls back to printing the authorize URL and asking you to paste the returned code.
+
+Run `void setup`, select Reddit, and enter your client ID, client secret, subreddits, keywords, and minimum score. Optionally enable commenting for the OAuth flow.
 
 ```toml
 [[connections]]
@@ -132,12 +138,13 @@ id = "reddit"
 type = "reddit"
 client_id = "your-reddit-app-client-id"
 client_secret = "your-reddit-app-client-secret"
+refresh_token = "stored-by-setup-when-commenting-enabled"  # optional
 subreddits = ["rust", "programming", "startups"]
 keywords = ["ai", "llm"]
 min_score = 50
 ```
 
-Tune it later without editing the config:
+Tune filters later without editing the config:
 
 ```bash
 void reddit subreddits add "rust,local-first"
@@ -145,6 +152,13 @@ void reddit subreddits remove "startups"
 void reddit keywords add "ai,llm"
 void reddit min-score 100
 void reddit config
+```
+
+Reply to a synced comment or post (requires `refresh_token`):
+
+```bash
+void reply <message-id> --message "Thanks for sharing!"
+void send --via reddit --to reddit_reddit_post_abc123 --message "Great post!"
 ```
 
 ## Multiple accounts

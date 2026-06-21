@@ -34,6 +34,8 @@ libc = { workspace = true }
 croner = { workspace = true }
 sysinfo = { workspace = true }
 uuid = { workspace = true }
+open = { workspace = true }
+urlencoding = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }

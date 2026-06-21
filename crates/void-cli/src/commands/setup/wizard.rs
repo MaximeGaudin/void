@@ -34,7 +34,7 @@ pub(crate) async fn run_full_wizard(
     separator();
     linkedin::setup_linkedin(cfg, store_path, false).await?;
     separator();
-    reddit::setup_reddit(cfg, false)?;
+    reddit::setup_reddit(cfg, false).await?;
     separator();
 
     cfg.save(config_path)?;

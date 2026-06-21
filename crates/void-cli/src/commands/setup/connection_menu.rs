@@ -32,7 +32,7 @@ pub(crate) async fn add_connection(cfg: &mut VoidConfig, store_path: &Path) -> a
         5 => hackernews::setup_hackernews(cfg, true)?,
         6 => googlenews::setup_googlenews(cfg, true)?,
         7 => linkedin::setup_linkedin(cfg, store_path, true).await?,
-        8 => reddit::setup_reddit(cfg, true)?,
+        8 => reddit::setup_reddit(cfg, true).await?,
         _ => {}
     }
     Ok(())

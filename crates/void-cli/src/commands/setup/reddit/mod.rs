@@ -1,17 +1,23 @@
+mod oauth;
+
 use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
 use void_core::models::ConnectorType;
 
 use super::auth::{pick_connector_action, ConnectorAction};
-use super::prompt::{prompt, prompt_default};
+use super::prompt::{confirm_default_yes, prompt, prompt_default};
 
-pub(crate) fn setup_reddit(cfg: &mut VoidConfig, add_only: bool) -> anyhow::Result<()> {
+pub(crate) async fn setup_reddit(cfg: &mut VoidConfig, add_only: bool) -> anyhow::Result<()> {
     eprintln!("🔶  REDDIT");
     eprintln!();
     eprintln!("Monitors Reddit subreddits for posts matching your keywords.");
-    eprintln!("Matching posts appear in your inbox (read-only).");
+    eprintln!("Matching posts appear in your inbox. Enable commenting to sync");
+    eprintln!("thread comments and reply from the CLI.");
     eprintln!();
-    eprintln!("You need a Reddit \"script\" app from https://www.reddit.com/prefs/apps");
-    eprintln!("(redirect URI: http://localhost:8080). Application-only OAuth is used.");
+    eprintln!("Create a Reddit \"web\" app at https://www.reddit.com/prefs/apps");
+    eprintln!(
+        "with redirect URI {oauth_uri}.",
+        oauth_uri = oauth::REDIRECT_URI
+    );
 
     if !add_only {
         let existing: Vec<usize> = cfg
@@ -74,6 +80,24 @@ pub(crate) fn setup_reddit(cfg: &mut VoidConfig, add_only: bool) -> anyhow::Resu
     let min_score_input = prompt_default("Minimum score", "50");
     let min_score: u32 = min_score_input.parse().unwrap_or(50);
 
+    let refresh_token = if confirm_default_yes(
+        "Enable commenting? (opens browser for Reddit authorization; stores refresh token)",
+    ) {
+        match oauth::obtain_refresh_token(&client_id, &client_secret).await {
+            Ok(token) => {
+                eprintln!("  ✓ Reddit commenting authorized.");
+                Some(token)
+            }
+            Err(e) => {
+                eprintln!("  ✗ Reddit authorization failed: {e}");
+                eprintln!("    Continuing in read-only mode.");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let connection_id = prompt_default("\nAccount name", "reddit");
 
     let connection = ConnectionConfig {
@@ -83,6 +107,7 @@ pub(crate) fn setup_reddit(cfg: &mut VoidConfig, add_only: bool) -> anyhow::Resu
         settings: ConnectionSettings::Reddit {
             client_id: client_id.trim().to_string(),
             client_secret: client_secret.trim().to_string(),
+            refresh_token,
             subreddits,
             keywords,
             min_score,

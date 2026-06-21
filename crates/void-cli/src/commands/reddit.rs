@@ -242,6 +242,7 @@ fn get_reddit_settings(cfg: &VoidConfig) -> anyhow::Result<RedditSettings> {
             subreddits,
             keywords,
             min_score,
+            ..
         } => Ok(RedditSettings {
             client_id: client_id.clone(),
             client_secret: client_secret.clone(),

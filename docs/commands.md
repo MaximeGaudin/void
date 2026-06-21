@@ -159,6 +159,13 @@ Tune watched subreddits, keywords, and score threshold without editing `config.t
 | `void reddit keywords set <csv>` | Replace all keywords (empty to clear) |
 | `void reddit min-score <N>` | Set the minimum score threshold for posts |
 
+Reply to synced Reddit comments (requires OAuth commenting enabled during setup):
+
+| Command | Description |
+|---------|-------------|
+| `void reply <message-id> --message "..."` | Reply to a post or comment in a Reddit thread |
+| `void send --via reddit --to <post-id> --message "..."` | Post a top-level comment on a Reddit post |
+
 Alias: `void rd …`
 
 ## Hooks

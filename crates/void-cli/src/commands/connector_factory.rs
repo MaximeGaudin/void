@@ -309,6 +309,7 @@ pub fn build_connector(
             ConnectionSettings::Reddit {
                 client_id,
                 client_secret,
+                refresh_token,
                 subreddits,
                 keywords,
                 min_score,
@@ -319,6 +320,7 @@ pub fn build_connector(
                 &connection.id,
                 client_id.clone(),
                 client_secret.clone(),
+                refresh_token.clone(),
                 subreddits.clone(),
                 keywords.clone(),
                 *min_score,

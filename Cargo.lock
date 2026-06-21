@@ -4420,6 +4420,7 @@ dependencies = [
  "croner",
  "insta",
  "libc",
+ "open",
  "predicates",
  "serde",
  "serde_json",
@@ -4429,6 +4430,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "urlencoding",
  "uuid",
  "void-calendar",
  "void-core",
@@ -4566,6 +4568,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "urlencoding",
  "void-core",
  "wiremock",
 ]

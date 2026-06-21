@@ -81,6 +81,7 @@ impl<'de> Deserialize<'de> for ConnectionConfig {
                 client_secret: raw
                     .client_secret
                     .ok_or_else(|| serde::de::Error::missing_field("client_secret"))?,
+                refresh_token: raw.refresh_token,
                 subreddits: raw.subreddits.unwrap_or_default(),
                 keywords: raw.keywords.unwrap_or_default(),
                 min_score: raw.min_score.unwrap_or(0),
@@ -139,6 +140,8 @@ struct RawConnectionConfig {
     #[serde(default)]
     subreddits: Option<Vec<String>>,
     #[serde(default)]
+    refresh_token: Option<String>,
+    #[serde(default)]
     ignore_conversations: Option<Vec<String>>,
 }
 
@@ -194,6 +197,8 @@ pub enum ConnectionSettings {
     Reddit {
         client_id: String,
         client_secret: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        refresh_token: Option<String>,
         #[serde(default)]
         subreddits: Vec<String>,
         #[serde(default)]
@@ -276,6 +281,7 @@ impl std::fmt::Debug for ConnectionSettings {
             Self::Reddit {
                 client_id,
                 client_secret,
+                refresh_token,
                 subreddits,
                 keywords,
                 min_score,
@@ -283,6 +289,7 @@ impl std::fmt::Debug for ConnectionSettings {
                 .debug_struct("Reddit")
                 .field("client_id", &redact_token(client_id))
                 .field("client_secret", &redact_token(client_secret))
+                .field("refresh_token", &refresh_token.as_deref().map(redact_token))
                 .field("subreddits", subreddits)
                 .field("keywords", keywords)
                 .field("min_score", min_score)

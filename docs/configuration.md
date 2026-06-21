@@ -72,6 +72,7 @@ id = "reddit"
 type = "reddit"
 client_id = "your-reddit-app-client-id"
 client_secret = "your-reddit-app-client-secret"
+refresh_token = "stored-by-setup-when-commenting-enabled"
 subreddits = ["rust", "programming"]
 keywords = ["ai", "startup"]
 min_score = 50
@@ -125,7 +126,7 @@ Per-type fields:
 | `calendar` | — | `credentials_file`, `calendar_ids` (default: primary) |
 | `hackernews` | — | `keywords` (default: `[]`), `min_score` (default: 0) |
 | `googlenews` | — | `keywords`, `when`, `language`, `country` |
-| `reddit` | `client_id`, `client_secret` | `subreddits` (default: `[]`), `keywords` (default: `[]`), `min_score` (default: 0) |
+| `reddit` | `client_id`, `client_secret` | `refresh_token` (optional, enables commenting), `subreddits` (default: `[]`), `keywords` (default: `[]`), `min_score` (default: 0) |
 | `linkedin` | `api_key`, `dsn`, `account_id` (Unipile) | — |
 
 You can declare multiple connections of the same type (two Slack workspaces, several Gmail accounts, …) — give each a distinct `id`.

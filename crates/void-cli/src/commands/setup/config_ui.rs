@@ -129,12 +129,18 @@ pub(crate) fn show_configuration(config_path: &Path, cfg: &VoidConfig) {
                 config::ConnectionSettings::Reddit {
                     client_id,
                     client_secret,
+                    refresh_token,
                     subreddits,
                     keywords,
                     min_score,
                 } => {
                     eprintln!("    client_id:     {}", config::redact_token(client_id));
                     eprintln!("    client_secret: {}", config::redact_token(client_secret));
+                    if refresh_token.is_some() {
+                        eprintln!("    refresh_token: (set — commenting enabled)");
+                    } else {
+                        eprintln!("    refresh_token: (not set — read-only)");
+                    }
                     if subreddits.is_empty() {
                         eprintln!("    subreddits:    (none)");
                     } else {

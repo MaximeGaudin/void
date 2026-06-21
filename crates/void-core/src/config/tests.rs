@@ -457,6 +457,7 @@ id = "reddit"
 type = "reddit"
 client_id = "my-client-id"
 client_secret = "my-client-secret"
+refresh_token = "refresh-token"
 subreddits = ["rust", "programming"]
 keywords = ["ai", "llm"]
 min_score = 50
@@ -467,12 +468,14 @@ min_score = 50
         ConnectionSettings::Reddit {
             client_id,
             client_secret,
+            refresh_token,
             subreddits,
             keywords,
             min_score,
         } => {
             assert_eq!(client_id, "my-client-id");
             assert_eq!(client_secret, "my-client-secret");
+            assert_eq!(refresh_token.as_deref(), Some("refresh-token"));
             assert_eq!(subreddits, &["rust", "programming"]);
             assert_eq!(keywords, &["ai", "llm"]);
             assert_eq!(*min_score, 50);
@@ -496,11 +499,13 @@ client_secret = "secret"
             subreddits,
             keywords,
             min_score,
+            refresh_token,
             ..
         } => {
             assert!(subreddits.is_empty());
             assert!(keywords.is_empty());
             assert_eq!(*min_score, 0);
+            assert!(refresh_token.is_none());
         }
         other => panic!("expected Reddit settings, got {other:?}"),
     }
@@ -511,13 +516,34 @@ fn reddit_settings_debug_redacts_secrets() {
     let settings = ConnectionSettings::Reddit {
         client_id: "super-secret-client-id".into(),
         client_secret: "super-secret-client-secret".into(),
+        refresh_token: Some("super-secret-refresh-token".into()),
         subreddits: vec!["rust".into()],
         keywords: vec![],
         min_score: 10,
     };
     let debug = format!("{settings:?}");
     assert!(!debug.contains("super-secret-client-secret"));
+    assert!(!debug.contains("super-secret-refresh-token"));
     assert!(debug.contains("super-se..."));
+}
+
+#[test]
+fn parse_reddit_config_with_refresh_token() {
+    let toml = r#"
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "id"
+client_secret = "secret"
+refresh_token = "rt-123"
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    match &config.connections[0].settings {
+        ConnectionSettings::Reddit { refresh_token, .. } => {
+            assert_eq!(refresh_token.as_deref(), Some("rt-123"));
+        }
+        other => panic!("expected Reddit settings, got {other:?}"),
+    }
 }
 
 #[test]
