@@ -3,8 +3,6 @@ use std::sync::Arc;
 use tokio::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use void_core::models::ConnectorType;
-
 use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::hooks::{self, HookRunner};
@@ -12,6 +10,7 @@ use void_core::sync::SyncEngine;
 use void_whatsapp::rpc::Server as WhatsAppRpcServer;
 
 use crate::commands::connector_factory;
+use crate::connectors;
 use crate::output::{resolve_connector_filter, resolve_connector_list};
 
 use super::SyncArgs;
@@ -26,6 +25,8 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     if cfg.connections.is_empty() {
         anyhow::bail!("No connections configured. Add connections to your config.toml first.");
     }
+
+    connectors::validate_all_connections(cfg)?;
 
     let connector_filter = resolve_connector_list(args.connectors.as_deref())?;
 
@@ -63,29 +64,18 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
             "connector data cleared"
         );
 
-        if ct == "whatsapp" {
-            for connection in &cfg.connections {
-                if connection.connector_type.to_string() == "whatsapp" {
-                    let session_db = store_path.join(format!("whatsapp-{}.db", connection.id));
-                    if session_db.exists() {
-                        std::fs::remove_file(&session_db)?;
-                        eprintln!(
-                            "Removed WhatsApp session: {} (will require re-pairing)",
-                            session_db.display()
-                        );
-                    }
-                }
+        for connection in &cfg.connections {
+            if connection.connector_type.as_str() != ct {
+                continue;
             }
-        }
-
-        if ct == "telegram" {
-            for connection in &cfg.connections {
-                if connection.connector_type.to_string() == "telegram" {
-                    let session_file = store_path.join(format!("telegram-{}.json", connection.id));
+            let plugin = connectors::by_id(&ct);
+            if let Some(plugin) = plugin {
+                for session_file in (plugin.session_files)(&store_path, &connection.id) {
                     if session_file.exists() {
                         std::fs::remove_file(&session_file)?;
                         eprintln!(
-                            "Removed Telegram session: {} (will require re-auth)",
+                            "Removed {} session: {} (will require re-pairing)",
+                            plugin.menu_label,
                             session_file.display()
                         );
                     }
@@ -106,7 +96,9 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
             }
         }
 
-        if connection.connector_type == ConnectorType::WhatsApp {
+        let plugin = connectors::by_id(connection.connector_type.as_str());
+
+        if plugin.is_some_and(|p| p.uses_daemon_rpc) {
             let wa = connector_factory::build_whatsapp_connector(connection, &store_path);
             wa_rpc.register(&connection.id, Arc::clone(&wa)).await;
             match wa.health_check().await {

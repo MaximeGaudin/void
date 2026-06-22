@@ -14,6 +14,8 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::{ConnectorType, HealthStatus, MessageContent};
 
+use crate::CONNECTOR_ID;
+
 use super::media;
 use super::send;
 use super::sync;
@@ -22,7 +24,7 @@ use super::TelegramConnector;
 #[async_trait]
 impl Connector for TelegramConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::Telegram
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -79,7 +81,7 @@ impl Connector for TelegramConnector {
         if !session_exists {
             return Ok(HealthStatus {
                 connection_id: self.config_id.clone(),
-                connector_type: ConnectorType::Telegram,
+                connector_type: ConnectorType::from_static(CONNECTOR_ID),
                 ok: false,
                 message: "Session file not found".to_string(),
                 last_sync: None,
@@ -97,7 +99,7 @@ impl Connector for TelegramConnector {
                 if authorized {
                     Ok(HealthStatus {
                         connection_id: self.config_id.clone(),
-                        connector_type: ConnectorType::Telegram,
+                        connector_type: ConnectorType::from_static(CONNECTOR_ID),
                         ok: true,
                         message: "Connected and authenticated".to_string(),
                         last_sync: None,
@@ -106,7 +108,7 @@ impl Connector for TelegramConnector {
                 } else {
                     Ok(HealthStatus {
                         connection_id: self.config_id.clone(),
-                        connector_type: ConnectorType::Telegram,
+                        connector_type: ConnectorType::from_static(CONNECTOR_ID),
                         ok: false,
                         message: "Session exists but not authorized. Run `void setup`.".to_string(),
                         last_sync: None,
@@ -116,7 +118,7 @@ impl Connector for TelegramConnector {
             }
             Err(e) => Ok(HealthStatus {
                 connection_id: self.config_id.clone(),
-                connector_type: ConnectorType::Telegram,
+                connector_type: ConnectorType::from_static(CONNECTOR_ID),
                 ok: false,
                 message: format!("Connection failed: {e}"),
                 last_sync: None,

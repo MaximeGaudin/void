@@ -2,26 +2,29 @@ use super::*;
 
 #[test]
 fn connector_type_display() {
-    assert_eq!(ConnectorType::WhatsApp.to_string(), "whatsapp");
-    assert_eq!(ConnectorType::Slack.to_string(), "slack");
-    assert_eq!(ConnectorType::Gmail.to_string(), "gmail");
-    assert_eq!(ConnectorType::Calendar.to_string(), "calendar");
-    assert_eq!(ConnectorType::Telegram.to_string(), "telegram");
-    assert_eq!(ConnectorType::HackerNews.to_string(), "hackernews");
-    assert_eq!(ConnectorType::LinkedIn.to_string(), "linkedin");
-    assert_eq!(ConnectorType::GitHub.to_string(), "github");
-}
-
-#[test]
-fn connector_type_badges() {
-    assert_eq!(ConnectorType::WhatsApp.badge(), "WA");
-    assert_eq!(ConnectorType::Slack.badge(), "SL");
-    assert_eq!(ConnectorType::Gmail.badge(), "GM");
-    assert_eq!(ConnectorType::Calendar.badge(), "CA");
-    assert_eq!(ConnectorType::Telegram.badge(), "TG");
-    assert_eq!(ConnectorType::HackerNews.badge(), "HN");
-    assert_eq!(ConnectorType::LinkedIn.badge(), "LI");
-    assert_eq!(ConnectorType::GitHub.badge(), "GH");
+    assert_eq!(
+        ConnectorType::from_static("whatsapp").to_string(),
+        "whatsapp"
+    );
+    assert_eq!(ConnectorType::from_static("slack").to_string(), "slack");
+    assert_eq!(ConnectorType::from_static("gmail").to_string(), "gmail");
+    assert_eq!(
+        ConnectorType::from_static("calendar").to_string(),
+        "calendar"
+    );
+    assert_eq!(
+        ConnectorType::from_static("telegram").to_string(),
+        "telegram"
+    );
+    assert_eq!(
+        ConnectorType::from_static("hackernews").to_string(),
+        "hackernews"
+    );
+    assert_eq!(
+        ConnectorType::from_static("linkedin").to_string(),
+        "linkedin"
+    );
+    assert_eq!(ConnectorType::from_static("github").to_string(), "github");
 }
 
 #[test]

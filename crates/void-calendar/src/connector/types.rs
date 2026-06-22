@@ -26,6 +26,7 @@ pub struct CalendarConnector {
     pub(crate) credentials_file: Option<String>,
     pub(crate) calendar_ids: Vec<String>,
     pub(crate) store_path: std::path::PathBuf,
+    pub(crate) poll_interval_secs: u64,
 }
 
 impl CalendarConnector {
@@ -34,6 +35,7 @@ impl CalendarConnector {
         credentials_file: Option<&str>,
         calendar_ids: Vec<String>,
         store_path: &std::path::Path,
+        poll_interval_secs: u64,
     ) -> Self {
         Self {
             connection_id: connection_id.to_string(),
@@ -44,6 +46,7 @@ impl CalendarConnector {
                 calendar_ids
             },
             store_path: store_path.to_path_buf(),
+            poll_interval_secs,
         }
     }
 }

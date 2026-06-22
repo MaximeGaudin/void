@@ -2,7 +2,37 @@ use std::path::PathBuf;
 
 use crate::models::ConnectorType;
 
-use super::{StoreMode, *};
+use super::{
+    empty_settings, settings_set_opt_string, settings_set_string, settings_str, settings_string,
+    settings_string_list, settings_u32, StoreMode, *,
+};
+fn test_slack_settings(
+    app_token: &str,
+    user_token: &str,
+    app_id: Option<&str>,
+    config_refresh_token: Option<&str>,
+) -> toml::Table {
+    let mut settings = empty_settings();
+    settings_set_string(&mut settings, "app_token", app_token);
+    settings_set_string(&mut settings, "user_token", user_token);
+    settings_set_opt_string(&mut settings, "app_id", app_id.map(|s| s.to_string()));
+    settings_set_opt_string(
+        &mut settings,
+        "config_refresh_token",
+        config_refresh_token.map(|s| s.to_string()),
+    );
+    settings
+}
+
+fn test_gmail_settings(credentials_file: Option<&str>) -> toml::Table {
+    let mut settings = empty_settings();
+    settings_set_opt_string(
+        &mut settings,
+        "credentials_file",
+        credentials_file.map(|s| s.to_string()),
+    );
+    settings
+}
 
 #[test]
 fn parse_valid_config() {
@@ -37,17 +67,23 @@ calendar_ids = ["primary", "holidays"]
 "#;
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert_eq!(config.connections.len(), 4);
-    assert_eq!(config.sync.gmail_poll_interval_secs, 15);
-    assert_eq!(config.sync.calendar_poll_interval_secs, 120);
+    assert_eq!(config.sync.gmail_poll_interval_secs(), 15);
+    assert_eq!(config.sync.calendar_poll_interval_secs(), 120);
     assert_eq!(
         config.connections[0].connector_type,
-        ConnectorType::WhatsApp
+        ConnectorType::from_static("whatsapp")
     );
-    assert_eq!(config.connections[1].connector_type, ConnectorType::Slack);
-    assert_eq!(config.connections[2].connector_type, ConnectorType::Gmail);
+    assert_eq!(
+        config.connections[1].connector_type,
+        ConnectorType::from_static("slack")
+    );
+    assert_eq!(
+        config.connections[2].connector_type,
+        ConnectorType::from_static("gmail")
+    );
     assert_eq!(
         config.connections[3].connector_type,
-        ConnectorType::Calendar
+        ConnectorType::from_static("calendar")
     );
 }
 
@@ -55,9 +91,9 @@ calendar_ids = ["primary", "holidays"]
 fn parse_empty_config() {
     let config: VoidConfig = toml::from_str("").unwrap();
     assert!(config.connections.is_empty());
-    assert_eq!(config.sync.gmail_poll_interval_secs, 30);
-    assert_eq!(config.sync.calendar_poll_interval_secs, 60);
-    assert_eq!(config.sync.hackernews_poll_interval_secs, 3600);
+    assert_eq!(config.sync.gmail_poll_interval_secs(), 30);
+    assert_eq!(config.sync.calendar_poll_interval_secs(), 60);
+    assert_eq!(config.sync.hackernews_poll_interval_secs(), 3600);
 }
 
 #[test]
@@ -67,8 +103,8 @@ fn parse_defaults() {
     assert!(!config.store.path.is_empty());
     #[cfg(not(windows))]
     assert!(config.store.path.contains(".local/share/void"));
-    assert_eq!(config.sync.gmail_poll_interval_secs, 30);
-    assert_eq!(config.sync.hackernews_poll_interval_secs, 3600);
+    assert_eq!(config.sync.gmail_poll_interval_secs(), 30);
+    assert_eq!(config.sync.hackernews_poll_interval_secs(), 3600);
 }
 
 #[test]
@@ -105,22 +141,15 @@ fn find_connection_returns_match() {
         connections: vec![
             ConnectionConfig {
                 id: "work-slack".into(),
-                connector_type: ConnectorType::Slack,
+                connector_type: ConnectorType::from_static("slack"),
                 ignore_conversations: vec![],
-                settings: ConnectionSettings::Slack {
-                    app_token: "xapp".into(),
-                    user_token: "xoxp".into(),
-                    app_id: None,
-                    config_refresh_token: None,
-                },
+                settings: test_slack_settings("xapp", "xoxp", None, None),
             },
             ConnectionConfig {
                 id: "personal-gmail".into(),
-                connector_type: ConnectorType::Gmail,
+                connector_type: ConnectorType::from_static("gmail"),
                 ignore_conversations: vec![],
-                settings: ConnectionSettings::Gmail {
-                    credentials_file: Some("creds.json".into()),
-                },
+                settings: test_gmail_settings(Some("creds.json")),
             },
         ],
     };
@@ -139,11 +168,9 @@ fn find_connection_by_connector_returns_match() {
         sync: SyncConfig::default(),
         connections: vec![ConnectionConfig {
             id: "gmail-1".into(),
-            connector_type: ConnectorType::Gmail,
+            connector_type: ConnectorType::from_static("gmail"),
             ignore_conversations: vec![],
-            settings: ConnectionSettings::Gmail {
-                credentials_file: Some("creds.json".into()),
-            },
+            settings: test_gmail_settings(Some("creds.json")),
         }],
     };
     assert!(config.find_connection_by_connector("gmail").is_some());
@@ -184,9 +211,9 @@ fn save_and_load_roundtrip() {
         sync: SyncConfig::default(),
         connections: vec![ConnectionConfig {
             id: "wa".to_string(),
-            connector_type: ConnectorType::WhatsApp,
+            connector_type: ConnectorType::from_static("whatsapp"),
             ignore_conversations: vec![],
-            settings: ConnectionSettings::WhatsApp {},
+            settings: empty_settings(),
         }],
     };
 
@@ -210,21 +237,17 @@ calendar_ids = ["primary"]
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert_eq!(
         config.connections[0].connector_type,
-        ConnectorType::Calendar
+        ConnectorType::from_static("calendar")
     );
-    match &config.connections[0].settings {
-        ConnectionSettings::Calendar {
-            credentials_file,
-            calendar_ids,
-        } => {
-            assert_eq!(
-                credentials_file.as_deref(),
-                Some("~/.config/void/google-creds.json")
-            );
-            assert_eq!(calendar_ids, &["primary"]);
-        }
-        other => panic!("expected Calendar settings, got {other:?}"),
-    }
+    let settings = &config.connections[0].settings;
+    assert_eq!(
+        settings_string(settings, "credentials_file"),
+        Some("~/.config/void/google-creds.json".to_string())
+    );
+    assert_eq!(
+        settings_string_list(settings, "calendar_ids"),
+        vec!["primary".to_string()]
+    );
 }
 
 #[test]
@@ -238,14 +261,9 @@ credentials_file = "creds.json"
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert_eq!(
         config.connections[0].connector_type,
-        ConnectorType::Calendar
+        ConnectorType::from_static("calendar")
     );
-    match &config.connections[0].settings {
-        ConnectionSettings::Calendar { calendar_ids, .. } => {
-            assert!(calendar_ids.is_empty());
-        }
-        other => panic!("expected Calendar settings, got {other:?}"),
-    }
+    assert!(settings_string_list(&config.connections[0].settings, "calendar_ids").is_empty());
 }
 
 #[test]
@@ -260,17 +278,12 @@ app_id = "A0123456"
 config_refresh_token = "xoxe-test-token"
 "#;
     let config: VoidConfig = toml::from_str(toml).unwrap();
-    match &config.connections[0].settings {
-        ConnectionSettings::Slack {
-            app_id,
-            config_refresh_token,
-            ..
-        } => {
-            assert_eq!(app_id.as_deref(), Some("A0123456"));
-            assert_eq!(config_refresh_token.as_deref(), Some("xoxe-test-token"));
-        }
-        other => panic!("expected Slack settings, got {other:?}"),
-    }
+    let settings = &config.connections[0].settings;
+    assert_eq!(settings_str(settings, "app_id"), Some("A0123456"));
+    assert_eq!(
+        settings_str(settings, "config_refresh_token"),
+        Some("xoxe-test-token")
+    );
 }
 
 #[test]
@@ -288,14 +301,9 @@ fn migrate_slack_sidecar_token_into_config() {
         sync: SyncConfig::default(),
         connections: vec![ConnectionConfig {
             id: "work-slack".into(),
-            connector_type: ConnectorType::Slack,
+            connector_type: ConnectorType::from_static("slack"),
             ignore_conversations: vec![],
-            settings: ConnectionSettings::Slack {
-                app_token: "xapp".into(),
-                user_token: "xoxp".into(),
-                app_id: Some("A0123456".into()),
-                config_refresh_token: None,
-            },
+            settings: test_slack_settings("xapp", "xoxp", Some("A0123456"), None),
         }],
     };
     config.save(&config_path).unwrap();
@@ -307,15 +315,10 @@ fn migrate_slack_sidecar_token_into_config() {
     .unwrap();
 
     let loaded = VoidConfig::load(&config_path).unwrap();
-    match &loaded.connections[0].settings {
-        ConnectionSettings::Slack {
-            config_refresh_token,
-            ..
-        } => {
-            assert_eq!(config_refresh_token.as_deref(), Some("xoxe-from-sidecar"));
-        }
-        other => panic!("expected Slack settings, got {other:?}"),
-    }
+    assert_eq!(
+        settings_str(&loaded.connections[0].settings, "config_refresh_token"),
+        Some("xoxe-from-sidecar")
+    );
     assert!(!store_dir
         .join("slack-config-token-work-slack.json")
         .exists());
@@ -334,10 +337,7 @@ user_token = "xoxp-test"
 "#;
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert_eq!(config.connections.len(), 1);
-    match &config.connections[0].settings {
-        ConnectionSettings::Slack { .. } => {}
-        _ => panic!("expected Slack settings"),
-    }
+    assert!(settings_str(&config.connections[0].settings, "app_token").is_some());
 }
 
 #[test]
@@ -351,10 +351,7 @@ user_token = "xoxp-test"
 exclude_channels = ["random", "social", "C07ABC123"]
 "#;
     let config: VoidConfig = toml::from_str(toml).unwrap();
-    match &config.connections[0].settings {
-        ConnectionSettings::Slack { .. } => {}
-        _ => panic!("expected Slack settings"),
-    }
+    assert!(settings_str(&config.connections[0].settings, "app_token").is_some());
 }
 
 #[test]
@@ -369,25 +366,21 @@ min_score = 50
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert_eq!(
         config.connections[0].connector_type,
-        ConnectorType::HackerNews
+        ConnectorType::from_static("hackernews")
     );
-    match &config.connections[0].settings {
-        ConnectionSettings::HackerNews {
-            keywords,
-            min_score,
-        } => {
-            assert_eq!(keywords, &["rust", "ai", "startup"]);
-            assert_eq!(*min_score, 50);
-        }
-        other => panic!("expected HackerNews settings, got {other:?}"),
-    }
+    let settings = &config.connections[0].settings;
+    assert_eq!(
+        settings_string_list(settings, "keywords"),
+        vec!["rust".to_string(), "ai".to_string(), "startup".to_string()]
+    );
+    assert_eq!(settings_u32(settings, "min_score"), Some(50));
 }
 
 #[test]
 fn sync_config_linkedin_defaults() {
     let sync = SyncConfig::default();
-    assert_eq!(sync.linkedin_poll_interval_secs, 30 * 60);
-    assert_eq!(sync.linkedin_backfill_days, 15);
+    assert_eq!(sync.linkedin_poll_interval_secs(), 30 * 60);
+    assert_eq!(sync.linkedin_backfill_days(), 15);
 }
 
 #[test]
@@ -403,20 +396,15 @@ account_id = "acc-123"
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert_eq!(
         config.connections[0].connector_type,
-        ConnectorType::LinkedIn
+        ConnectorType::from_static("linkedin")
     );
-    match &config.connections[0].settings {
-        ConnectionSettings::LinkedIn {
-            api_key,
-            dsn,
-            account_id,
-        } => {
-            assert_eq!(api_key, "test-api-key");
-            assert_eq!(dsn, "https://api1.unipile.com:13111");
-            assert_eq!(account_id, "acc-123");
-        }
-        other => panic!("expected LinkedIn settings, got {other:?}"),
-    }
+    let settings = &config.connections[0].settings;
+    assert_eq!(settings_str(settings, "api_key"), Some("test-api-key"));
+    assert_eq!(
+        settings_str(settings, "dsn"),
+        Some("https://api1.unipile.com:13111")
+    );
+    assert_eq!(settings_str(settings, "account_id"), Some("acc-123"));
 }
 
 #[test]
@@ -429,18 +417,11 @@ type = "hackernews"
     let config: VoidConfig = toml::from_str(toml).unwrap();
     assert_eq!(
         config.connections[0].connector_type,
-        ConnectorType::HackerNews
+        ConnectorType::from_static("hackernews")
     );
-    match &config.connections[0].settings {
-        ConnectionSettings::HackerNews {
-            keywords,
-            min_score,
-        } => {
-            assert!(keywords.is_empty());
-            assert_eq!(*min_score, 0);
-        }
-        other => panic!("expected HackerNews settings, got {other:?}"),
-    }
+    let settings = &config.connections[0].settings;
+    assert!(settings_string_list(settings, "keywords").is_empty());
+    assert_eq!(settings_u32(settings, "min_score"), None);
 }
 
 #[test]
@@ -484,14 +465,9 @@ fn add_and_remove_ignore_conversation() {
         sync: SyncConfig::default(),
         connections: vec![ConnectionConfig {
             id: "work-slack".into(),
-            connector_type: ConnectorType::Slack,
+            connector_type: ConnectorType::from_static("slack"),
             ignore_conversations: vec!["random".into()],
-            settings: ConnectionSettings::Slack {
-                app_token: "xapp".into(),
-                user_token: "xoxp".into(),
-                app_id: None,
-                config_refresh_token: None,
-            },
+            settings: test_slack_settings("xapp", "xoxp", None, None),
         }],
     };
 
@@ -664,10 +640,13 @@ type = "whatsapp"
         "accounts surfaced as connections"
     );
     assert_eq!(config.connections[0].id, "work-slack");
-    assert_eq!(config.connections[0].connector_type, ConnectorType::Slack);
+    assert_eq!(
+        config.connections[0].connector_type,
+        ConnectorType::from_static("slack")
+    );
     assert_eq!(
         config.connections[1].connector_type,
-        ConnectorType::WhatsApp
+        ConnectorType::from_static("whatsapp")
     );
 }
 
@@ -693,7 +672,7 @@ type = "whatsapp"
     assert_eq!(config.connections.len(), 1);
     assert_eq!(
         config.connections[0].connector_type,
-        ConnectorType::WhatsApp
+        ConnectorType::from_static("whatsapp")
     );
 
     // The on-disk file is migrated in place to the new table name.
@@ -710,38 +689,29 @@ type = "whatsapp"
     std::fs::remove_dir_all(&dir).ok();
 }
 
-// ---- Area F: unknown connector type → clear error, not a panic ----
+// ---- Area F: unknown connector type parses (validated at runtime via registry) ----
 
 #[test]
-fn parse_unknown_connector_type_returns_error_not_panic() {
+fn parse_unknown_connector_type_is_accepted_at_load() {
     let toml = r#"
 [[connections]]
 id = "mystery"
 type = "myspace"
 "#;
-    let result = VoidConfig::parse(toml);
-    assert!(result.is_err(), "unknown connector type must be an error");
-    // It is a TOML parse error (unknown enum variant), surfaced cleanly.
-    let err = result.unwrap_err();
-    assert!(
-        matches!(err, crate::error::ConfigError::TomlParse(_)),
-        "expected TomlParse error, got: {err:?}"
-    );
-    let msg = err.to_string();
-    assert!(
-        msg.contains("myspace") || msg.to_lowercase().contains("variant"),
-        "error should mention the bad value or enum: {msg}"
-    );
+    let config = VoidConfig::parse(toml).expect("unknown types are stored as strings");
+    assert_eq!(config.connections[0].connector_type.as_str(), "myspace");
 }
 
 #[test]
-fn raw_toml_unknown_connector_type_does_not_panic() {
-    // Direct toml::from_str must also error rather than panic.
+fn raw_toml_unknown_connector_type_deserializes() {
     let toml = r#"
 [[connections]]
 id = "x"
 type = "definitely-not-a-connector"
 "#;
-    let result: Result<VoidConfig, _> = toml::from_str(toml);
-    assert!(result.is_err());
+    let config: VoidConfig = toml::from_str(toml).expect("deserialize");
+    assert_eq!(
+        config.connections[0].connector_type.as_str(),
+        "definitely-not-a-connector"
+    );
 }

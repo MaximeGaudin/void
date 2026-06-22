@@ -1,4 +1,4 @@
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{empty_settings, settings_set_string, ConnectionConfig, VoidConfig};
 use void_core::models::ConnectorType;
 
 use super::auth::{pick_connector_action, ConnectorAction};
@@ -15,12 +15,13 @@ pub(crate) async fn setup_github(cfg: &mut VoidConfig, add_only: bool) -> anyhow
     eprintln!("Create a Personal Access Token with at least the `notifications` scope.");
     eprintln!("For private repositories, also grant `repo` (classic) or Pull requests read access (fine-grained).");
 
+    let gh_type = ConnectorType::from_static(void_github::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::GitHub)
+            .filter(|(_, a)| a.connector_type == gh_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -49,14 +50,15 @@ pub(crate) async fn setup_github(cfg: &mut VoidConfig, add_only: bool) -> anyhow
 
     let connection_id = prompt_default("\nAccount name", "github");
 
+    let mut settings = empty_settings();
+    settings_set_string(&mut settings, "token", token.trim());
+    settings_set_string(&mut settings, "username", &username);
+
     let connection = ConnectionConfig {
         id: connection_id,
-        connector_type: ConnectorType::GitHub,
+        connector_type: gh_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::GitHub {
-            token: token.trim().to_string(),
-            username,
-        },
+        settings,
     };
 
     cfg.connections.push(connection);

@@ -8,12 +8,14 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::*;
 
+use crate::CONNECTOR_ID;
+
 use super::SlackConnector;
 
 #[async_trait]
 impl Connector for SlackConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::Slack
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -95,7 +97,7 @@ impl Connector for SlackConnector {
                 warn!(connection_id = %self.connection_id, error = %e, "Slack health check failed");
                 return Ok(HealthStatus {
                     connection_id: self.connection_id.clone(),
-                    connector_type: ConnectorType::Slack,
+                    connector_type: ConnectorType::from_static(CONNECTOR_ID),
                     ok: false,
                     message: format!("Auth failed: {e}"),
                     last_sync: None,
@@ -107,7 +109,7 @@ impl Connector for SlackConnector {
         if self.app_id.is_some() && !self.has_config_refresh_token() {
             return Ok(HealthStatus {
                 connection_id: self.connection_id.clone(),
-                connector_type: ConnectorType::Slack,
+                connector_type: ConnectorType::from_static(CONNECTOR_ID),
                 ok: false,
                 message: "Auth OK, but missing config_refresh_token (run void setup again to restore auto-repair)".to_string(),
                 last_sync: None,
@@ -117,7 +119,7 @@ impl Connector for SlackConnector {
 
         Ok(HealthStatus {
             connection_id: self.connection_id.clone(),
-            connector_type: ConnectorType::Slack,
+            connector_type: ConnectorType::from_static(CONNECTOR_ID),
             ok: true,
             message: format!(
                 "Authenticated as {} in {}",

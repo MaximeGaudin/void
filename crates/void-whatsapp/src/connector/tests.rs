@@ -3,6 +3,7 @@ use void_core::models::{ConnectorType, MessageContent};
 
 use super::send::build_wa_message;
 use super::*;
+use crate::CONNECTOR_ID;
 use wa_rs::download::MediaType as WaMediaType;
 use wa_rs_proto::whatsapp::message::ExtendedTextMessage;
 use wa_rs_proto::whatsapp::{ContextInfo, Message as WaMessage};
@@ -18,7 +19,10 @@ async fn health_check_missing_session_db_suggests_setup() {
     assert!(!status.ok);
     assert!(status.message.contains("setup"));
     assert_eq!(status.connection_id, "test-conn");
-    assert_eq!(status.connector_type, ConnectorType::WhatsApp);
+    assert_eq!(
+        status.connector_type,
+        ConnectorType::from_static(CONNECTOR_ID)
+    );
 }
 
 #[tokio::test]
@@ -33,7 +37,10 @@ async fn health_check_empty_session_db_file_is_ok() {
     assert!(status.ok);
     assert!(status.message.contains("session"));
     assert_eq!(status.connection_id, "test-conn");
-    assert_eq!(status.connector_type, ConnectorType::WhatsApp);
+    assert_eq!(
+        status.connector_type,
+        ConnectorType::from_static(CONNECTOR_ID)
+    );
 
     let _ = std::fs::remove_file(&session_path);
 }

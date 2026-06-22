@@ -49,7 +49,7 @@ impl MockConnector {
 #[async_trait]
 impl Connector for MockConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::Slack
+        ConnectorType::from_static("slack")
     }
 
     fn connection_id(&self) -> &str {
@@ -82,7 +82,7 @@ impl Connector for MockConnector {
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
         Ok(HealthStatus {
             connection_id: self.connection_id.clone(),
-            connector_type: ConnectorType::Slack,
+            connector_type: ConnectorType::from_static("slack"),
             ok: true,
             message: "ok".into(),
             last_sync: None,

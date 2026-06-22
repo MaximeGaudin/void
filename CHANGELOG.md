@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Internal** — Connector wiring uses a compile-time plugin registry (`inventory`). `ConnectorType` is a string newtype; connection settings are a generic TOML table. Adding a connector no longer edits ~13 central files. Connection settings are validated at setup reload, sync start, and `void doctor`. Poll intervals are read from `[sync]` via the generic `{id}_poll_interval_secs` keys. No user-facing CLI behavior change.
+- **Internal** — Expanded connector registry tests (validation, build, badges, aliases, debug redaction, poll defaults).
 - **Build** — Bump minimum supported Rust version to 1.95 (required by sysinfo 0.39).
 
 ### Added

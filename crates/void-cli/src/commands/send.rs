@@ -2,11 +2,11 @@ use clap::Args;
 use tracing::{debug, info};
 
 use void_core::config::VoidConfig;
-use void_core::models::ConnectorType;
 use void_core::models::MessageContent;
 use void_core::sync::is_daemon_running;
 
 use crate::commands::connector_factory;
+use crate::connectors;
 use crate::output::parse_connector_type;
 
 #[derive(Debug, Args)]
@@ -67,8 +67,11 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         })
         .ok_or_else(|| anyhow::anyhow!("No {target_type} connection found in config.toml"))?;
 
+    let plugin = connectors::by_id(connection.connector_type.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
+
     if let Some(ref at_str) = args.at {
-        if connection.connector_type != ConnectorType::Slack {
+        if !plugin.supports_scheduling {
             anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
         }
         let to = args
@@ -101,7 +104,7 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         }
     };
 
-    let msg_id = if connector_type == ConnectorType::WhatsApp && is_daemon_running(&store_path) {
+    let msg_id = if plugin.uses_daemon_rpc && is_daemon_running(&store_path) {
         void_whatsapp::rpc::send_message(&store_path, &connection.id, &to, content).await?
     } else {
         let conn = connector_factory::build_connector(connection, &store_path)?;
@@ -126,14 +129,10 @@ async fn run_slack_scheduled_send(
         anyhow::bail!("Scheduled time must be in the future.");
     }
 
-    let (user_token, app_token) = match &connection.settings {
-        void_core::config::ConnectionSettings::Slack {
-            user_token,
-            app_token,
-            ..
-        } => (user_token.clone(), app_token.clone()),
-        _ => anyhow::bail!("Mismatched settings for Slack connection"),
-    };
+    let user_token = void_core::config::settings_string(&connection.settings, "user_token")
+        .ok_or_else(|| anyhow::anyhow!("missing user_token"))?;
+    let app_token = void_core::config::settings_string(&connection.settings, "app_token")
+        .ok_or_else(|| anyhow::anyhow!("missing app_token"))?;
 
     let connector = void_slack::connector::SlackConnector::new(
         &connection.id,

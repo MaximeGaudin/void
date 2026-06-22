@@ -1,11 +1,11 @@
 use clap::Args;
 use tracing::{debug, info};
 
-use void_core::models::ConnectorType;
 use void_core::models::MessageContent;
 use void_core::sync::is_daemon_running;
 
 use crate::commands::connector_factory;
+use crate::connectors;
 use crate::output::parse_connector_type;
 
 #[derive(Debug, Args)]
@@ -50,8 +50,11 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
             )
         })?;
 
+    let plugin = connectors::by_id(connection.connector_type.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
+
     if let Some(ref at_str) = args.at {
-        if connection.connector_type != ConnectorType::Slack {
+        if !plugin.supports_scheduling {
             anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
         }
         return run_slack_scheduled_reply(
@@ -68,7 +71,7 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
 
     let store_path = crate::context::store_path();
-    let reply_id = build_reply_id(connector_type, &conv.external_id, &msg.external_id);
+    let reply_id = connectors::build_reply_id(connector_type, &conv.external_id, &msg.external_id);
 
     let content = if let Some(ref path) = args.file {
         MessageContent::File {
@@ -81,7 +84,7 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
         MessageContent::from_text(args.message.clone())
     };
 
-    let sent_id = if connector_type == ConnectorType::WhatsApp && is_daemon_running(&store_path) {
+    let sent_id = if plugin.uses_daemon_rpc && is_daemon_running(&store_path) {
         void_whatsapp::rpc::reply_message(
             &store_path,
             &connection.id,
@@ -114,14 +117,10 @@ async fn run_slack_scheduled_reply(
         anyhow::bail!("Scheduled time must be in the future.");
     }
 
-    let (user_token, app_token) = match &connection.settings {
-        void_core::config::ConnectionSettings::Slack {
-            user_token,
-            app_token,
-            ..
-        } => (user_token.clone(), app_token.clone()),
-        _ => anyhow::bail!("Mismatched settings for Slack connection"),
-    };
+    let user_token = void_core::config::settings_string(&connection.settings, "user_token")
+        .ok_or_else(|| anyhow::anyhow!("missing user_token"))?;
+    let app_token = void_core::config::settings_string(&connection.settings, "app_token")
+        .ok_or_else(|| anyhow::anyhow!("missing app_token"))?;
 
     let connector = void_slack::connector::SlackConnector::new(
         &connection.id,
@@ -146,34 +145,16 @@ async fn run_slack_scheduled_reply(
     Ok(())
 }
 
-fn build_reply_id(
-    connector_type: void_core::models::ConnectorType,
-    conv_external_id: &str,
-    msg_external_id: &str,
-) -> String {
-    use void_core::models::ConnectorType;
-    match connector_type {
-        ConnectorType::WhatsApp => format!("{conv_external_id}:{msg_external_id}"),
-        ConnectorType::Slack => format!("{conv_external_id}:{msg_external_id}"),
-        ConnectorType::Telegram => format!("{conv_external_id}:{msg_external_id}"),
-        ConnectorType::Gmail => msg_external_id.to_string(),
-        ConnectorType::Calendar => msg_external_id.to_string(),
-        ConnectorType::HackerNews => msg_external_id.to_string(),
-        ConnectorType::GoogleNews => msg_external_id.to_string(),
-        ConnectorType::LinkedIn => format!("{conv_external_id}:{msg_external_id}"),
-        ConnectorType::GitHub => msg_external_id.to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::build_reply_id;
     use void_core::models::ConnectorType;
+
+    use crate::connectors;
 
     #[test]
     fn build_reply_id_linkedin_joins_conv_and_message_external_ids() {
-        let id = build_reply_id(
-            ConnectorType::LinkedIn,
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("linkedin"),
             "linkedin_linkedin_chat-abc",
             "linkedin_linkedin_msg-xyz",
         );
@@ -182,44 +163,65 @@ mod tests {
 
     #[test]
     fn build_reply_id_whatsapp_joins_conv_and_message_external_ids() {
-        let id = build_reply_id(ConnectorType::WhatsApp, "120363@g.us", "msg-abc");
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("whatsapp"),
+            "120363@g.us",
+            "msg-abc",
+        );
         assert_eq!(id, "120363@g.us:msg-abc");
     }
 
     #[test]
     fn build_reply_id_slack_joins_conv_and_message_external_ids() {
-        let id = build_reply_id(ConnectorType::Slack, "C08UDH5JE57", "1776936528.857609");
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("slack"),
+            "C08UDH5JE57",
+            "1776936528.857609",
+        );
         assert_eq!(id, "C08UDH5JE57:1776936528.857609");
     }
 
     #[test]
     fn build_reply_id_telegram_joins_conv_and_message_external_ids() {
-        let id = build_reply_id(ConnectorType::Telegram, "chat-42", "msg-99");
+        let id =
+            connectors::build_reply_id(ConnectorType::from_static("telegram"), "chat-42", "msg-99");
         assert_eq!(id, "chat-42:msg-99");
     }
 
     #[test]
     fn build_reply_id_gmail_uses_message_external_id_only() {
-        let id = build_reply_id(ConnectorType::Gmail, "thread-ignored", "msg-rfc822-id");
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("gmail"),
+            "thread-ignored",
+            "msg-rfc822-id",
+        );
         assert_eq!(id, "msg-rfc822-id");
     }
 
     #[test]
     fn build_reply_id_hackernews_uses_message_external_id_only() {
-        let id = build_reply_id(ConnectorType::HackerNews, "story-1", "comment-42");
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("hackernews"),
+            "story-1",
+            "comment-42",
+        );
         assert_eq!(id, "comment-42");
     }
 
     #[test]
     fn build_reply_id_googlenews_uses_message_external_id_only() {
-        let id = build_reply_id(ConnectorType::GoogleNews, "feed", "article-7");
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("googlenews"),
+            "feed",
+            "article-7",
+        );
         assert_eq!(id, "article-7");
     }
 
     #[test]
     fn build_reply_id_github_uses_message_external_id_only() {
-        let id = build_reply_id(
-            ConnectorType::GitHub,
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("github"),
             "github_github_owner_repo",
             "github_github_notification_1",
         );

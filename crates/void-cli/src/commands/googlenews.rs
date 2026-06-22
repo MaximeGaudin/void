@@ -1,6 +1,9 @@
 use clap::{Args, Subcommand};
 
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{
+    settings_set_string, settings_set_string_list, settings_string, settings_string_list,
+    ConnectionConfig, VoidConfig,
+};
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -177,18 +180,10 @@ fn update_setting(field: GnField, value: String, field_name: &str) -> anyhow::Re
         .map_err(|e| anyhow::anyhow!("Cannot load config: {e}\nRun `void setup` first."))?;
 
     let conn = find_gn_connection_mut(&mut cfg)?;
-    match &mut conn.settings {
-        ConnectionSettings::GoogleNews {
-            when,
-            language,
-            country,
-            ..
-        } => match field {
-            GnField::When => *when = value.clone(),
-            GnField::Language => *language = value.clone(),
-            GnField::Country => *country = value.clone(),
-        },
-        _ => anyhow::bail!("Unexpected settings type for GoogleNews connection"),
+    match field {
+        GnField::When => settings_set_string(&mut conn.settings, "when", &value),
+        GnField::Language => settings_set_string(&mut conn.settings, "language", &value),
+        GnField::Country => settings_set_string(&mut conn.settings, "country", &value),
     }
     cfg.save(&config_path)?;
 
@@ -205,47 +200,37 @@ fn gn_connection_not_found() -> anyhow::Error {
 fn find_gn_connection(cfg: &VoidConfig) -> anyhow::Result<&ConnectionConfig> {
     cfg.connections
         .iter()
-        .find(|c| c.connector_type == ConnectorType::GoogleNews)
+        .find(|c| c.connector_type == ConnectorType::from_static(void_googlenews::CONNECTOR_ID))
         .ok_or_else(gn_connection_not_found)
 }
 
 fn find_gn_connection_mut(cfg: &mut VoidConfig) -> anyhow::Result<&mut ConnectionConfig> {
     cfg.connections
         .iter_mut()
-        .find(|c| c.connector_type == ConnectorType::GoogleNews)
+        .find(|c| c.connector_type == ConnectorType::from_static(void_googlenews::CONNECTOR_ID))
         .ok_or_else(gn_connection_not_found)
 }
 
 fn get_gn_settings(cfg: &VoidConfig) -> anyhow::Result<GnSettings> {
     let conn = find_gn_connection(cfg)?;
-    match &conn.settings {
-        ConnectionSettings::GoogleNews {
-            keywords,
-            when,
-            language,
-            country,
-        } => Ok(GnSettings {
-            keywords: keywords.clone(),
-            when: when.clone(),
-            language: language.clone(),
-            country: country.clone(),
-        }),
-        _ => anyhow::bail!("Unexpected settings type for GoogleNews connection"),
-    }
+    Ok(GnSettings {
+        keywords: settings_string_list(&conn.settings, "keywords"),
+        when: settings_string(&conn.settings, "when")
+            .unwrap_or_default()
+            .to_string(),
+        language: settings_string(&conn.settings, "language")
+            .unwrap_or_default()
+            .to_string(),
+        country: settings_string(&conn.settings, "country")
+            .unwrap_or_default()
+            .to_string(),
+    })
 }
 
 fn set_gn_keywords(cfg: &mut VoidConfig, keywords: Vec<String>) -> anyhow::Result<()> {
     let conn = find_gn_connection_mut(cfg)?;
-    match &mut conn.settings {
-        ConnectionSettings::GoogleNews {
-            keywords: ref mut kw,
-            ..
-        } => {
-            *kw = keywords;
-            Ok(())
-        }
-        _ => anyhow::bail!("Unexpected settings type for GoogleNews connection"),
-    }
+    settings_set_string_list(&mut conn.settings, "keywords", &keywords);
+    Ok(())
 }
 
 fn parse_csv(s: &str) -> Vec<String> {

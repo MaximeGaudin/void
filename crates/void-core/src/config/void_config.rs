@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::ConfigError;
-use crate::models::ConnectorType;
 
-use super::connection::{ConnectionConfig, ConnectionSettings};
+use std::collections::HashMap;
+
+use super::connection::{settings_set_opt_string, settings_str, ConnectionConfig};
 use super::paths::expand_tilde;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -138,33 +139,89 @@ fn default_store_path() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
-    #[serde(default = "default_gmail_poll")]
-    pub gmail_poll_interval_secs: u64,
-    #[serde(default = "default_calendar_poll")]
-    pub calendar_poll_interval_secs: u64,
-    #[serde(default = "default_hackernews_poll")]
-    pub hackernews_poll_interval_secs: u64,
-    #[serde(default = "default_googlenews_poll")]
-    pub googlenews_poll_interval_secs: u64,
-    #[serde(default = "default_linkedin_poll")]
-    pub linkedin_poll_interval_secs: u64,
-    #[serde(default = "default_linkedin_backfill_days")]
-    pub linkedin_backfill_days: u64,
-    #[serde(default = "default_github_poll")]
-    pub github_poll_interval_secs: u64,
+    #[serde(flatten)]
+    values: HashMap<String, toml::Value>,
 }
 
 impl Default for SyncConfig {
     fn default() -> Self {
-        Self {
-            gmail_poll_interval_secs: default_gmail_poll(),
-            calendar_poll_interval_secs: default_calendar_poll(),
-            hackernews_poll_interval_secs: default_hackernews_poll(),
-            googlenews_poll_interval_secs: default_googlenews_poll(),
-            linkedin_poll_interval_secs: default_linkedin_poll(),
-            linkedin_backfill_days: default_linkedin_backfill_days(),
-            github_poll_interval_secs: default_github_poll(),
-        }
+        let mut values = HashMap::new();
+        values.insert(
+            "gmail_poll_interval_secs".into(),
+            toml::Value::Integer(default_gmail_poll() as i64),
+        );
+        values.insert(
+            "calendar_poll_interval_secs".into(),
+            toml::Value::Integer(default_calendar_poll() as i64),
+        );
+        values.insert(
+            "hackernews_poll_interval_secs".into(),
+            toml::Value::Integer(default_hackernews_poll() as i64),
+        );
+        values.insert(
+            "googlenews_poll_interval_secs".into(),
+            toml::Value::Integer(default_googlenews_poll() as i64),
+        );
+        values.insert(
+            "linkedin_poll_interval_secs".into(),
+            toml::Value::Integer(default_linkedin_poll() as i64),
+        );
+        values.insert(
+            "linkedin_backfill_days".into(),
+            toml::Value::Integer(default_linkedin_backfill_days() as i64),
+        );
+        values.insert(
+            "github_poll_interval_secs".into(),
+            toml::Value::Integer(default_github_poll() as i64),
+        );
+        Self { values }
+    }
+}
+
+impl SyncConfig {
+    pub fn poll_interval_secs(&self, connector_id: &str, default: u64) -> u64 {
+        let key = format!("{connector_id}_poll_interval_secs");
+        self.values
+            .get(&key)
+            .and_then(|v| v.as_integer())
+            .and_then(|i| u64::try_from(i).ok())
+            .unwrap_or(default)
+    }
+
+    pub fn linkedin_backfill_days(&self) -> u64 {
+        self.values
+            .get("linkedin_backfill_days")
+            .and_then(|v| v.as_integer())
+            .and_then(|i| u64::try_from(i).ok())
+            .unwrap_or(default_linkedin_backfill_days())
+    }
+
+    pub fn gmail_poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs("gmail", default_gmail_poll())
+    }
+
+    pub fn calendar_poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs("calendar", default_calendar_poll())
+    }
+
+    pub fn hackernews_poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs("hackernews", default_hackernews_poll())
+    }
+
+    pub fn googlenews_poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs("googlenews", default_googlenews_poll())
+    }
+
+    pub fn linkedin_poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs("linkedin", default_linkedin_poll())
+    }
+
+    pub fn github_poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs("github", default_github_poll())
+    }
+
+    pub fn iter_values(&self) -> impl Iterator<Item = (&String, &toml::Value)> {
+        self.values.iter()
     }
 }
 
@@ -271,19 +328,9 @@ impl VoidConfig {
 
     /// Find a config connection by connector type string (e.g. "slack", "gmail", "whatsapp", "telegram").
     pub fn find_connection_by_connector(&self, connector: &str) -> Option<&ConnectionConfig> {
-        let target = match connector {
-            "whatsapp" => ConnectorType::WhatsApp,
-            "slack" => ConnectorType::Slack,
-            "gmail" => ConnectorType::Gmail,
-            "calendar" => ConnectorType::Calendar,
-            "telegram" => ConnectorType::Telegram,
-            "hackernews" => ConnectorType::HackerNews,
-            "googlenews" => ConnectorType::GoogleNews,
-            "linkedin" => ConnectorType::LinkedIn,
-            "github" => ConnectorType::GitHub,
-            _ => return None,
-        };
-        self.connections.iter().find(|a| a.connector_type == target)
+        self.connections
+            .iter()
+            .find(|a| a.connector_type.as_str() == connector)
     }
 
     /// Import Slack config refresh tokens from legacy sidecar files in the store.
@@ -292,24 +339,21 @@ impl VoidConfig {
         let store_path = self.store_path();
         let mut migrated = false;
         for conn in &mut self.connections {
-            if conn.connector_type != ConnectorType::Slack {
+            if conn.connector_type.as_str() != "slack" {
                 continue;
             }
-            let ConnectionSettings::Slack {
-                config_refresh_token,
-                ..
-            } = &mut conn.settings
-            else {
-                continue;
-            };
-            if config_refresh_token.is_some() {
+            if settings_str(&conn.settings, "config_refresh_token").is_some() {
                 continue;
             }
             let sidecar = store_path.join(format!("slack-config-token-{}.json", conn.id));
             if let Ok(content) = std::fs::read_to_string(&sidecar) {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
                     if let Some(token) = value.get("refresh_token").and_then(|v| v.as_str()) {
-                        *config_refresh_token = Some(token.to_string());
+                        settings_set_opt_string(
+                            &mut conn.settings,
+                            "config_refresh_token",
+                            Some(token.to_string()),
+                        );
                         migrated = true;
                     }
                 }
@@ -327,14 +371,14 @@ impl VoidConfig {
         let Some(conn) = self.connections.iter_mut().find(|c| c.id == connection_id) else {
             return false;
         };
-        let ConnectionSettings::Slack {
-            config_refresh_token,
-            ..
-        } = &mut conn.settings
-        else {
+        if conn.connector_type.as_str() != "slack" {
             return false;
-        };
-        *config_refresh_token = token;
+        }
+        if token.is_none() {
+            conn.settings.remove("config_refresh_token");
+        } else {
+            settings_set_opt_string(&mut conn.settings, "config_refresh_token", token);
+        }
         true
     }
 

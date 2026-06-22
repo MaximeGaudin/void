@@ -17,6 +17,7 @@ use void_core::models::*;
 
 use crate::api::GmailApiClient;
 use crate::auth;
+use crate::CONNECTOR_ID;
 
 use super::compose::{
     build_forward_body, compose_rfc2822, compose_rfc2822_ex, compose_rfc2822_with_attachment,
@@ -26,7 +27,7 @@ use super::GmailConnector;
 #[async_trait]
 impl Connector for GmailConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::Gmail
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -56,7 +57,7 @@ impl Connector for GmailConnector {
     async fn start_sync(&self, db: Arc<Database>, cancel: CancellationToken) -> anyhow::Result<()> {
         self.initial_sync(&db).await?;
 
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        let mut interval = tokio::time::interval(Duration::from_secs(self.poll_interval_secs));
         let mut last_sync = SystemTime::now();
         loop {
             tokio::select! {
@@ -96,7 +97,7 @@ impl Connector for GmailConnector {
             Ok(api) => match api.get_profile().await {
                 Ok(profile) => Ok(HealthStatus {
                     connection_id: self.config_id.clone(),
-                    connector_type: ConnectorType::Gmail,
+                    connector_type: ConnectorType::from_static(CONNECTOR_ID),
                     ok: true,
                     message: format!(
                         "Authenticated as {}",
@@ -109,7 +110,7 @@ impl Connector for GmailConnector {
                     warn!(connection_id = %self.config_id, error = %e, "Gmail health check API error");
                     Ok(HealthStatus {
                         connection_id: self.config_id.clone(),
-                        connector_type: ConnectorType::Gmail,
+                        connector_type: ConnectorType::from_static(CONNECTOR_ID),
                         ok: false,
                         message: format!("API error: {e}"),
                         last_sync: None,
@@ -121,7 +122,7 @@ impl Connector for GmailConnector {
                 warn!(connection_id = %self.config_id, error = %e, "Gmail health check auth error");
                 Ok(HealthStatus {
                     connection_id: self.config_id.clone(),
-                    connector_type: ConnectorType::Gmail,
+                    connector_type: ConnectorType::from_static(CONNECTOR_ID),
                     ok: false,
                     message: format!("Auth error: {e}"),
                     last_sync: None,

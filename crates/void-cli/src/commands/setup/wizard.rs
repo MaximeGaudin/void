@@ -3,38 +3,32 @@ use std::path::Path;
 use void_core::config::VoidConfig;
 
 use super::prompt::{confirm_default_yes, separator};
-use super::{calendar, github, gmail, googlenews, hackernews, linkedin, slack, telegram, whatsapp};
 use crate::commands::sync;
+use crate::connectors::{self, SetupCtx};
 
 pub(crate) async fn run_full_wizard(
     cfg: &mut VoidConfig,
     store_path: &Path,
     config_path: &Path,
 ) -> anyhow::Result<()> {
+    let plugins = connectors::all();
     eprintln!();
     eprintln!("This wizard will guide you through connecting your");
-    eprintln!("communication services (Gmail, Slack, WhatsApp, Telegram,");
-    eprintln!("Google Calendar, Hacker News, Google News, LinkedIn, GitHub) to Void.");
+    eprintln!("communication services to Void:");
+    for plugin in &plugins {
+        eprintln!("  • {}", plugin.menu_label);
+    }
     eprintln!();
 
-    separator();
-    gmail::setup_gmail(cfg, store_path, false).await?;
-    separator();
-    slack::setup_slack(cfg, store_path, false).await?;
-    separator();
-    whatsapp::setup_whatsapp(cfg, store_path, false).await?;
-    separator();
-    telegram::setup_telegram(cfg, store_path, false).await?;
-    separator();
-    calendar::setup_calendar(cfg, store_path, false).await?;
-    separator();
-    hackernews::setup_hackernews(cfg, false)?;
-    separator();
-    googlenews::setup_googlenews(cfg, false)?;
-    separator();
-    linkedin::setup_linkedin(cfg, store_path, false).await?;
-    separator();
-    github::setup_github(cfg, false).await?;
+    for plugin in plugins {
+        separator();
+        let ctx = SetupCtx {
+            cfg,
+            store_path,
+            add_only: false,
+        };
+        (plugin.setup)(ctx).await?;
+    }
     separator();
 
     cfg.save(config_path)?;

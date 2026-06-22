@@ -3,6 +3,7 @@ use clap::Args;
 use crate::commands::connector_factory;
 use crate::commands::mute::run_one_time_legacy_mute_migration;
 use crate::commands::setup::prompt::confirm_default_yes;
+use crate::connectors;
 use void_core::config::VoidConfig;
 use void_core::db::Database;
 
@@ -45,6 +46,11 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
     };
 
     let mut cfg = cfg;
+
+    if let Err(e) = connectors::validate_all_connections(&cfg) {
+        eprintln!("[!!] Connection settings invalid: {e}");
+        issues += 1;
+    }
 
     let db_path = cfg.db_path();
     let db = match Database::open(&db_path) {

@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use crate::commands;
 use crate::context;
@@ -109,7 +109,10 @@ fn refresh_policy_for_cli(cli: &Cli) -> void_core::store::RefreshPolicy {
 }
 
 pub fn run() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let mut cmd = Cli::command();
+    crate::output::patch_connector_arg_help(&mut cmd);
+    let matches = cmd.get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
 
     let refresh = refresh_policy_for_cli(&cli);
     context::init(

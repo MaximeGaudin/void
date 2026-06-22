@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use tracing::debug;
-use void_core::config::ConnectionSettings;
+use void_core::config::settings_string;
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -68,29 +68,28 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
             .ok_or_else(|| anyhow::anyhow!("No LinkedIn connection configured."))?
     };
 
-    if connection.connector_type != ConnectorType::LinkedIn {
+    if connection.connector_type != ConnectorType::from_static(void_linkedin::CONNECTOR_ID) {
         anyhow::bail!(
             "Connection '{}' is not a LinkedIn connection.",
             connection.id
         );
     }
 
-    let (api_key, dsn, account_id) = match &connection.settings {
-        ConnectionSettings::LinkedIn {
-            api_key,
-            dsn,
-            account_id,
-        } => (api_key.clone(), dsn.clone(), account_id.clone()),
-        _ => anyhow::bail!("Invalid LinkedIn connection settings."),
-    };
+    let api_key = settings_string(&connection.settings, "api_key")
+        .ok_or_else(|| anyhow::anyhow!("missing api_key"))?;
+    let dsn = settings_string(&connection.settings, "dsn")
+        .ok_or_else(|| anyhow::anyhow!("missing dsn"))?;
+    let account_id = settings_string(&connection.settings, "account_id")
+        .ok_or_else(|| anyhow::anyhow!("missing account_id"))?;
 
     let connector = void_linkedin::connector::LinkedInConnector::new(
         &connection.id,
         &api_key,
         &dsn,
         &account_id,
-        cfg.sync.linkedin_poll_interval_secs,
-        cfg.sync.linkedin_backfill_days,
+        cfg.sync
+            .poll_interval_secs(void_linkedin::CONNECTOR_ID, 30 * 60),
+        cfg.sync.linkedin_backfill_days(),
     );
 
     debug!(

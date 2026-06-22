@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{
+    empty_settings, settings_set_opt_string, settings_set_string, ConnectionConfig, VoidConfig,
+};
 use void_core::models::ConnectorType;
 
 use super::auth::{authenticate_connection, pick_connector_action, ConnectorAction};
@@ -16,12 +18,13 @@ pub(crate) async fn setup_slack(
     eprintln!("Connects a Slack workspace. Void syncs your channels, DMs,");
     eprintln!("and lets you search and reply from the CLI.");
 
+    let slack_type = ConnectorType::from_static(void_slack::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::Slack)
+            .filter(|(_, a)| a.connector_type == slack_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -169,16 +172,15 @@ pub(crate) async fn setup_slack(
 
     let connection_id = prompt_default("Connection name", "slack");
 
+    let mut settings = empty_settings();
+    settings_set_string(&mut settings, "app_token", &app_token);
+    settings_set_string(&mut settings, "user_token", &user_token);
+
     let mut connection = ConnectionConfig {
         id: connection_id.clone(),
-        connector_type: ConnectorType::Slack,
+        connector_type: slack_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::Slack {
-            app_token,
-            user_token,
-            app_id: None,
-            config_refresh_token: None,
-        },
+        settings,
     };
 
     if confirm_default_yes("Verify tokens now?") {
@@ -215,15 +217,12 @@ pub(crate) async fn setup_slack(
         if !input_app_id.is_empty() {
             let refresh_token = prompt("Config Refresh Token (xoxe-...): ");
             if !refresh_token.is_empty() {
-                if let ConnectionSettings::Slack {
-                    app_id: ref mut cfg_app_id,
-                    config_refresh_token: ref mut cfg_refresh_token,
-                    ..
-                } = connection.settings
-                {
-                    *cfg_app_id = Some(input_app_id);
-                    *cfg_refresh_token = Some(refresh_token);
-                }
+                settings_set_opt_string(&mut connection.settings, "app_id", Some(input_app_id));
+                settings_set_opt_string(
+                    &mut connection.settings,
+                    "config_refresh_token",
+                    Some(refresh_token),
+                );
                 eprintln!("  ✓ Auto-repair configured. Event subscriptions will be");
                 eprintln!("    checked and restored automatically on each `void sync`.");
             } else {

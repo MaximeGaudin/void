@@ -2,6 +2,8 @@ use void_core::models::{
     CalendarEvent, ConnectorType, Contact, Conversation, HealthStatus, Message,
 };
 
+use crate::connectors;
+
 pub struct OutputFormatter;
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
@@ -76,33 +78,45 @@ fn json_wrap_paginated<T: serde::Serialize>(
 }
 
 pub fn parse_connector_type(s: &str) -> Option<ConnectorType> {
-    match s.to_lowercase().as_str() {
-        "whatsapp" | "wa" => Some(ConnectorType::WhatsApp),
-        "slack" | "sl" => Some(ConnectorType::Slack),
-        "gmail" | "gm" | "email" => Some(ConnectorType::Gmail),
-        "calendar" | "cal" | "ca" => Some(ConnectorType::Calendar),
-        "telegram" | "tg" => Some(ConnectorType::Telegram),
-        "hackernews" | "hn" => Some(ConnectorType::HackerNews),
-        "googlenews" | "gn" => Some(ConnectorType::GoogleNews),
-        "linkedin" | "li" => Some(ConnectorType::LinkedIn),
-        "github" | "gh" => Some(ConnectorType::GitHub),
-        _ => None,
-    }
+    connectors::connector_type_from_alias(s)
 }
 
-const KNOWN_CONNECTORS: &str =
-    "whatsapp, slack, gmail, calendar, telegram, hackernews, googlenews, linkedin, github";
+pub fn known_connectors_csv() -> String {
+    connectors::known_ids_csv()
+}
 
-/// Shared `--connector` flag description for list/search commands (see [`resolve_connector_filter`]).
-pub const CONNECTOR_FILTER_HELP: &str =
-    "Filter by connector (slack, gmail, whatsapp, calendar, telegram, hackernews, googlenews, linkedin, github)";
+/// Placeholder for clap `#[arg(help)]`; runtime `--help` is patched in [`patch_connector_arg_help`].
+pub const CONNECTOR_FILTER_HELP: &str = "Filter by connector";
+
+pub fn connector_filter_help() -> String {
+    format!("Filter by connector ({})", known_connectors_csv())
+}
+
+/// Patch `--connector` flag help on all subcommands to list registered connector ids.
+pub fn patch_connector_arg_help(cmd: &mut clap::Command) {
+    let help = connector_filter_help();
+    patch_connector_arg_help_recursive(cmd, help);
+}
+
+fn patch_connector_arg_help_recursive(cmd: &mut clap::Command, help: String) {
+    if cmd.get_arguments().any(|a| a.get_id() == "connector") {
+        let help = help.clone();
+        *cmd = cmd.clone().mut_arg("connector", move |arg| arg.help(help));
+    }
+    for sub in cmd.get_subcommands_mut() {
+        patch_connector_arg_help_recursive(sub, help.clone());
+    }
+}
 
 pub fn resolve_connector_filter(raw: Option<&str>) -> anyhow::Result<Option<String>> {
     match raw {
         None => Ok(None),
         Some(s) => {
             let ct = parse_connector_type(s).ok_or_else(|| {
-                anyhow::anyhow!("Unknown connector \"{s}\". Valid connectors: {KNOWN_CONNECTORS}")
+                anyhow::anyhow!(
+                    "Unknown connector \"{s}\". Valid connectors: {}",
+                    known_connectors_csv()
+                )
             })?;
             Ok(Some(ct.to_string()))
         }
@@ -121,7 +135,8 @@ pub fn resolve_connector_list(raw: Option<&str>) -> anyhow::Result<Option<Vec<St
                 }
                 let ct = parse_connector_type(trimmed).ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Unknown connector \"{trimmed}\". Valid connectors: {KNOWN_CONNECTORS}"
+                        "Unknown connector \"{trimmed}\". Valid connectors: {}",
+                        known_connectors_csv()
                     )
                 })?;
                 resolved.push(ct.to_string());
@@ -143,50 +158,112 @@ mod tests {
     fn parse_connector_type_whatsapp() {
         assert_eq!(
             parse_connector_type("whatsapp"),
-            Some(ConnectorType::WhatsApp)
+            Some(ConnectorType::from_static("whatsapp"))
         );
-        assert_eq!(parse_connector_type("wa"), Some(ConnectorType::WhatsApp));
-        assert_eq!(parse_connector_type("WA"), Some(ConnectorType::WhatsApp));
+        assert_eq!(
+            parse_connector_type("wa"),
+            Some(ConnectorType::from_static("whatsapp"))
+        );
+        assert_eq!(
+            parse_connector_type("WA"),
+            Some(ConnectorType::from_static("whatsapp"))
+        );
     }
 
     #[test]
     fn parse_connector_type_slack() {
-        assert_eq!(parse_connector_type("slack"), Some(ConnectorType::Slack));
-        assert_eq!(parse_connector_type("sl"), Some(ConnectorType::Slack));
+        assert_eq!(
+            parse_connector_type("slack"),
+            Some(ConnectorType::from_static("slack"))
+        );
+        assert_eq!(
+            parse_connector_type("sl"),
+            Some(ConnectorType::from_static("slack"))
+        );
     }
 
     #[test]
     fn parse_connector_type_gmail() {
-        assert_eq!(parse_connector_type("gmail"), Some(ConnectorType::Gmail));
-        assert_eq!(parse_connector_type("gm"), Some(ConnectorType::Gmail));
-        assert_eq!(parse_connector_type("email"), Some(ConnectorType::Gmail));
+        assert_eq!(
+            parse_connector_type("gmail"),
+            Some(ConnectorType::from_static("gmail"))
+        );
+        assert_eq!(
+            parse_connector_type("gm"),
+            Some(ConnectorType::from_static("gmail"))
+        );
+        assert_eq!(
+            parse_connector_type("email"),
+            Some(ConnectorType::from_static("gmail"))
+        );
     }
 
     #[test]
     fn parse_connector_type_calendar() {
         assert_eq!(
             parse_connector_type("calendar"),
-            Some(ConnectorType::Calendar)
+            Some(ConnectorType::from_static("calendar"))
         );
-        assert_eq!(parse_connector_type("cal"), Some(ConnectorType::Calendar));
-        assert_eq!(parse_connector_type("ca"), Some(ConnectorType::Calendar));
+        assert_eq!(
+            parse_connector_type("cal"),
+            Some(ConnectorType::from_static("calendar"))
+        );
+        assert_eq!(
+            parse_connector_type("ca"),
+            Some(ConnectorType::from_static("calendar"))
+        );
     }
 
     #[test]
     fn parse_connector_type_linkedin() {
         assert_eq!(
             parse_connector_type("linkedin"),
-            Some(ConnectorType::LinkedIn)
+            Some(ConnectorType::from_static("linkedin"))
         );
-        assert_eq!(parse_connector_type("li"), Some(ConnectorType::LinkedIn));
-        assert_eq!(parse_connector_type("LI"), Some(ConnectorType::LinkedIn));
+        assert_eq!(
+            parse_connector_type("li"),
+            Some(ConnectorType::from_static("linkedin"))
+        );
+        assert_eq!(
+            parse_connector_type("LI"),
+            Some(ConnectorType::from_static("linkedin"))
+        );
     }
 
     #[test]
     fn parse_connector_type_github() {
-        assert_eq!(parse_connector_type("github"), Some(ConnectorType::GitHub));
-        assert_eq!(parse_connector_type("gh"), Some(ConnectorType::GitHub));
-        assert_eq!(parse_connector_type("GH"), Some(ConnectorType::GitHub));
+        assert_eq!(
+            parse_connector_type("github"),
+            Some(ConnectorType::from_static("github"))
+        );
+        assert_eq!(
+            parse_connector_type("gh"),
+            Some(ConnectorType::from_static("github"))
+        );
+        assert_eq!(
+            parse_connector_type("GH"),
+            Some(ConnectorType::from_static("github"))
+        );
+    }
+
+    #[test]
+    fn parse_connector_type_googlenews() {
+        assert_eq!(
+            parse_connector_type("googlenews"),
+            Some(ConnectorType::from_static("googlenews"))
+        );
+        assert_eq!(
+            parse_connector_type("gn"),
+            Some(ConnectorType::from_static("googlenews"))
+        );
+    }
+
+    #[test]
+    fn connector_filter_help_lists_all_plugins() {
+        let help = connector_filter_help();
+        for p in crate::connectors::all() {
+            assert!(help.contains(p.id), "help missing plugin id {}", p.id);
+        }
     }
 
     #[test]
@@ -199,18 +276,24 @@ mod tests {
     fn parse_connector_type_telegram() {
         assert_eq!(
             parse_connector_type("telegram"),
-            Some(ConnectorType::Telegram)
+            Some(ConnectorType::from_static("telegram"))
         );
-        assert_eq!(parse_connector_type("tg"), Some(ConnectorType::Telegram));
+        assert_eq!(
+            parse_connector_type("tg"),
+            Some(ConnectorType::from_static("telegram"))
+        );
     }
 
     #[test]
     fn parse_connector_type_hackernews() {
         assert_eq!(
             parse_connector_type("hackernews"),
-            Some(ConnectorType::HackerNews)
+            Some(ConnectorType::from_static("hackernews"))
         );
-        assert_eq!(parse_connector_type("hn"), Some(ConnectorType::HackerNews));
+        assert_eq!(
+            parse_connector_type("hn"),
+            Some(ConnectorType::from_static("hackernews"))
+        );
     }
 
     #[test]

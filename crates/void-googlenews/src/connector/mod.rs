@@ -8,6 +8,8 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::{ConnectorType, HealthStatus, MessageContent};
 
+use crate::CONNECTOR_ID;
+
 pub struct GoogleNewsConnector {
     config_id: String,
     keywords: Vec<String>,
@@ -44,7 +46,7 @@ impl GoogleNewsConnector {
 #[async_trait]
 impl Connector for GoogleNewsConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::GoogleNews
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -72,7 +74,7 @@ impl Connector for GoogleNewsConnector {
     async fn health_check(&self) -> anyhow::Result<HealthStatus> {
         Ok(HealthStatus {
             connection_id: self.config_id.clone(),
-            connector_type: ConnectorType::GoogleNews,
+            connector_type: ConnectorType::from_static(CONNECTOR_ID),
             ok: true,
             message: "Google News RSS is public, no auth required".to_string(),
             last_sync: None,

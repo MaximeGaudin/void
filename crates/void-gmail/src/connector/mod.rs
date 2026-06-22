@@ -17,6 +17,7 @@ pub struct GmailConnector {
     config_id: String,
     credentials_file: Option<String>,
     store_path: std::path::PathBuf,
+    poll_interval_secs: u64,
     my_email: std::sync::Mutex<Option<String>>,
 }
 
@@ -25,11 +26,13 @@ impl GmailConnector {
         connection_id: &str,
         credentials_file: Option<&str>,
         store_path: &std::path::Path,
+        poll_interval_secs: u64,
     ) -> Self {
         Self {
             config_id: connection_id.to_string(),
             credentials_file: credentials_file.map(|s| s.to_string()),
             store_path: store_path.to_path_buf(),
+            poll_interval_secs,
             my_email: std::sync::Mutex::new(None),
         }
     }

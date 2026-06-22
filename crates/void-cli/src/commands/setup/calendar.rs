@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{
+    empty_settings, settings_set_opt_string, settings_set_string_list, settings_string,
+    ConnectionConfig, VoidConfig,
+};
 use void_core::models::ConnectorType;
 
 use super::auth::{authenticate_connection, pick_connector_action, ConnectorAction};
@@ -16,12 +19,14 @@ pub(crate) async fn setup_calendar(
     eprintln!("Syncs your Google Calendar events. Lets you view today's agenda,");
     eprintln!("this week's schedule, and upcoming events from the CLI.");
 
+    let cal_type = ConnectorType::from_static(void_calendar::CONNECTOR_ID);
+    let gmail_type = ConnectorType::from_static(void_gmail::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::Calendar)
+            .filter(|(_, a)| a.connector_type == cal_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -38,21 +43,13 @@ pub(crate) async fn setup_calendar(
 
     eprintln!();
 
-    let existing_custom_creds: Option<String> =
-        cfg.connections
-            .iter()
-            .find_map(|a| match (&a.connector_type, &a.settings) {
-                (ConnectorType::Gmail, ConnectionSettings::Gmail { credentials_file }) => {
-                    credentials_file.clone()
-                }
-                (
-                    ConnectorType::Calendar,
-                    ConnectionSettings::Calendar {
-                        credentials_file, ..
-                    },
-                ) => credentials_file.clone(),
-                _ => None,
-            });
+    let existing_custom_creds: Option<String> = cfg.connections.iter().find_map(|a| {
+        if a.connector_type == gmail_type || a.connector_type == cal_type {
+            settings_string(&a.settings, "credentials_file")
+        } else {
+            None
+        }
+    });
 
     let custom_creds = if let Some(ref existing_path) = existing_custom_creds {
         eprintln!("You have a custom credentials file configured: {existing_path}");
@@ -86,14 +83,15 @@ pub(crate) async fn setup_calendar(
 
     let connection_id = prompt_default("Connection name", "calendar");
 
+    let mut settings = empty_settings();
+    settings_set_opt_string(&mut settings, "credentials_file", custom_creds);
+    settings_set_string_list(&mut settings, "calendar_ids", &calendar_ids);
+
     let connection = ConnectionConfig {
         id: connection_id.clone(),
-        connector_type: ConnectorType::Calendar,
+        connector_type: cal_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::Calendar {
-            credentials_file: custom_creds,
-            calendar_ids,
-        },
+        settings,
     };
 
     if confirm_default_yes("Authenticate now? (opens browser for Google sign-in)") {

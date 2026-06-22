@@ -210,7 +210,7 @@ gh pr diff "$PR" --name-only
 | **Connectors** | Follows `docs/adding-a-connector.md`: `Connector` trait, resumable backfill cursor, incremental sync until `CancellationToken` fires, ingest `eprintln!` format `[connector:connection_id] …` | Missing sync contract pieces, ad-hoc persistence outside the store dir, divergent module layout (`auth`, `sync`, `api`, `models`) |
 | **Module layout** | Domain-named modules; large files split into submodules; no `utils.rs`/`helpers.rs` catch-alls | New catch-all modules, logic placed in the wrong crate or layer |
 | **Async & sync** | `tokio` + `CancellationToken` for long-running work; no blocking I/O in async paths | Blocking calls in async without justification; sync loops that ignore cancellation |
-| **Config & models** | Extend existing `ConnectorType`, `ConnectionSettings`, serde patterns in `void-core` | One-off config structs, stringly-typed enums, schema changes without migration tests |
+| **Config & models** | Registry-driven connections: `ConnectorType` string newtype, per-connection `toml::Table` settings, `connectors/<name>.rs` plugin descriptors | Central `ConnectorType` enum, `ConnectionSettings` variants, or schema changes without migration tests |
 | **Database** | Access via `Database` methods in `void-core/src/db/`; migrations tested for data preservation | Raw SQL or schema logic outside `db/`; migration without a preservation test |
 | **HTTP clients** | Test constructor like `with_base_url(...)`; production client separate from parsing helpers | Real network in unit tests; parsing mixed into transport layer |
 | **CLI output** | Existing formatters and JSON envelope shapes; read-path changes may need `insta` snapshots | Ad-hoc printing, breaking JSON contract without snapshot update |

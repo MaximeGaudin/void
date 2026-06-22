@@ -8,6 +8,8 @@ use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::models::{ConnectorType, HealthStatus, MessageContent};
 
+use crate::CONNECTOR_ID;
+
 pub struct GitHubConnector {
     config_id: String,
     token: String,
@@ -34,7 +36,7 @@ impl GitHubConnector {
 #[async_trait]
 impl Connector for GitHubConnector {
     fn connector_type(&self) -> ConnectorType {
-        ConnectorType::GitHub
+        ConnectorType::from_static(CONNECTOR_ID)
     }
 
     fn connection_id(&self) -> &str {
@@ -70,7 +72,7 @@ impl Connector for GitHubConnector {
         match client.current_user().await {
             Ok(user) => Ok(HealthStatus {
                 connection_id: self.config_id.clone(),
-                connector_type: ConnectorType::GitHub,
+                connector_type: ConnectorType::from_static(CONNECTOR_ID),
                 ok: true,
                 message: format!("Authenticated as @{}", user.login),
                 last_sync: None,
@@ -78,7 +80,7 @@ impl Connector for GitHubConnector {
             }),
             Err(e) => Ok(HealthStatus {
                 connection_id: self.config_id.clone(),
-                connector_type: ConnectorType::GitHub,
+                connector_type: ConnectorType::from_static(CONNECTOR_ID),
                 ok: false,
                 message: e.to_string(),
                 last_sync: None,

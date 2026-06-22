@@ -1,6 +1,9 @@
 use clap::{Args, Subcommand};
 
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{
+    settings_set_string_list, settings_set_u32, settings_string_list, settings_u32,
+    ConnectionConfig, VoidConfig,
+};
 use void_core::models::ConnectorType;
 
 #[derive(Debug, Args)]
@@ -138,54 +141,34 @@ fn hn_connection_not_found() -> anyhow::Error {
 fn find_hn_connection(cfg: &VoidConfig) -> anyhow::Result<&ConnectionConfig> {
     cfg.connections
         .iter()
-        .find(|c| c.connector_type == ConnectorType::HackerNews)
+        .find(|c| c.connector_type == ConnectorType::from_static(void_hackernews::CONNECTOR_ID))
         .ok_or_else(hn_connection_not_found)
 }
 
 fn find_hn_connection_mut(cfg: &mut VoidConfig) -> anyhow::Result<&mut ConnectionConfig> {
     cfg.connections
         .iter_mut()
-        .find(|c| c.connector_type == ConnectorType::HackerNews)
+        .find(|c| c.connector_type == ConnectorType::from_static(void_hackernews::CONNECTOR_ID))
         .ok_or_else(hn_connection_not_found)
 }
 
 fn get_hn_settings(cfg: &VoidConfig) -> anyhow::Result<(Vec<String>, u32)> {
     let conn = find_hn_connection(cfg)?;
-    match &conn.settings {
-        ConnectionSettings::HackerNews {
-            keywords,
-            min_score,
-        } => Ok((keywords.clone(), *min_score)),
-        _ => anyhow::bail!("Unexpected settings type for HackerNews connection"),
-    }
+    let keywords = settings_string_list(&conn.settings, "keywords");
+    let min_score = settings_u32(&conn.settings, "min_score").unwrap_or(100);
+    Ok((keywords, min_score))
 }
 
 fn set_hn_keywords(cfg: &mut VoidConfig, keywords: Vec<String>) -> anyhow::Result<()> {
     let conn = find_hn_connection_mut(cfg)?;
-    match &mut conn.settings {
-        ConnectionSettings::HackerNews {
-            keywords: ref mut kw,
-            ..
-        } => {
-            *kw = keywords;
-            Ok(())
-        }
-        _ => anyhow::bail!("Unexpected settings type for HackerNews connection"),
-    }
+    settings_set_string_list(&mut conn.settings, "keywords", &keywords);
+    Ok(())
 }
 
 fn set_hn_min_score(cfg: &mut VoidConfig, score: u32) -> anyhow::Result<()> {
     let conn = find_hn_connection_mut(cfg)?;
-    match &mut conn.settings {
-        ConnectionSettings::HackerNews {
-            min_score: ref mut ms,
-            ..
-        } => {
-            *ms = score;
-            Ok(())
-        }
-        _ => anyhow::bail!("Unexpected settings type for HackerNews connection"),
-    }
+    settings_set_u32(&mut conn.settings, "min_score", score);
+    Ok(())
 }
 
 fn parse_csv(s: &str) -> Vec<String> {

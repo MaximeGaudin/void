@@ -1,4 +1,6 @@
-use void_core::config::{ConnectionConfig, ConnectionSettings, VoidConfig};
+use void_core::config::{
+    empty_settings, settings_set_string_list, settings_set_u32, ConnectionConfig, VoidConfig,
+};
 use void_core::models::ConnectorType;
 
 use super::auth::{pick_connector_action, ConnectorAction};
@@ -10,12 +12,13 @@ pub(crate) fn setup_hackernews(cfg: &mut VoidConfig, add_only: bool) -> anyhow::
     eprintln!("Monitors Hacker News for stories matching your keywords.");
     eprintln!("Matching stories appear in your inbox (read-only, no auth needed).");
 
+    let hn_type = ConnectorType::from_static(void_hackernews::CONNECTOR_ID);
     if !add_only {
         let existing: Vec<usize> = cfg
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.connector_type == ConnectorType::HackerNews)
+            .filter(|(_, a)| a.connector_type == hn_type)
             .map(|(i, _)| i)
             .collect();
 
@@ -48,14 +51,15 @@ pub(crate) fn setup_hackernews(cfg: &mut VoidConfig, add_only: bool) -> anyhow::
 
     let connection_id = prompt_default("\nAccount name", "hackernews");
 
+    let mut settings = empty_settings();
+    settings_set_string_list(&mut settings, "keywords", &keywords);
+    settings_set_u32(&mut settings, "min_score", min_score);
+
     let connection = ConnectionConfig {
         id: connection_id,
-        connector_type: ConnectorType::HackerNews,
+        connector_type: hn_type,
         ignore_conversations: vec![],
-        settings: ConnectionSettings::HackerNews {
-            keywords,
-            min_score,
-        },
+        settings,
     };
 
     cfg.connections.push(connection);
