@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.
 - **Reddit** — New connector that polls watched subreddits and surfaces posts matching your keywords and minimum score (one channel conversation per subreddit). Read-only mode uses application-only OAuth (`client_id` + `client_secret`); enabling commenting during `void setup` runs a browser OAuth flow, stores a `refresh_token`, syncs matching posts as comment threads, and lets you reply via `void reply` / `void send --via reddit`. Tune filters at runtime with `void reddit subreddits|keywords|min-score|config`.
 - **Slack** — Sync "Saved for Later" items from the Later view during background sync; view with `void slack saved`. Setup wizard documents the required `search:read` scope.
 - **Google News** — New read-only connector that watches the public Google News RSS feed. Each configured keyword triggers its own search; matching articles land in your inbox, filtered by a recency window. Configure with `void gn keywords`, `void gn when`, `void gn language`, and `void gn country` (or interactively via `void setup`). Language/country default to `fr`/`FR`; add one connection per edition to follow several.

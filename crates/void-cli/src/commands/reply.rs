@@ -1,12 +1,7 @@
 use clap::Args;
-use tracing::{debug, info};
+use tracing::info;
 
-use void_core::models::MessageContent;
-use void_core::sync::is_daemon_running;
-
-use crate::commands::connector_factory;
-use crate::connectors;
-use crate::output::parse_connector_type;
+use crate::service::writes::{self, ReplyParams};
 
 #[derive(Debug, Args)]
 pub struct ReplyArgs {
@@ -29,119 +24,30 @@ pub struct ReplyArgs {
 pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
     info!(message_id = %args.message_id, "reply");
     let cfg = crate::context::void_config();
-
     let db = crate::context::open_db()?;
-
-    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
-
-    let conv = db
-        .get_conversation(&msg.conversation_id)?
-        .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
-
-    debug!("message and conversation found");
-
-    let connection = cfg
-        .find_connection_by_connector(&msg.connector)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No {} connection found in config.toml for message {}",
-                msg.connector,
-                msg.id
-            )
-        })?;
-
-    let plugin = connectors::by_id(connection.connector_type.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
-
-    if let Some(ref at_str) = args.at {
-        if !plugin.supports_scheduling {
-            anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
-        }
-        return run_slack_scheduled_reply(
-            connection,
-            &conv.external_id,
-            &msg.external_id,
-            &args.message,
-            at_str,
-        )
-        .await;
-    }
-
-    let connector_type = parse_connector_type(&connection.connector_type.to_string())
-        .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
-
     let store_path = crate::context::store_path();
-    let reply_id = connectors::build_reply_id(connector_type, &conv.external_id, &msg.external_id);
 
-    let content = if let Some(ref path) = args.file {
-        MessageContent::File {
-            path: path.into(),
-            caption: Some(args.message.clone()),
-            mime_type: None,
-            subject: None,
-        }
-    } else {
-        MessageContent::from_text(args.message.clone())
+    let params = ReplyParams {
+        message_id: &args.message_id,
+        message: &args.message,
+        file: args.file.as_deref(),
+        in_thread: args.in_thread,
+        at: args.at.as_deref(),
     };
 
-    let sent_id = if plugin.uses_daemon_rpc && is_daemon_running(&store_path) {
-        void_whatsapp::rpc::reply_message(
-            &store_path,
-            &connection.id,
-            &reply_id,
-            content,
-            args.in_thread,
-        )
-        .await?
+    let sent_id = writes::reply(&db, cfg, &store_path, params).await?;
+
+    if args.at.is_some() {
+        let at_str = args.at.as_deref().unwrap_or("");
+        let post_at = crate::commands::slack::parse_schedule_time(at_str)?;
+        let dt = chrono::DateTime::from_timestamp(post_at, 0)
+            .map(|utc| utc.with_timezone(&chrono::Local))
+            .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
+            .unwrap_or_else(|| post_at.to_string());
+        eprintln!("Reply scheduled for {dt} (id: {sent_id})");
     } else {
-        let conn = connector_factory::build_connector(connection, &store_path)?;
-        conn.reply(&reply_id, content, args.in_thread).await?
-    };
-
-    eprintln!("Reply sent (id: {sent_id})");
-    Ok(())
-}
-
-async fn run_slack_scheduled_reply(
-    connection: &void_core::config::ConnectionConfig,
-    channel_id: &str,
-    thread_ts: &str,
-    message: &str,
-    at_str: &str,
-) -> anyhow::Result<()> {
-    use super::slack::parse_schedule_time;
-
-    let post_at = parse_schedule_time(at_str)?;
-    let now = chrono::Utc::now().timestamp();
-    if post_at <= now {
-        anyhow::bail!("Scheduled time must be in the future.");
+        eprintln!("Reply sent (id: {sent_id})");
     }
-
-    let user_token = void_core::config::settings_string(&connection.settings, "user_token")
-        .ok_or_else(|| anyhow::anyhow!("missing user_token"))?;
-    let app_token = void_core::config::settings_string(&connection.settings, "app_token")
-        .ok_or_else(|| anyhow::anyhow!("missing app_token"))?;
-
-    let connector = void_slack::connector::SlackConnector::new(
-        &connection.id,
-        &user_token,
-        &app_token,
-        None,
-        None,
-        std::env::temp_dir().as_path(),
-        None,
-    )?;
-
-    let scheduled_id = connector
-        .schedule_message(channel_id, message, post_at, Some(thread_ts))
-        .await?;
-
-    let dt = chrono::DateTime::from_timestamp(post_at, 0)
-        .map(|utc| utc.with_timezone(&chrono::Local))
-        .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
-        .unwrap_or_else(|| post_at.to_string());
-
-    eprintln!("Reply scheduled for {dt} (id: {scheduled_id})");
     Ok(())
 }
 

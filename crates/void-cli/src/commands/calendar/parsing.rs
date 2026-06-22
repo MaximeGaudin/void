@@ -54,7 +54,7 @@ pub(super) fn normalize_datetime(s: &str) -> anyhow::Result<String> {
     )
 }
 
-pub(super) fn parse_day_spec(spec: &str) -> anyhow::Result<chrono::NaiveDate> {
+pub(crate) fn parse_day_spec(spec: &str) -> anyhow::Result<chrono::NaiveDate> {
     let today = Local::now().date_naive();
     match spec.to_lowercase().as_str() {
         "today" => Ok(today),
@@ -68,7 +68,7 @@ pub(super) fn parse_day_spec(spec: &str) -> anyhow::Result<chrono::NaiveDate> {
     }
 }
 
-pub(super) fn parse_date_to_ts(date: &str) -> Option<i64> {
+pub(crate) fn parse_date_to_ts(date: &str) -> Option<i64> {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .ok()
         .and_then(|d| d.and_hms_opt(0, 0, 0))

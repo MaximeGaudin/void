@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use void_core::db::Database;
 use void_core::models::Conversation;
 
-pub(super) fn resolve_targets(
+pub(crate) fn resolve_targets(
     db: &Database,
     target: &str,
     connection_filter: Option<&str>,

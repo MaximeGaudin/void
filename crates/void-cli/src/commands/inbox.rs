@@ -1,15 +1,15 @@
 use clap::Args;
 use tracing::debug;
 
-use super::pagination::{build_meta, parse_page};
-use crate::output::{resolve_connector_filter, OutputFormatter, CONNECTOR_FILTER_HELP};
+use crate::service;
+use crate::service::reads::{self, InboxQuery};
 
 #[derive(Debug, Args)]
 pub struct InboxArgs {
     /// Filter by connection (partial match on connection_id)
     #[arg(long)]
     pub connection: Option<String>,
-    #[arg(long, help = CONNECTOR_FILTER_HELP)]
+    #[arg(long, help = crate::output::CONNECTOR_FILTER_HELP)]
     pub connector: Option<String>,
     /// Maximum number of results to return
     #[arg(short = 'n', long, default_value = "50")]
@@ -27,45 +27,32 @@ pub struct InboxArgs {
 
 pub fn run(args: &InboxArgs, enrich_context: bool) -> anyhow::Result<()> {
     debug!(connection = ?args.connection, connector = ?args.connector, size = args.size, page = args.page, all = args.all, "inbox");
-    let connector = resolve_connector_filter(args.connector.as_deref())?;
-    let _cfg = crate::context::config();
     let db = crate::context::open_db()?;
-    let formatter = OutputFormatter::new();
-    let offset = parse_page(args.size, args.page)?;
-
-    let include_muted = args.include_muted || args.all;
-    let (mut messages, total_elements) = db.recent_messages_paginated(
-        args.connection.as_deref(),
-        connector.as_deref(),
-        args.size,
-        offset,
-        args.all,
-        include_muted,
-        enrich_context,
-    )?;
-    messages.reverse();
-    if enrich_context {
-        db.enrich_with_context(&mut messages)?;
-    }
-    let meta = build_meta(args.page, args.size, total_elements);
-    formatter.print_paginated(&messages, meta)
+    let query = InboxQuery {
+        connection: args.connection.as_deref(),
+        connector: args.connector.as_deref(),
+        size: args.size,
+        page: args.page,
+        all: args.all,
+        include_muted: args.include_muted,
+    };
+    let value = reads::inbox(&db, &query, enrich_context)?;
+    println!("{}", service::render(&value)?);
+    Ok(())
 }
 
 pub fn run_conversations(args: &InboxArgs) -> anyhow::Result<()> {
     debug!(connection = ?args.connection, connector = ?args.connector, size = args.size, page = args.page, "inbox conversations");
-    let connector = resolve_connector_filter(args.connector.as_deref())?;
-    let _cfg = crate::context::config();
     let db = crate::context::open_db()?;
-    let formatter = OutputFormatter::new();
-    let offset = parse_page(args.size, args.page)?;
-
-    let (conversations, total_elements) = db.list_conversations_paginated(
-        args.connection.as_deref(),
-        connector.as_deref(),
-        args.size,
-        offset,
-        args.include_muted,
-    )?;
-    let meta = build_meta(args.page, args.size, total_elements);
-    formatter.print_paginated(&conversations, meta)
+    let query = InboxQuery {
+        connection: args.connection.as_deref(),
+        connector: args.connector.as_deref(),
+        size: args.size,
+        page: args.page,
+        all: args.all,
+        include_muted: args.include_muted,
+    };
+    let value = reads::conversations(&db, &query)?;
+    println!("{}", service::render(&value)?);
+    Ok(())
 }
