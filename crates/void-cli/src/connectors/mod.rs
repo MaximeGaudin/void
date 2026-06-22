@@ -6,6 +6,7 @@ mod gmail;
 mod googlenews;
 mod hackernews;
 mod linkedin;
+mod reddit;
 mod slack;
 mod telegram;
 mod whatsapp;
@@ -121,7 +122,7 @@ mod tests {
     #[test]
     fn every_plugin_has_unique_id() {
         let plugins = all();
-        assert!(plugins.len() >= 9);
+        assert!(plugins.len() >= 10);
         let mut ids = std::collections::HashSet::new();
         for p in &plugins {
             assert!(ids.insert(p.id), "duplicate connector id: {}", p.id);
@@ -265,6 +266,45 @@ mod tests {
     }
 
     #[test]
+    fn validate_all_connections_reddit_missing_client_secret_fails() {
+        let mut settings = toml::Table::new();
+        settings.insert("client_id".into(), toml::Value::String("id".into()));
+        let conn = ConnectionConfig {
+            id: "reddit".into(),
+            connector_type: ConnectorType::from_static("reddit"),
+            ignore_conversations: vec![],
+            settings,
+        };
+        let mut cfg = VoidConfig::default();
+        cfg.connections.push(conn);
+        let err = validate_all_connections(&cfg).unwrap_err();
+        assert!(err.to_string().contains("missing client_secret"));
+    }
+
+    #[test]
+    fn build_reddit_connector_via_registry() {
+        let mut settings = toml::Table::new();
+        settings.insert("client_id".into(), toml::Value::String("id".into()));
+        settings.insert("client_secret".into(), toml::Value::String("secret".into()));
+        settings.insert(
+            "subreddits".into(),
+            toml::Value::Array(vec![toml::Value::String("rust".into())]),
+        );
+        let conn = ConnectionConfig {
+            id: "test-reddit".into(),
+            connector_type: ConnectorType::from_static("reddit"),
+            ignore_conversations: vec![],
+            settings,
+        };
+        let sync = SyncConfig::default();
+        let plugin = by_id("reddit").unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let connector = (plugin.build)(&conn, store.path(), &sync).unwrap();
+        assert_eq!(connector.connector_type().as_str(), "reddit");
+        assert_eq!(connector.connection_id(), "test-reddit");
+    }
+
+    #[test]
     fn sync_default_poll_intervals_match_plugin_defaults() {
         let sync = SyncConfig::default();
         assert_eq!(
@@ -303,6 +343,7 @@ user_token = "xoxp"
             ("googlenews", "GN"),
             ("linkedin", "LI"),
             ("github", "GH"),
+            ("reddit", "RD"),
         ];
         for (id, badge) in expected {
             assert_eq!(

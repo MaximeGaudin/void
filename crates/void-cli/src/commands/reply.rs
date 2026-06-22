@@ -227,4 +227,14 @@ mod tests {
         );
         assert_eq!(id, "github_github_notification_1");
     }
+
+    #[test]
+    fn build_reply_id_reddit_joins_conv_and_message_external_ids() {
+        let id = connectors::build_reply_id(
+            ConnectorType::from_static("reddit"),
+            "reddit_reddit_post_abc123",
+            "reddit_reddit_comment_c1",
+        );
+        assert_eq!(id, "reddit_reddit_post_abc123:reddit_reddit_comment_c1");
+    }
 }

@@ -79,6 +79,7 @@ gmail_poll_interval_secs = 30
 calendar_poll_interval_secs = 60
 hackernews_poll_interval_secs = 3600
 googlenews_poll_interval_secs = 3600
+reddit_poll_interval_secs = 3600
 linkedin_poll_interval_secs = 1800
 linkedin_backfill_days = 15
 github_poll_interval_secs = 120
@@ -120,6 +121,15 @@ github_poll_interval_secs = 120
 # type = "hackernews"
 # keywords = ["rust", "ai", "startup"]
 # min_score = 100
+#
+# [[connections]]
+# id = "reddit"
+# type = "reddit"
+# client_id = "your-reddit-app-client-id"
+# client_secret = "your-reddit-app-client-secret"
+# subreddits = ["rust", "programming", "startups"]
+# keywords = ["ai", "llm"]
+# min_score = 50
 #
 # [[connections]]
 # id = "googlenews"

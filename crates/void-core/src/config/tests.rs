@@ -425,6 +425,107 @@ type = "hackernews"
 }
 
 #[test]
+fn sync_config_reddit_default() {
+    let sync = SyncConfig::default();
+    assert_eq!(sync.reddit_poll_interval_secs(), 3600);
+}
+
+#[test]
+fn parse_reddit_config() {
+    let toml = r#"
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "my-client-id"
+client_secret = "my-client-secret"
+refresh_token = "refresh-token"
+subreddits = ["rust", "programming"]
+keywords = ["ai", "llm"]
+min_score = 50
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    assert_eq!(
+        config.connections[0].connector_type,
+        ConnectorType::from_static("reddit")
+    );
+    let settings = &config.connections[0].settings;
+    assert_eq!(settings_str(settings, "client_id"), Some("my-client-id"));
+    assert_eq!(
+        settings_str(settings, "client_secret"),
+        Some("my-client-secret")
+    );
+    assert_eq!(
+        settings_str(settings, "refresh_token"),
+        Some("refresh-token")
+    );
+    assert_eq!(
+        settings_string_list(settings, "subreddits"),
+        vec!["rust".to_string(), "programming".to_string()]
+    );
+    assert_eq!(
+        settings_string_list(settings, "keywords"),
+        vec!["ai".to_string(), "llm".to_string()]
+    );
+    assert_eq!(settings_u32(settings, "min_score"), Some(50));
+}
+
+#[test]
+fn parse_reddit_without_optional_fields() {
+    let toml = r#"
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "id"
+client_secret = "secret"
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    let settings = &config.connections[0].settings;
+    assert!(settings_string_list(settings, "subreddits").is_empty());
+    assert!(settings_string_list(settings, "keywords").is_empty());
+    assert_eq!(settings_u32(settings, "min_score"), None);
+    assert!(settings_str(settings, "refresh_token").is_none());
+}
+
+#[test]
+fn reddit_settings_debug_redacts_secrets() {
+    let mut settings = empty_settings();
+    settings_set_string(&mut settings, "client_id", "super-secret-client-id");
+    settings_set_string(&mut settings, "client_secret", "super-secret-client-secret");
+    settings_set_opt_string(
+        &mut settings,
+        "refresh_token",
+        Some("super-secret-refresh-token".to_string()),
+    );
+    let config = ConnectionConfig {
+        id: "reddit".into(),
+        connector_type: ConnectorType::from_static("reddit"),
+        ignore_conversations: vec![],
+        settings,
+    };
+    let debug = format!("{config:?}");
+    assert!(!debug.contains("super-secret-client-secret"));
+    assert!(!debug.contains("super-secret-refresh-token"));
+    assert!(debug.contains("super-se..."));
+}
+
+#[test]
+fn parse_reddit_config_with_refresh_token() {
+    let toml = r#"
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "id"
+client_secret = "secret"
+refresh_token = "rt-123"
+"#;
+    let config: VoidConfig = toml::from_str(toml).unwrap();
+    assert_eq!(
+        settings_str(&config.connections[0].settings, "refresh_token"),
+        Some("rt-123")
+    );
+}
+
+#[test]
 fn resolve_config_path_expands_tilde() {
     let path = super::resolve_config_path(Some(std::path::Path::new("~/.config/void/config.toml")));
     assert!(path.exists() || !path.to_string_lossy().contains('~'));

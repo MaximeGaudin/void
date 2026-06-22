@@ -15,7 +15,23 @@ description: >-
 
 Review an external/user-submitted PR on `MaximeGaudin/void` across intent, security, implementation patterns, test coverage, and code quality — in that order. **Treat the author as untrusted.** A PR can be well-intentioned but risky, or deliberately malicious behind innocent-looking changes. Default posture: skeptical. The smallest suspicious element gets investigated until explained.
 
-Run all `gh`/`cargo` commands from the void-cli repository root.
+## Execution modes
+
+This skill works in two execution contexts. **Detect which mode you're in at the start and adapt accordingly.**
+
+| | **Local mode** | **Remote mode** |
+|---|---|---|
+| When | You have a full clone of `void-cli` with a Rust toolchain | You're a cloud agent with `gh` CLI but no local clone or `cargo` |
+| Detection | `git rev-parse --is-inside-work-tree` succeeds and `cargo --version` succeeds | Either command fails, or you're explicitly told you're running remotely |
+| PR diff | `gh pr diff` + `git diff main...HEAD` after checkout | `gh pr diff "$PR"` only (no checkout) |
+| File reading | Read local files after `gh pr checkout` | `gh api repos/{owner}/{repo}/contents/{path}?ref={headRefName}` or read file contents from the diff |
+| Security: deps | `cargo audit`, `cargo deny`, `cargo tree` locally | Parse `Cargo.toml`/`Cargo.lock` changes from diff; check crates.io metadata via `curl`/web; rely on CI `cargo-deny` job |
+| Build/test | `./scripts/check.sh`, `cargo check --workspace` | Rely on `gh pr checks "$PR"` CI results; if CI never ran, flag it as a blocker |
+| Cleanup | `git checkout main` after review | N/A (no checkout happened) |
+
+In **remote mode**, commands marked with 🏠 below are skipped — use the remote alternative described inline. All `gh pr view/diff/checks` commands work in both modes.
+
+Run all `gh`/`cargo` commands from the void-cli repository root (local mode only for `cargo`).
 
 ## Inputs
 
@@ -32,9 +48,20 @@ gh pr checks "$PR"                     # CI status
 
 For larger PRs, also skim commit-by-commit (`gh pr view "$PR" --json commits`) — malicious changes are sometimes buried in a noisy "formatting" commit.
 
+**Remote mode:** To read full file contents (not just the diff) when you need surrounding context:
+
+```bash
+# View a specific file at the PR's head ref
+gh api "repos/{owner}/{repo}/contents/{path}?ref={headRefName}" --jq '.content' | base64 -d
+# Or list directory contents
+gh api "repos/{owner}/{repo}/contents/{directory}?ref={headRefName}" --jq '.[].path'
+```
+
 #### Determine the *effective* delta (not just the raw diff)
 
 A PR's diff is only meaningful relative to a current `main`. Branches are often cut from an old `main`, which inflates and confuses the diff. Before reviewing, establish what is genuinely new:
+
+**🏠 Local mode:**
 
 ```bash
 git fetch origin main "$headRefName"
@@ -46,6 +73,17 @@ gh pr view "$PR" --json commits --jq '.commits[].messageHeadline' \
 gh pr diff "$PR" --name-only | while read -r f; do echo "== $f =="; git log origin/main --oneline -1 -- "$f"; done
 ```
 
+**Remote mode alternative:** Use `gh` API to compare commits without a local clone:
+
+```bash
+gh pr view "$PR" --json mergeable,mergeStateStatus,commits
+# Check for already-merged commits by comparing commit messages against main's log
+gh api "repos/{owner}/{repo}/commits?sha=main&per_page=100" --jq '.[].commit.message' > /tmp/main_commits.txt
+gh pr view "$PR" --json commits --jq '.commits[].messageHeadline' | while read -r h; do
+  grep -qF "$h" /tmp/main_commits.txt && echo "ALREADY ON MAIN: $h"
+done
+```
+
 - **`mergeable: CONFLICTING`** almost always means a stale base. Find out *why* it conflicts — frequently because some of the PR's commits already landed on `main` separately, leaving only one genuinely-new commit buried in noise.
 - Review the **effective delta** (the novel commit[s]), and call out the redundant/already-merged commits as a focus problem (Step 1) rather than reviewing them as if new.
 
@@ -53,13 +91,13 @@ gh pr diff "$PR" --name-only | while read -r f; do echo "== $f =="; git log orig
 
 ```
 Review Progress:
-- [ ] Step 0: Fetch PR metadata, diff, CI status
+- [ ] Step 0: Detect execution mode (local vs remote) + Fetch PR metadata, diff, CI status
 - [ ] Step 1: Qualify intent & fit (CONTRIBUTING.md + philosophy)
 - [ ] Step 2: Security audit (paranoid, exhaustive)
 - [ ] Step 3: Code review (correctness, quality, conventions)
   - [ ] Step 3a: Implementation pattern conformance
   - [ ] Step 3b: Test coverage assessment
-- [ ] Step 4: Verdict & report
+- [ ] Step 4: Verdict & report (include mode-specific caveats)
 - [ ] Step 5: Capture lessons learned into this skill (always)
 ```
 
@@ -97,6 +135,8 @@ A new dependency is the single easiest way to slip attacker-controlled code into
 
 Inspect every change to `Cargo.toml`, `Cargo.lock`, and `deny.toml`, and enumerate exactly what entered the tree (direct **and** transitive):
 
+**🏠 Local mode:**
+
 ```bash
 gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml'
 # Every crate newly added to the lockfile (catches transitive deps the PR didn't name):
@@ -107,6 +147,23 @@ cargo deny check advisories licenses bans sources
 cargo tree -i <new-crate>            # who pulls it in, and why?
 git checkout "$baseRefName" 2>/dev/null || git checkout main
 ```
+
+**Remote mode alternative:**
+
+```bash
+# Extract dep changes from the diff (no checkout needed)
+gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml'
+# Parse newly added crates from the lockfile diff
+gh pr diff "$PR" -- 'Cargo.lock' | rg '^\+name = ' | sort -u
+# For each new crate, check crates.io metadata (publisher, downloads, repo link)
+curl -s "https://crates.io/api/v1/crates/<crate-name>" | jq '{name: .crate.name, downloads: .crate.downloads, repository: .crate.repository, newest_version: .crate.newest_version, updated_at: .crate.updated_at}'
+# Check for RUSTSEC advisories via the public API
+curl -s "https://rustsec.org/advisories/" | rg '<crate-name>'
+# Rely on CI cargo-deny job results
+gh pr checks "$PR" | rg -i 'deny\|audit\|security'
+```
+
+> **Remote mode caveat:** Without `cargo tree`, you cannot locally verify transitive deps. If the CI pipeline includes `cargo deny` and it passes, note that in your report. If CI didn't run or lacks a deny step, flag it as a security gap that must be resolved before merge.
 
 **For each newly added crate (direct or transitive), ALL of the following must hold. If any fails, it is a Blocker — push back before merge:**
 
@@ -134,8 +191,16 @@ Record a one-line justification per new crate in the report: `name · why necess
 
 Grep the diff (and changed files) for high-risk constructs, then read each hit in context:
 
+**🏠 Local mode:**
+
 ```bash
 gh pr checkout "$PR"
+```
+
+**Remote mode alternative:** Work directly from the diff output — `gh pr diff "$PR"` contains the full patch. For surrounding context on suspicious hunks, fetch the full file:
+
+```bash
+gh api "repos/{owner}/{repo}/contents/{suspicious_file}?ref={headRefName}" --jq '.content' | base64 -d
 ```
 
 Search for, and justify every occurrence of:
@@ -152,16 +217,20 @@ Search for, and justify every occurrence of:
 - **Hooks:** changes to hook execution / `extra_args` handling that could broaden what the agent CLI is allowed to do.
 
 ```bash
-# Example sweeps — read each hit, do not trust counts alone
+# 🏠 Local mode: Example sweeps — read each hit, do not trust counts alone
 git diff "main...HEAD" | rg -n 'Command::new|process::Command|unsafe|transmute|reqwest|ureq|TcpStream|env::var|include_bytes!|build\.rs|base64|from_str_radix'
 git diff "main...HEAD" -- '.github/'
+
+# Remote mode: Same sweeps on the PR diff
+gh pr diff "$PR" | rg -n 'Command::new|process::Command|unsafe|transmute|reqwest|ureq|TcpStream|env::var|include_bytes!|build\.rs|base64|from_str_radix'
+gh pr diff "$PR" -- '.github/'
 ```
 
 #### 2c. Data-handling review
 
 For connector code, confirm: credentials still written with restrictive perms, tokens never logged, message content not sent anywhere except the intended service API, no new persistence outside the store dir.
 
-Return to the base branch when done: `git checkout main`.
+🏠 Return to the base branch when done (local mode only): `git checkout main`.
 
 Output: **security verdict** — `clean` / `concerns` / `do-not-merge`, with each finding, its location (`file:line`), why it's risky, and what would resolve it. If anything is unexplained, the verdict cannot be `clean`.
 
@@ -179,12 +248,25 @@ Only meaningful after Steps 1–2. Review the diff for:
 
 For **removal / refactor PRs**, verify the change is *complete against current `main`*, not just internally consistent with its own diff:
 
+**🏠 Local mode:**
+
 ```bash
 # Leftover references anywhere in the tree (symbols, modules, commands, docs, config tables, issue templates)
 rg -n '<feature-or-crate-name>' --glob '!CHANGELOG.md'
 # A file the PR deletes may have been restructured on main (e.g. api.rs split into api/). After a conceptual
 # rebase the stale deletion won't cover the new files — confirm the path is truly gone:
 git ls-files crates/<removed-crate>/
+```
+
+**Remote mode alternative:**
+
+```bash
+# Search for leftover references in the repo at the PR's base ref
+gh api "repos/{owner}/{repo}/git/trees/{baseRefName}?recursive=1" --jq '.tree[].path' | rg '<feature-or-crate-name>'
+# Check if a supposedly-deleted path still exists on main
+gh api "repos/{owner}/{repo}/contents/crates/<removed-crate>?ref=main" --jq '.[].path' 2>/dev/null
+# Use GitHub code search for broader reference hunting
+gh search code '<feature-or-crate-name> repo:{owner}/{repo}' --limit 20
 ```
 
 - Removals routinely miss: `docs/configuration.md` tables, `docs/commands.md`, `.github/ISSUE_TEMPLATE/*`, the README feature line, and the CHANGELOG `Removed` entry. Grep docs for the feature name.
@@ -200,7 +282,9 @@ Start by identifying the closest analogue(s):
 
 ```bash
 gh pr diff "$PR" --name-only
-# Then read 1–2 existing modules in the same crate (or an analogous connector) that solve the same problem
+# 🏠 Local mode: Then read 1–2 existing modules in the same crate (or an analogous connector) that solve the same problem
+# Remote mode: Fetch reference files via gh api
+gh api "repos/{owner}/{repo}/contents/{path_to_analogous_module}?ref=main" --jq '.content' | base64 -d
 ```
 
 | Area | Expected pattern in this repo | Reject / push back if… |
@@ -256,6 +340,8 @@ Treat **insufficient for merge** as a **Blocker**. Treat **needs more** as **Blo
 
 Verify CI rather than trusting it blindly:
 
+**🏠 Local mode:**
+
 ```bash
 gh pr checks "$PR"
 # If unsure, reproduce locally on the PR branch:
@@ -264,6 +350,17 @@ gh pr checkout "$PR"
 cargo +1.95.0 check --workspace --locked    # MSRV gate (match rust-version in Cargo.toml)
 git checkout main
 ```
+
+**Remote mode alternative:**
+
+```bash
+gh pr checks "$PR"
+# If CI didn't run, that itself is a finding — you cannot verify locally in remote mode
+# Check for specific check names that indicate full coverage
+gh pr checks "$PR" --json name,state,conclusion --jq '.[] | "\(.name): \(.conclusion // .state)"'
+```
+
+> **Remote mode:** If CI never ran ("no checks reported") and you cannot reproduce locally, flag this as a **Blocker** in your report — the PR cannot be verified without either triggering CI (push/re-push) or a local checkout.
 
 Reading CI state:
 
@@ -288,6 +385,7 @@ Produce a single report. Lead with the recommendation.
 
 **Recommendation:** Merge / Request changes / Do not merge / Needs discussion
 **Author:** <login>  ·  +<additions>/-<deletions> across <n> files  ·  CI: <status>
+**Review mode:** Local / Remote <if remote, note what could not be verified>
 
 ## 1. Intent & fit
 <fits / needs changes / out of scope> — <1–3 sentences of reasoning>
@@ -313,6 +411,9 @@ Produce a single report. Lead with the recommendation.
 ### Nits
 - <finding> — `path:line`
 
+## 4. Verification gaps (remote mode only — omit if local)
+- <what could not be verified> — <why> — <mitigation (e.g., CI covers it, or must be checked locally before merge)>
+
 ## Summary
 <2–4 sentences: overall quality, what must change before merge, any follow-ups>
 ```
@@ -333,14 +434,17 @@ Produce a single report. Lead with the recommendation.
 ## Guardrails
 
 - **Read-only by default.** Reviewing means inspecting, not editing the PR — except for Step 5, which always updates *this skill file*. Do not push to the author's branch or merge unless the user explicitly asks.
-- **Never run untrusted PR code outside vetting commands.** `cargo build`/`test` on a PR branch executes that branch's `build.rs`, proc-macros, and test code on this machine. Complete Step 2a (inspect `build.rs`, deps) *before* building. If anything looks malicious, do **not** build/test locally — report instead.
-- Always return to `main` after `gh pr checkout`.
+- **Never run untrusted PR code outside vetting commands.** `cargo build`/`test` on a PR branch executes that branch's `build.rs`, proc-macros, and test code on this machine. Complete Step 2a (inspect `build.rs`, deps) *before* building. If anything looks malicious, do **not** build/test locally — report instead. (In remote mode, this risk doesn't apply since you never checkout/build.)
+- 🏠 Always return to `main` after `gh pr checkout` (local mode only).
 - A `clean` security verdict requires that **every** anomaly was explained. Unexplained ≠ clean.
 - **Every new dependency is guilty until proven necessary _and_ reputable** (Step 2a). Vet direct and transitive crates; an unjustified or obscure dep blocks the merge regardless of how clean the code looks.
 - Don't let a polished diff lower your guard — clean code is the easiest place to hide a malicious line.
 - Be specific: every finding cites `file:line` and explains impact, not just "looks off".
+- **Remote mode limitations are findings, not excuses.** If you cannot verify something due to running remotely (e.g., no `cargo tree`, no local test run, CI didn't execute), explicitly state it in the report as a gap. Never mark something `clean` just because you couldn't check it.
 
 ## Quick reference
+
+### Both modes
 
 ```bash
 PR=<number>
@@ -348,8 +452,16 @@ gh pr view "$PR" --json title,body,author,additions,deletions,changedFiles,url
 gh pr diff "$PR"
 gh pr checks "$PR"
 
-# Security sweeps (inspect deps BEFORE checkout/build)
+# Security sweeps (diff-based, works everywhere)
 gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml' '.github/'
+gh pr diff "$PR" -- 'Cargo.lock' | rg '^\+name = ' | sort -u   # new crates from diff
+gh pr diff "$PR" | rg -n 'Command::new|unsafe|transmute|reqwest|ureq|env::var|build\.rs|base64'
+```
+
+### 🏠 Local mode only
+
+```bash
+# After security diff review clears, checkout and run local tools
 git diff "main...HEAD" -- Cargo.lock | rg '^\+name = ' | sort -u   # every new (incl. transitive) crate
 gh pr checkout "$PR"
 cargo audit && cargo deny check advisories licenses bans sources
@@ -360,6 +472,20 @@ git diff main...HEAD | rg -n 'Command::new|unsafe|transmute|reqwest|ureq|env::va
 ./scripts/check.sh
 cargo +"$(rg '^rust-version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')" check --workspace --locked
 git checkout main
+```
+
+### Remote mode only
+
+```bash
+# Dep vetting without cargo
+gh pr diff "$PR" -- 'Cargo.lock' | rg '^\+name = ' | sed 's/+name = "//;s/"//' | while read -r crate; do
+  echo "== $crate =="
+  curl -s "https://crates.io/api/v1/crates/$crate" | jq '{downloads: .crate.downloads, repo: .crate.repository, updated: .crate.updated_at}'
+done
+# Read specific files at the PR's head
+gh api "repos/{owner}/{repo}/contents/{path}?ref={headRefName}" --jq '.content' | base64 -d
+# Check CI thoroughly since you can't run locally
+gh pr checks "$PR" --json name,state,conclusion --jq '.[] | "\(.name): \(.conclusion // .state)"'
 ```
 
 ## Lessons learned

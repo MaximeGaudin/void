@@ -12,6 +12,7 @@ Every connector is added through the same flow: run `void setup`, pick the servi
 | [LinkedIn](#linkedin-unipile) | Unipile API key | Unipile API polling |
 | [Hacker News](#hacker-news) | None — public API | HN API polling |
 | [Google News](#google-news) | None — public RSS | Google News RSS polling |
+| [Reddit](#reddit) | Reddit app OAuth | Reddit API polling |
 | [GitHub](#github) | Personal Access Token | GitHub REST API polling |
 
 ## WhatsApp
@@ -119,6 +120,49 @@ void gn config
 ```
 
 To follow several editions (e.g. French and US news), add one connection per edition — each is targetable with `--connection <id>`.
+
+## Reddit
+
+Reddit requires a **web** app registered at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) with redirect URI `http://localhost:8765`.
+
+**Read-only mode** uses application-only OAuth (`client_credentials`) with just `client_id` and `client_secret`. Posts from watched subreddits appear in your inbox (one channel conversation per subreddit).
+
+**Commenting mode** (optional during `void setup`) runs a browser OAuth flow and stores a `refresh_token` in config. When enabled, matching posts also sync as thread conversations with comments, and you can reply from the CLI.
+
+OAuth setup tries a local callback on `localhost:8765` first. If the port is busy, the browser cannot open, or you are on a remote machine, setup falls back to printing the authorize URL and asking you to paste the returned code.
+
+Run `void setup`, select Reddit, and enter your client ID, client secret, subreddits, keywords, and minimum score. Optionally enable commenting for the OAuth flow.
+
+```toml
+[[connections]]
+id = "reddit"
+type = "reddit"
+client_id = "your-reddit-app-client-id"
+client_secret = "your-reddit-app-client-secret"
+refresh_token = "stored-by-setup-when-commenting-enabled"  # optional
+subreddits = ["rust", "programming", "startups"]
+keywords = ["ai", "llm"]
+min_score = 50
+```
+
+Tune filters later without editing the config:
+
+```bash
+void reddit subreddits add "rust,local-first"
+void reddit subreddits remove "startups"
+void reddit keywords add "ai,llm"
+void reddit min-score 100
+void reddit config
+```
+
+Reply to a synced comment or post (requires `refresh_token`):
+
+```bash
+void reply <message-id> --message "Thanks for sharing!"
+void send --via reddit --to reddit_reddit_post_abc123 --message "Great post!"
+```
+
+`void reply` targets a post-body or comment message inside a synced thread (the conversations created when commenting is enabled). To comment on a post that only appears in the subreddit feed, use `void send --via reddit --to <post-id>` instead.
 
 ## GitHub
 

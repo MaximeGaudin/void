@@ -67,6 +67,9 @@ pub(crate) enum Command {
     Hn(commands::hackernews::HackerNewsArgs),
     /// Google News configuration (keywords, recency, language, country)
     Gn(commands::googlenews::GoogleNewsArgs),
+    /// Reddit configuration (subreddits, keywords, min-score)
+    #[command(name = "reddit", alias = "rd")]
+    Reddit(commands::reddit::RedditArgs),
     /// Slack-specific operations (react, edit, schedule, open, forward)
     Slack(commands::slack::SlackArgs),
     /// WhatsApp-specific operations (media download)
@@ -186,6 +189,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Gmail(args)) => commands::gmail::run(args).await,
         Some(Command::Hn(args)) => Ok(commands::hackernews::run(args)?),
         Some(Command::Gn(args)) => Ok(commands::googlenews::run(args)?),
+        Some(Command::Reddit(args)) => Ok(commands::reddit::run(args)?),
         Some(Command::Slack(args)) => commands::slack::run(args).await,
         Some(Command::Whatsapp(args)) => commands::whatsapp::run(args).await,
         Some(Command::Telegram(args)) => commands::telegram::run(args).await,
@@ -288,10 +292,24 @@ mod tests {
     }
 
     #[test]
+    fn reddit_keywords_list_uses_local_cache() {
+        let cli = parse(&["void", "reddit", "keywords", "list"]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
     fn slack_saved_uses_local_cache() {
         let cli = parse(&["void", "slack", "saved"]);
         let cmd = cli.command.as_ref().expect("command");
         assert!(context::runs_with_local_cache(cmd));
+    }
+
+    #[test]
+    fn reddit_min_score_uses_remote_proxy_in_remote_mode() {
+        let cli = parse(&["void", "reddit", "min-score", "100"]);
+        let cmd = cli.command.as_ref().expect("command");
+        assert!(!context::runs_with_local_cache(cmd));
     }
 
     #[test]

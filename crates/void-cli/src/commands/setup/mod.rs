@@ -10,6 +10,7 @@ pub(crate) mod googlenews;
 pub(crate) mod hackernews;
 pub(crate) mod linkedin;
 pub(crate) mod prompt;
+pub(crate) mod reddit;
 pub(crate) mod slack;
 pub(crate) mod telegram;
 pub(crate) mod whatsapp;

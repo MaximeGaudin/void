@@ -174,6 +174,10 @@ impl Default for SyncConfig {
             "github_poll_interval_secs".into(),
             toml::Value::Integer(default_github_poll() as i64),
         );
+        values.insert(
+            "reddit_poll_interval_secs".into(),
+            toml::Value::Integer(default_reddit_poll() as i64),
+        );
         Self { values }
     }
 }
@@ -220,6 +224,10 @@ impl SyncConfig {
         self.poll_interval_secs("github", default_github_poll())
     }
 
+    pub fn reddit_poll_interval_secs(&self) -> u64 {
+        self.poll_interval_secs("reddit", default_reddit_poll())
+    }
+
     pub fn iter_values(&self) -> impl Iterator<Item = (&String, &toml::Value)> {
         self.values.iter()
     }
@@ -251,6 +259,10 @@ fn default_linkedin_backfill_days() -> u64 {
 
 fn default_github_poll() -> u64 {
     120
+}
+
+fn default_reddit_poll() -> u64 {
+    3600
 }
 
 impl VoidConfig {

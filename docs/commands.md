@@ -34,7 +34,7 @@ Most read commands accept:
 
 | Flag | Description |
 |------|-------------|
-| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `linkedin` (alias: `li`), `hackernews` (alias: `hn`) |
+| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `linkedin` (alias: `li`), `hackernews` (alias: `hn`), `googlenews` (alias: `gn`), `reddit` (alias: `rd`) |
 | `--connection <id>` | Filter by connection ID (when you have several accounts of one type) |
 | `-n`, `--size <N>` | Limit number of results (default: 50) |
 | `--page <N>` | Page through results |
@@ -142,6 +142,32 @@ Tune the watched-keywords feed without editing `config.toml`. See [Connector set
 | `void hn keywords remove <csv>` | Remove one or more keywords (comma-separated) |
 | `void hn keywords set <csv>` | Replace all keywords (empty to clear) |
 | `void hn min-score <N>` | Set the minimum score threshold for stories |
+
+## Reddit
+
+Tune watched subreddits, keywords, and score threshold without editing `config.toml`. See [Connector setup](connectors.md#reddit).
+
+| Command | Description |
+|---------|-------------|
+| `void reddit config` | Show current subreddits, keywords, and minimum score (credentials redacted) |
+| `void reddit subreddits list` | List watched subreddits |
+| `void reddit subreddits add <csv>` | Add one or more subreddits (comma-separated) |
+| `void reddit subreddits remove <csv>` | Remove one or more subreddits (comma-separated) |
+| `void reddit subreddits set <csv>` | Replace all subreddits |
+| `void reddit keywords list` | List watched keywords |
+| `void reddit keywords add <csv>` | Add one or more keywords (comma-separated) |
+| `void reddit keywords remove <csv>` | Remove one or more keywords (comma-separated) |
+| `void reddit keywords set <csv>` | Replace all keywords (empty to clear) |
+| `void reddit min-score <N>` | Set the minimum score threshold for posts |
+
+Reply to synced Reddit comments (requires OAuth commenting enabled during setup):
+
+| Command | Description |
+|---------|-------------|
+| `void reply <message-id> --message "..."` | Reply to a post or comment in a Reddit thread |
+| `void send --via reddit --to <post-id> --message "..."` | Post a top-level comment on a Reddit post |
+
+Alias: `void rd …`
 
 ## Hooks
 
