@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual re-run when push/PR events fail to trigger (e.g. after merging main
+  # into a long-lived branch). Pick the PR branch in the Actions UI; checks
+  # attach to that branch's HEAD commit and satisfy required status on the PR.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
