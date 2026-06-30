@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Internal** — Expanded connector registry tests (validation, build, badges, aliases, debug redaction, poll defaults).
 - **Build** — Bump minimum supported Rust version to 1.95 (required by sysinfo 0.39).
 
+### Fixed
+
+- **Messages** — Restore UTC midnight semantics for `void messages --since/--until` date filters during service-layer extraction (calendar date ranges remain local midnight).
+
 ### Added
 
 - **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.

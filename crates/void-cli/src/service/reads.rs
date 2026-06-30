@@ -4,7 +4,9 @@ use chrono::{Datelike, Local};
 use serde_json::Value;
 use void_core::db::Database;
 
-use crate::commands::calendar::parsing::{parse_date_to_ts, parse_day_spec};
+use crate::commands::calendar::parsing::{
+    parse_date_to_ts_local, parse_date_to_ts_utc, parse_day_spec,
+};
 use crate::commands::pagination::{build_meta, parse_page};
 use crate::commands::resolve::{resolve_messages_target, MessagesTarget};
 use crate::output::{json_wrap, json_wrap_paginated, resolve_connector_filter};
@@ -131,8 +133,8 @@ pub fn messages(
             The channel may not be synced yet, or the specific message hasn't been fetched — try `void sync` first."
         ),
         MessagesTarget::ConversationId(conv_id) => {
-            let since = query.since.and_then(parse_date_to_ts);
-            let until = query.until.and_then(parse_date_to_ts);
+            let since = query.since.and_then(parse_date_to_ts_utc);
+            let until = query.until.and_then(parse_date_to_ts_utc);
             let offset = parse_page(query.size, query.page)?;
 
             let (mut messages, total_elements) = db.list_messages_paginated(
@@ -251,14 +253,14 @@ pub fn calendar_list(db: &Database, query: &CalendarQuery<'_>) -> anyhow::Result
         (start, end)
     } else {
         let today = Local::now().date_naive();
-        let from = query.from.and_then(parse_date_to_ts).or_else(|| {
+        let from = query.from.and_then(parse_date_to_ts_local).or_else(|| {
             today
                 .and_hms_opt(0, 0, 0)
                 .and_then(|dt| dt.and_local_timezone(Local).single())
                 .map(|dt| dt.timestamp())
         });
 
-        let to = query.to.and_then(parse_date_to_ts).or_else(|| {
+        let to = query.to.and_then(parse_date_to_ts_local).or_else(|| {
             (today + chrono::Duration::days(1))
                 .and_hms_opt(0, 0, 0)
                 .and_then(|dt| dt.and_local_timezone(Local).single())

@@ -68,12 +68,21 @@ pub(crate) fn parse_day_spec(spec: &str) -> anyhow::Result<chrono::NaiveDate> {
     }
 }
 
-pub(crate) fn parse_date_to_ts(date: &str) -> Option<i64> {
+/// Parse `YYYY-MM-DD` as midnight in the local timezone (calendar date ranges).
+pub(crate) fn parse_date_to_ts_local(date: &str) -> Option<i64> {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .ok()
         .and_then(|d| d.and_hms_opt(0, 0, 0))
         .and_then(|dt| dt.and_local_timezone(Local).single())
         .map(|dt| dt.timestamp())
+}
+
+/// Parse `YYYY-MM-DD` as midnight UTC (message filters, bulk archive cutoff).
+pub(crate) fn parse_date_to_ts_utc(date: &str) -> Option<i64> {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|dt| dt.and_utc().timestamp())
 }
 
 #[cfg(test)]
@@ -119,8 +128,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_date_to_ts_valid() {
-        let ts = parse_date_to_ts("2026-06-15").unwrap();
+    fn parse_date_to_ts_local_valid() {
+        let ts = parse_date_to_ts_local("2026-06-15").unwrap();
         assert!(ts > 0);
         let local_midnight = NaiveDate::from_ymd_opt(2026, 6, 15)
             .unwrap()
@@ -133,9 +142,42 @@ mod tests {
     }
 
     #[test]
+    fn parse_date_to_ts_utc_valid() {
+        let ts = parse_date_to_ts_utc("2026-06-15").unwrap();
+        let utc_midnight = NaiveDate::from_ymd_opt(2026, 6, 15)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+        assert_eq!(ts, utc_midnight);
+    }
+
+    #[test]
+    fn parse_date_to_ts_local_and_utc_differ_when_offset_nonzero() {
+        let date = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+        let local = parse_date_to_ts_local("2026-06-15").unwrap();
+        let utc = parse_date_to_ts_utc("2026-06-15").unwrap();
+        let expected_local = date
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_local_timezone(Local)
+            .unwrap()
+            .timestamp();
+        let expected_utc = date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+        assert_eq!(local, expected_local);
+        assert_eq!(utc, expected_utc);
+        if expected_local != expected_utc {
+            assert_ne!(local, utc);
+        }
+    }
+
+    #[test]
     fn parse_date_to_ts_invalid() {
-        assert!(parse_date_to_ts("invalid").is_none());
-        assert!(parse_date_to_ts("2026-13-45").is_none());
+        assert!(parse_date_to_ts_local("invalid").is_none());
+        assert!(parse_date_to_ts_local("2026-13-45").is_none());
+        assert!(parse_date_to_ts_utc("invalid").is_none());
+        assert!(parse_date_to_ts_utc("2026-13-45").is_none());
     }
 
     #[test]
@@ -161,14 +203,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_date_to_ts_uses_local_not_utc() {
-        let ts = parse_date_to_ts("2026-06-15").unwrap();
-        let _utc_midnight = NaiveDate::from_ymd_opt(2026, 6, 15)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp();
+    fn parse_date_to_ts_local_uses_local_not_utc() {
+        let ts = parse_date_to_ts_local("2026-06-15").unwrap();
         let local_midnight = NaiveDate::from_ymd_opt(2026, 6, 15)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -176,7 +212,16 @@ mod tests {
             .and_local_timezone(Local)
             .unwrap()
             .timestamp();
+        let utc_midnight = NaiveDate::from_ymd_opt(2026, 6, 15)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
         assert_eq!(ts, local_midnight);
+        if local_midnight != utc_midnight {
+            assert_ne!(ts, utc_midnight);
+        }
     }
 
     #[test]

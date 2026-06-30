@@ -10,6 +10,9 @@ use void_core::db::Database;
 use void_core::models::MessageContent;
 use void_core::sync::is_daemon_running;
 
+use tracing::{debug, warn};
+
+use crate::commands::calendar::parsing::parse_date_to_ts_utc;
 use crate::commands::connector_factory;
 use crate::commands::resolve::resolve_message;
 use crate::connectors;
@@ -340,7 +343,7 @@ async fn archive_bulk_before(
     date_str: &str,
     connector: Option<&str>,
 ) -> anyhow::Result<Value> {
-    let before_ts = parse_date_to_ts(date_str)
+    let before_ts = parse_date_to_ts_utc(date_str)
         .ok_or_else(|| anyhow::anyhow!("invalid date \"{date_str}\", expected YYYY-MM-DD"))?;
 
     let connector_filter = resolve_connector_filter(connector)?;
@@ -489,13 +492,6 @@ async fn run_slack_scheduled_reply(
         .await
 }
 
-fn parse_date_to_ts(date: &str) -> Option<i64> {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .ok()
-        .and_then(|d| d.and_hms_opt(0, 0, 0))
-        .map(|dt| dt.and_utc().timestamp())
-}
-
 fn cleanup_cached_files(msg: &void_core::models::Message) {
     let files = match msg
         .metadata
@@ -508,7 +504,11 @@ fn cleanup_cached_files(msg: &void_core::models::Message) {
     };
     for file in files {
         if let Some(path) = file.get("local_path").and_then(|v| v.as_str()) {
-            let _ = std::fs::remove_file(path);
+            match std::fs::remove_file(path) {
+                Ok(()) => debug!(path, "deleted cached file"),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => warn!(path, error = %e, "failed to delete cached file"),
+            }
         }
     }
 }
