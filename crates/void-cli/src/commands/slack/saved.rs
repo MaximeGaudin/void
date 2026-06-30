@@ -1,8 +1,8 @@
 use clap::Args;
 use tracing::debug;
 
-use super::super::pagination::{build_meta, parse_page};
-use crate::output::OutputFormatter;
+use crate::service;
+use crate::service::reads::{self, SlackSavedQuery};
 
 #[derive(Debug, Args)]
 pub struct SavedArgs {
@@ -24,14 +24,13 @@ pub fn run(args: &SavedArgs) -> anyhow::Result<()> {
         page = args.page,
         "slack saved"
     );
-    let _cfg = crate::context::config();
     let db = crate::context::open_db()?;
-    let formatter = OutputFormatter::new();
-    let offset = parse_page(args.size, args.page)?;
-
-    let (mut messages, total_elements) =
-        db.list_saved_messages(args.connection.as_deref(), Some("slack"), args.size, offset)?;
-    messages.reverse();
-    let meta = build_meta(args.page, args.size, total_elements);
-    formatter.print_paginated(&messages, meta)
+    let query = SlackSavedQuery {
+        connection: args.connection.as_deref(),
+        size: args.size,
+        page: args.page,
+    };
+    let value = reads::slack_saved(&db, &query)?;
+    println!("{}", service::render(&value)?);
+    Ok(())
 }
