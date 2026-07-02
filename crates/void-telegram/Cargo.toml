@@ -17,7 +17,7 @@ async-trait = { workspace = true }
 tokio-util = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
-grammers-client = "0.9"
+grammers-client = "0.10"
 grammers-mtsender = "0.9"
 grammers-session = { version = "0.9", default-features = false }
 grammers-tl-types = "0.9"
