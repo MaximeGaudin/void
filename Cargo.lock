@@ -1378,8 +1378,8 @@ dependencies = [
  "futures-util",
  "grammers-crypto",
  "grammers-mtsender",
- "grammers-session",
- "grammers-tl-types",
+ "grammers-session 0.9.0",
+ "grammers-tl-types 0.9.0",
  "log",
  "md5",
  "mime_guess",
@@ -1416,7 +1416,7 @@ dependencies = [
  "flate2",
  "getrandom 0.4.2",
  "grammers-crypto",
- "grammers-tl-types",
+ "grammers-tl-types 0.9.0",
  "log",
  "num-bigint",
  "sha1",
@@ -1431,8 +1431,8 @@ dependencies = [
  "bytes",
  "grammers-crypto",
  "grammers-mtproto",
- "grammers-session",
- "grammers-tl-types",
+ "grammers-session 0.9.0",
+ "grammers-tl-types 0.9.0",
  "locate-locale",
  "log",
  "os_info",
@@ -1446,7 +1446,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ad9fe6e7acc0eaf653460233fce428bcdcd0f5648768bd8941145a430b84bb"
 dependencies = [
  "futures-core",
- "grammers-tl-types",
+ "grammers-tl-types 0.9.0",
+ "log",
+ "tokio",
+]
+
+[[package]]
+name = "grammers-session"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e4d5b9e434c6b9fc1e091fe82d1f201d8e19df5005d2c19e218b4977b4df506"
+dependencies = [
+ "grammers-tl-types 0.10.0",
  "log",
  "tokio",
 ]
@@ -1461,10 +1472,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "grammers-tl-parser"
-version = "1.2.1"
+name = "grammers-tl-gen"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3c01be87038dce51855b5037e7d341eb84146db713a1c4953a8415512d26477"
+checksum = "1a37dda68c9e775dfbffb85b99826b5ac8144e9da40be3327e77cbcd8618fc30"
+dependencies = [
+ "grammers-tl-parser",
+]
+
+[[package]]
+name = "grammers-tl-parser"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "646fc5eeb27461ffcc94fcf9fda3ffd9b402a20250447ae4a65c39c1a905e381"
 dependencies = [
  "crc32fast",
 ]
@@ -1475,7 +1495,17 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a25e1f6fa6142fda4f3938d6b5cd1d74848e39a845ff18a1c632200285b4d8a4"
 dependencies = [
- "grammers-tl-gen",
+ "grammers-tl-gen 0.9.0",
+ "grammers-tl-parser",
+]
+
+[[package]]
+name = "grammers-tl-types"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67d450e2f2588af535fe85a17b9a6df8338794ee8ad6bcb1b97d61a14d472fc5"
+dependencies = [
+ "grammers-tl-gen 0.10.0",
  "grammers-tl-parser",
 ]
 
@@ -2118,9 +2148,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.29"
+version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "lru"
@@ -3789,7 +3819,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -4634,8 +4664,8 @@ dependencies = [
  "chrono",
  "grammers-client",
  "grammers-mtsender",
- "grammers-session",
- "grammers-tl-types",
+ "grammers-session 0.10.0",
+ "grammers-tl-types 0.9.0",
  "qr2term",
  "serde",
  "serde_json",
