@@ -1,8 +1,8 @@
 use clap::Args;
 use tracing::debug;
 
-use super::pagination::{build_meta, parse_page};
-use crate::output::{resolve_connector_filter, OutputFormatter, CONNECTOR_FILTER_HELP};
+use crate::service;
+use crate::service::reads::{self, SearchQuery};
 
 #[derive(Debug, Args)]
 pub struct SearchArgs {
@@ -11,7 +11,7 @@ pub struct SearchArgs {
     /// Filter by connection (partial match on connection_id)
     #[arg(long)]
     pub connection: Option<String>,
-    #[arg(long, help = CONNECTOR_FILTER_HELP)]
+    #[arg(long, help = crate::output::CONNECTOR_FILTER_HELP)]
     pub connector: Option<String>,
     /// Maximum number of results to return
     #[arg(short = 'n', long, default_value = "50")]
@@ -26,26 +26,16 @@ pub struct SearchArgs {
 
 pub fn run(args: &SearchArgs, enrich_context: bool) -> anyhow::Result<()> {
     debug!(query = %args.query, connection = ?args.connection, connector = ?args.connector, size = args.size, page = args.page, "search");
-    let connector = resolve_connector_filter(args.connector.as_deref())?;
-    let _cfg = crate::context::config();
     let db = crate::context::open_db()?;
-    let formatter = OutputFormatter::new();
-    let offset = parse_page(args.size, args.page)?;
-
-    // Search must not dedupe by context_id: older thread matches would disappear
-    // once a newer reply exists (e.g. searching "trop bien" after you replied).
-    let (mut messages, total_elements) = db.search_messages_paginated(
-        &args.query,
-        args.connection.as_deref(),
-        connector.as_deref(),
-        args.size,
-        offset,
-        args.include_muted,
-        false,
-    )?;
-    if enrich_context {
-        db.enrich_with_context(&mut messages)?;
-    }
-    let meta = build_meta(args.page, args.size, total_elements);
-    formatter.print_paginated(&messages, meta)
+    let query = SearchQuery {
+        query: &args.query,
+        connection: args.connection.as_deref(),
+        connector: args.connector.as_deref(),
+        size: args.size,
+        page: args.page,
+        include_muted: args.include_muted,
+    };
+    let value = reads::search(&db, &query, enrich_context)?;
+    println!("{}", service::render(&value)?);
+    Ok(())
 }

@@ -3,7 +3,7 @@
 mod api;
 mod args;
 mod list;
-mod parsing;
+pub(crate) mod parsing;
 
 pub use args::{CalendarArgs, CalendarCommand};
 

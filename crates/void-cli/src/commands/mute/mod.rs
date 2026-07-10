@@ -1,14 +1,12 @@
-use std::collections::HashSet;
-
 use clap::Args;
-use tracing::debug;
 use void_core::config::VoidConfig;
 
 use crate::output::{resolve_connector_filter, CONNECTOR_FILTER_HELP};
+use crate::service::writes::{self, MuteParams};
 
 mod list;
 mod migrate;
-mod resolve;
+pub(crate) mod resolve;
 
 #[cfg(test)]
 mod tests;
@@ -59,66 +57,14 @@ pub fn run(args: &MuteArgs) -> anyhow::Result<()> {
         );
     }
 
-    let mute = !args.unmute;
-    let action = if mute { "muted" } else { "unmuted" };
-    let mut results = Vec::new();
-    let mut affected_connections = HashSet::new();
-    let mut config_changed = false;
+    let params = MuteParams {
+        targets: &args.targets,
+        unmute: args.unmute,
+        connection: args.connection.as_deref(),
+        connector: args.connector.as_deref(),
+    };
 
-    for target in &args.targets {
-        debug!(target, mute, "processing mute target");
-
-        let matches = resolve::resolve_targets(
-            &db,
-            target,
-            args.connection.as_deref(),
-            connector.as_deref(),
-        )?;
-
-        if matches.is_empty() {
-            eprintln!("no conversation matching \"{target}\" found");
-            results.push(serde_json::json!({
-                "target": target,
-                "error": "not found",
-            }));
-            continue;
-        }
-
-        for conv in matches {
-            let changed = if mute {
-                cfg.add_ignore_conversation(&conv.connection_id, conv.external_id.clone())
-            } else {
-                cfg.remove_ignore_conversation(
-                    &conv.connection_id,
-                    &conv.external_id,
-                    conv.name.as_deref(),
-                )
-            };
-            config_changed |= changed;
-            affected_connections.insert(conv.connection_id.clone());
-
-            let name = conv.name.as_deref().unwrap_or(&conv.id);
-            eprintln!("{action}: {name} [{}] ({})", conv.connector, conv.id);
-            results.push(serde_json::json!({
-                "id": conv.id,
-                "name": name,
-                "connector": conv.connector,
-                "connection_id": conv.connection_id,
-                "external_id": conv.external_id,
-                "is_muted": mute,
-            }));
-        }
-    }
-
-    if config_changed {
-        cfg.save(&config_path)?;
-        for connection_id in &affected_connections {
-            if let Some(conn) = cfg.connections.iter().find(|c| c.id == *connection_id) {
-                db.sync_ignore_conversations(&conn.id, &conn.ignore_conversations)?;
-            }
-        }
-    }
-
-    println!("{}", serde_json::json!({ "data": results, "error": null }));
+    let value = writes::mute(&db, &mut cfg, &config_path, params)?;
+    println!("{value}");
     Ok(())
 }

@@ -66,11 +66,11 @@ impl OutputFormatter {
     }
 }
 
-fn json_wrap<T: serde::Serialize>(data: T) -> serde_json::Value {
+pub(crate) fn json_wrap<T: serde::Serialize>(data: T) -> serde_json::Value {
     serde_json::json!({ "data": data, "error": null })
 }
 
-fn json_wrap_paginated<T: serde::Serialize>(
+pub(crate) fn json_wrap_paginated<T: serde::Serialize>(
     data: T,
     pagination: PaginationMeta,
 ) -> serde_json::Value {

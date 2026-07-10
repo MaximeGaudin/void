@@ -1,9 +1,8 @@
 use clap::Args;
 use tracing::debug;
 
-use super::pagination::{build_meta, parse_page};
-use super::resolve::{resolve_messages_target, MessagesTarget};
-use crate::output::OutputFormatter;
+use crate::service;
+use crate::service::reads::{self, MessagesQuery};
 
 #[derive(Debug, Args)]
 pub struct MessagesArgs {
@@ -25,77 +24,15 @@ pub struct MessagesArgs {
 
 pub fn run(args: &MessagesArgs, enrich_context: bool) -> anyhow::Result<()> {
     debug!(target = %args.target, size = args.size, page = args.page, "messages");
-    let _cfg = crate::context::config();
     let db = crate::context::open_db()?;
-    let formatter = OutputFormatter::new();
-
-    match resolve_messages_target(&db, &args.target)? {
-        MessagesTarget::Link {
-            message_id,
-            conversation_id: _,
-        } => {
-            let msg = db
-                .get_message(&message_id)?
-                .ok_or_else(|| anyhow::anyhow!("Message vanished after lookup: {message_id}"))?;
-            let mut messages = vec![msg];
-            if enrich_context {
-                db.enrich_with_context(&mut messages)?;
-            }
-            formatter.print_messages(&messages)
-        }
-        MessagesTarget::UnresolvedSlackLink {
-            channel_id,
-            message_ts,
-            workspace,
-        } => {
-            anyhow::bail!(
-                "Slack message not found locally for link (workspace: {workspace}, channel: {channel_id}, ts: {message_ts}). \
-                The channel may not be synced yet, or the specific message hasn't been fetched — try `void sync` first."
-            )
-        }
-        MessagesTarget::ConversationId(conv_id) => {
-            let since = args.since.as_deref().and_then(parse_date_to_ts);
-            let until = args.until.as_deref().and_then(parse_date_to_ts);
-            let offset = parse_page(args.size, args.page)?;
-
-            let (mut messages, total_elements) = db.list_messages_paginated(
-                &conv_id,
-                args.size,
-                offset,
-                since,
-                until,
-                enrich_context,
-            )?;
-            if enrich_context {
-                db.enrich_with_context(&mut messages)?;
-            }
-            let meta = build_meta(args.page, args.size, total_elements);
-            formatter.print_paginated(&messages, meta)
-        }
-        MessagesTarget::Connector { connector } => {
-            let offset = parse_page(args.size, args.page)?;
-            let (mut messages, total_elements) = db.recent_messages_paginated(
-                None,
-                Some(&connector),
-                args.size,
-                offset,
-                true,
-                true,
-                enrich_context,
-            )?;
-            messages.reverse();
-            if enrich_context {
-                db.enrich_with_context(&mut messages)?;
-            }
-            let meta = build_meta(args.page, args.size, total_elements);
-            formatter.print_paginated(&messages, meta)
-        }
-    }
-}
-
-fn parse_date_to_ts(date: &str) -> Option<i64> {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .ok()
-        .and_then(|d| d.and_hms_opt(0, 0, 0))
-        .map(|dt| dt.and_utc().timestamp())
+    let query = MessagesQuery {
+        target: &args.target,
+        since: args.since.as_deref(),
+        until: args.until.as_deref(),
+        size: args.size,
+        page: args.page,
+    };
+    let value = reads::messages(&db, &query, enrich_context)?;
+    println!("{}", service::render(&value)?);
+    Ok(())
 }

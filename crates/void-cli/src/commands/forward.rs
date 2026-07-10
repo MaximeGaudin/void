@@ -1,7 +1,7 @@
 use clap::Args;
-use tracing::{debug, info};
+use tracing::info;
 
-use crate::commands::connector_factory;
+use crate::service::writes::{self, ForwardParams};
 
 #[derive(Debug, Args)]
 pub struct ForwardArgs {
@@ -18,40 +18,16 @@ pub struct ForwardArgs {
 pub async fn run(args: &ForwardArgs) -> anyhow::Result<()> {
     info!(message_id = %args.message_id, to = %args.to, "forward");
     let cfg = crate::context::void_config();
-
     let db = crate::context::open_db()?;
-
-    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
-
-    let conv = db
-        .get_conversation(&msg.conversation_id)?
-        .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
-
-    debug!(connector = %msg.connector, connection_id = %msg.connection_id, "resolved message");
-
-    let connection = cfg
-        .find_connection(&msg.connection_id)
-        .or_else(|| cfg.find_connection_by_connector(&msg.connector))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No {} connection found in config for message {}",
-                msg.connector,
-                msg.id
-            )
-        })?;
-
     let store_path = crate::context::store_path();
-    let conn = connector_factory::build_connector(connection, &store_path)?;
 
-    let fwd_id = conn
-        .forward(
-            &msg.external_id,
-            &conv.external_id,
-            &args.to,
-            args.comment.as_deref(),
-        )
-        .await?;
+    let params = ForwardParams {
+        message_id: &args.message_id,
+        to: &args.to,
+        comment: args.comment.as_deref(),
+    };
 
+    let fwd_id = writes::forward(&db, cfg, &store_path, params).await?;
     eprintln!("Message forwarded (id: {fwd_id})");
     Ok(())
 }
