@@ -272,27 +272,31 @@ impl JsonFileSession {
 }
 
 impl Session for JsonFileSession {
-    fn home_dc_id(&self) -> i32 {
-        self.data.read().expect("session lock poisoned").home_dc
+    type Error = std::convert::Infallible;
+
+    fn home_dc_id(&self) -> Result<i32, Self::Error> {
+        Ok(self.data.read().expect("session lock poisoned").home_dc)
     }
 
-    fn set_home_dc_id(&self, dc_id: i32) -> BoxFuture<'_, ()> {
+    fn set_home_dc_id(&self, dc_id: i32) -> BoxFuture<'_, Result<(), Self::Error>> {
         Box::pin(async move {
             self.data.write().expect("session lock poisoned").home_dc = dc_id;
             self.save();
+            Ok(())
         })
     }
 
-    fn dc_option(&self, dc_id: i32) -> Option<DcOption> {
-        self.data
+    fn dc_option(&self, dc_id: i32) -> Result<Option<DcOption>, Self::Error> {
+        Ok(self
+            .data
             .read()
             .expect("session lock poisoned")
             .dc_options
             .get(&dc_id)
-            .map(DcOption::from)
+            .map(DcOption::from))
     }
 
-    fn set_dc_option(&self, dc_option: &DcOption) -> BoxFuture<'_, ()> {
+    fn set_dc_option(&self, dc_option: &DcOption) -> BoxFuture<'_, Result<(), Self::Error>> {
         let dc_data = DcData::from(dc_option);
         Box::pin(async move {
             self.data
@@ -301,37 +305,46 @@ impl Session for JsonFileSession {
                 .dc_options
                 .insert(dc_data.id, dc_data);
             self.save();
+            Ok(())
         })
     }
 
-    fn peer(&self, peer: PeerId) -> BoxFuture<'_, Option<PeerInfo>> {
+    fn peer(&self, peer: PeerId) -> BoxFuture<'_, Result<Option<PeerInfo>, Self::Error>> {
         let key = peer.bot_api_dialog_id();
         Box::pin(async move {
-            self.data
+            let Some(key) = key else {
+                return Ok(None);
+            };
+            Ok(self
+                .data
                 .read()
                 .expect("session lock poisoned")
                 .peers
                 .get(&key)
-                .map(PeerInfo::from)
+                .map(PeerInfo::from))
         })
     }
 
-    fn cache_peer(&self, peer: &PeerInfo) -> BoxFuture<'_, ()> {
+    fn cache_peer(&self, peer: &PeerInfo) -> BoxFuture<'_, Result<(), Self::Error>> {
         let key = peer.id().bot_api_dialog_id();
         let peer_data = PeerData::from(peer);
         Box::pin(async move {
+            let Some(key) = key else {
+                return Ok(());
+            };
             self.data
                 .write()
                 .expect("session lock poisoned")
                 .peers
                 .insert(key, peer_data);
+            Ok(())
         })
     }
 
-    fn updates_state(&self) -> BoxFuture<'_, UpdatesState> {
+    fn updates_state(&self) -> BoxFuture<'_, Result<UpdatesState, Self::Error>> {
         Box::pin(async move {
             let data = self.data.read().expect("session lock poisoned");
-            UpdatesState {
+            Ok(UpdatesState {
                 pts: data.updates.pts,
                 qts: data.updates.qts,
                 date: data.updates.date,
@@ -345,11 +358,11 @@ impl Session for JsonFileSession {
                         pts: c.pts,
                     })
                     .collect(),
-            }
+            })
         })
     }
 
-    fn set_update_state(&self, update: UpdateState) -> BoxFuture<'_, ()> {
+    fn set_update_state(&self, update: UpdateState) -> BoxFuture<'_, Result<(), Self::Error>> {
         Box::pin(async move {
             let mut data = self.data.write().expect("session lock poisoned");
             match update {
@@ -387,6 +400,7 @@ impl Session for JsonFileSession {
             }
             drop(data);
             self.save();
+            Ok(())
         })
     }
 }
@@ -417,8 +431,8 @@ mod tests {
         let path = unique_session_path();
         let _ = std::fs::remove_file(&path);
         let s = JsonFileSession::load_or_create(&path);
-        assert_eq!(s.home_dc_id(), 2);
-        assert!(s.dc_option(1).is_some());
+        assert_eq!(s.home_dc_id().unwrap(), 2);
+        assert!(s.dc_option(1).unwrap().is_some());
         let _ = std::fs::remove_file(&path);
     }
 
@@ -427,7 +441,7 @@ mod tests {
         let path = unique_session_path();
         std::fs::write(&path, "not valid json {{{").unwrap();
         let s = JsonFileSession::load_or_create(&path);
-        assert_eq!(s.home_dc_id(), 2);
+        assert_eq!(s.home_dc_id().unwrap(), 2);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -437,10 +451,10 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         {
             let s = JsonFileSession::load_or_create(&path);
-            s.set_home_dc_id(4).await;
+            s.set_home_dc_id(4).await.unwrap();
         }
         let s2 = JsonFileSession::load_or_create(&path);
-        assert_eq!(s2.home_dc_id(), 4);
+        assert_eq!(s2.home_dc_id().unwrap(), 4);
         let _ = std::fs::remove_file(&path);
     }
 }

@@ -60,21 +60,13 @@ impl TelegramConnector {
 
         let runner = tokio::spawn(pool.runner.run());
 
-        let results = client
-            .search_peer(&chat_id.to_string(), 1)
+        let peer = send::resolve_numeric_peer(&client, chat_id)
             .await
             .map_err(|e| TelegramError::Connection(e.to_string()))?;
 
-        let peer = results
-            .into_iter()
-            .next()
-            .ok_or_else(|| TelegramError::Media(format!("peer not found: {chat_id}")))?
-            .into_peer();
-
-        let peer_ref = peer
-            .to_ref()
+        let peer_ref = send::peer_ref(&peer)
             .await
-            .ok_or_else(|| TelegramError::Media("could not resolve peer ref".into()))?;
+            .map_err(|e| TelegramError::Media(e.to_string()))?;
 
         let messages = client
             .get_messages_by_id(peer_ref, &[message_id])
