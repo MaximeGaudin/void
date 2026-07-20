@@ -132,10 +132,7 @@ impl Connector for TelegramConnector {
         let runner = tokio::spawn(pool.runner.run());
 
         let peer = send::resolve_peer(&client, to).await?;
-        let peer_ref = peer
-            .to_ref()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("could not resolve peer ref"))?;
+        let peer_ref = send::peer_ref(&peer).await?;
 
         let msg = match &content {
             MessageContent::File {
@@ -185,16 +182,8 @@ impl Connector for TelegramConnector {
         let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
-        let results = client.search_peer(&raw_chat_id.to_string(), 1).await?;
-        let peer = results
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("could not resolve chat {raw_chat_id}"))?
-            .into_peer();
-        let peer_ref = peer
-            .to_ref()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("could not resolve peer ref"))?;
+        let peer = send::resolve_numeric_peer(&client, raw_chat_id).await?;
+        let peer_ref = send::peer_ref(&peer).await?;
 
         let mut msg = match &content {
             MessageContent::File {
@@ -241,12 +230,9 @@ impl Connector for TelegramConnector {
         let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
-        let results = client.search_peer(&raw_chat_id.to_string(), 1).await?;
-        if let Some(item) = results.into_iter().next() {
-            let peer = item.into_peer();
-            if let Some(peer_ref) = peer.to_ref().await {
-                client.mark_as_read(peer_ref).await?;
-            }
+        let peer = send::resolve_numeric_peer(&client, raw_chat_id).await?;
+        if let Ok(peer_ref) = send::peer_ref(&peer).await {
+            client.mark_as_read(peer_ref).await?;
         }
 
         client.disconnect();
@@ -276,22 +262,11 @@ impl Connector for TelegramConnector {
         let (client, pool) = self.connect()?;
         let runner = tokio::spawn(pool.runner.run());
 
-        let source_results = client.search_peer(&raw_chat_id.to_string(), 1).await?;
-        let source = source_results
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("could not resolve source chat {raw_chat_id}"))?
-            .into_peer();
-        let source_ref = source
-            .to_ref()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("could not resolve source peer ref"))?;
+        let source = send::resolve_numeric_peer(&client, raw_chat_id).await?;
+        let source_ref = send::peer_ref(&source).await?;
 
         let dest = send::resolve_peer(&client, to).await?;
-        let dest_ref = dest
-            .to_ref()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("could not resolve destination peer ref"))?;
+        let dest_ref = send::peer_ref(&dest).await?;
 
         let forwarded: Vec<Option<TgMessage>> = client
             .forward_messages(dest_ref, &[raw_msg_id], source_ref)
@@ -340,14 +315,21 @@ async fn qr_login_loop(
                 tokio::time::sleep(POLL_INTERVAL).await;
             }
             tl::enums::auth::LoginToken::MigrateTo(migrate) => {
-                let old_dc = handle.session.home_dc_id();
+                let old_dc = handle
+                    .session
+                    .home_dc_id()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
                 debug!(
                     old_dc,
                     new_dc = migrate.dc_id,
                     "QR scan detected, migrating home DC"
                 );
                 handle.thin.disconnect_from_dc(old_dc);
-                handle.session.set_home_dc_id(migrate.dc_id).await;
+                handle
+                    .session
+                    .set_home_dc_id(migrate.dc_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
 
                 let import = tl::functions::auth::ImportLoginToken {
                     token: migrate.token,

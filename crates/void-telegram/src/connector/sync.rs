@@ -32,7 +32,8 @@ pub(super) async fn run_sync(
                 ..Default::default()
             },
         )
-        .await;
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     info!(connection_id, "telegram live update stream started");
 
@@ -48,7 +49,7 @@ pub(super) async fn run_sync(
             tokio::select! {
                 _ = cancel.cancelled() => {
                     info!(connection_id, "telegram sync cancelled, persisting update state");
-                    stream.sync_update_state().await;
+                    let _ = stream.sync_update_state().await;
                     break;
                 }
                 update = stream.next() => {
@@ -62,7 +63,7 @@ pub(super) async fn run_sync(
                             warn!(error = %e, "telegram update stream error");
                         }
                     }
-                    stream.sync_update_state().await;
+                    let _ = stream.sync_update_state().await;
                 }
             }
         }
@@ -132,6 +133,7 @@ async fn backfill_messages(
     let peer_ref = peer
         .to_ref()
         .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?
         .ok_or_else(|| anyhow::anyhow!("could not resolve peer ref for backfill"))?;
     let mut messages = client.iter_messages(peer_ref).limit(100);
 
