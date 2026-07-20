@@ -347,7 +347,11 @@ impl VoidMcpServer {
 #[tool_handler]
 impl ServerHandler for VoidMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::default()
+        // Prefer the binary/product name over CARGO_CRATE_NAME ("void-cli").
+        ServerInfo::default().with_server_info(rmcp::model::Implementation::new(
+            "void",
+            env!("CARGO_PKG_VERSION"),
+        ))
     }
 }
 
@@ -382,5 +386,12 @@ mod tests {
                 "missing tool {expected}, got {names:?}"
             );
         }
+    }
+
+    #[test]
+    fn server_info_uses_product_name_void() {
+        let info = VoidMcpServer::new().get_info();
+        assert_eq!(info.server_info.name, "void");
+        assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
     }
 }
