@@ -15,6 +15,7 @@ Complete reference for every `void` command. For per-service credential setup, s
 - [Hacker News](#hacker-news)
 - [Hooks](#hooks)
 - [System](#system)
+- [MCP](#mcp)
 - [Remote store](#remote-store)
 
 ## Global flags
@@ -198,6 +199,12 @@ LLM automations triggered by new messages or cron schedules. See the full [Hooks
 | `void sync --clear-connector <type>` | Clear one connector's data |
 | `void sync --allow-broken` | Keep syncing even if a connector fails |
 | `void doctor` | Check configuration and connectivity. `--non-interactive` for scripts/CI |
+
+## MCP
+
+| Command | Description |
+|---------|-------------|
+| `void mcp` | Start the stdio MCP server (read tools). See [MCP guide](mcp.md) |
 
 ## Remote store
 

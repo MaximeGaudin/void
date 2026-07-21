@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP** — `void mcp` stdio MCP server with read tools (inbox, conversations, messages, search, contacts, channels, calendar, health) for AI agents. See [docs/mcp.md](docs/mcp.md).
 - **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.
 - **Reddit** — New connector that polls watched subreddits and surfaces posts matching your keywords and minimum score (one channel conversation per subreddit). Read-only mode uses application-only OAuth (`client_id` + `client_secret`); enabling commenting during `void setup` runs a browser OAuth flow, stores a `refresh_token`, syncs matching posts as comment threads, and lets you reply via `void reply` / `void send --via reddit`. Tune filters at runtime with `void reddit subreddits|keywords|min-score|config`.
 - **Slack** — Sync "Saved for Later" items from the Later view during background sync; view with `void slack saved`. Setup wizard documents the required `search:read` scope.

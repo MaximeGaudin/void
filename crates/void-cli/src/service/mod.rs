@@ -1,5 +1,6 @@
 //! Shared business logic for CLI commands and the upcoming MCP server.
 
+pub mod health;
 pub mod reads;
 pub mod writes;
 
