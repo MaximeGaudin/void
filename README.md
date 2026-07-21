@@ -16,7 +16,7 @@ It is built for terminals, shell scripts, and AI agents:
 - **Full-text search** — FTS5 across every message on every service
 - **Inbox Zero** — triage, act, archive; muted noise stays out of sight
 - **Agent hooks** — run Claude Code (or any agent CLI) on new messages or cron schedules
-- **MCP server** — `void mcp` exposes inbox read tools over stdio for Cursor and other MCP clients ([docs/mcp.md](docs/mcp.md))
+- **MCP server** — `void mcp` exposes inbox read/write tools and full CLI parity via `run` over stdio ([docs/mcp.md](docs/mcp.md))
 - **Remote mode** — sync on a home server, drive it from any laptop over plain SSH
 
 **Start here:** [Install](docs/install.md) · [Commands](docs/commands.md) · [MCP server](docs/mcp.md) · [Connector setup](docs/connectors.md) · [Configuration](docs/configuration.md) · [Hooks](docs/hooks.md) · [Remote store](docs/remote-store.md)
