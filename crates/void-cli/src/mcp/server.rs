@@ -1,11 +1,16 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use rmcp::service::RequestContext;
 use rmcp::transport::stdio;
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content, ServerInfo},
-    tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
+    model::{
+        CallToolResult, Content, GetPromptRequestParams, GetPromptResult, ListPromptsResult,
+        PaginatedRequestParams, PromptMessage, PromptMessageRole, ServerCapabilities, ServerInfo,
+    },
+    prompt, prompt_handler, prompt_router, tool, tool_handler, tool_router, ErrorData as McpError,
+    RoleServer, ServerHandler, ServiceExt,
 };
 
 use crate::service::exec::{self, ExecParams};
@@ -22,13 +27,72 @@ use crate::service::writes::{
 pub struct VoidMcpServer {
     #[allow(dead_code)]
     tool_router: rmcp::handler::server::tool::ToolRouter<Self>,
+    #[allow(dead_code)]
+    prompt_router: rmcp::handler::server::router::prompt::PromptRouter<Self>,
 }
 
 impl VoidMcpServer {
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
+            prompt_router: Self::prompt_router(),
         }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct TriageInboxArgs {
+    /// Optional focus, e.g. a connector ("slack", "gmail") or a topic to prioritize.
+    focus: Option<String>,
+}
+
+#[prompt_router]
+impl VoidMcpServer {
+    /// Operating guide for triaging the Void inbox to Inbox Zero.
+    #[prompt(
+        name = "triage_inbox",
+        description = "Walk through triaging the Void inbox (Inbox Zero workflow) using the available tools."
+    )]
+    async fn triage_inbox(
+        &self,
+        Parameters(args): Parameters<TriageInboxArgs>,
+    ) -> Result<Vec<PromptMessage>, McpError> {
+        let focus_line = match args.focus.as_deref() {
+            Some(focus) if !focus.trim().is_empty() => {
+                format!("\nPrioritize anything related to: **{}**.\n", focus.trim())
+            }
+            _ => String::new(),
+        };
+
+        let guide = format!(
+            "You are triaging the user's unified inbox via the Void MCP server. \
+Void aggregates WhatsApp, Telegram, Slack, Gmail, Google Calendar, LinkedIn, GitHub, \
+Hacker News, Google News, and Reddit into one local inbox. Follow the Inbox Zero loop.\n\
+{focus_line}\n\
+## Loop\n\
+1. **Triage** — call `inbox` to list unprocessed messages across all connectors. \
+Use `connector`/`connection` to scope, and `search` for specific topics.\n\
+2. **Understand** — for any thread that needs context, call `messages` with the \
+conversation id, or `conversations`/`contacts`/`channels` to orient.\n\
+3. **Act** — `reply`, `send`, or `forward` when a message needs a response; \
+draft emails or react via the `run` tool (e.g. `run` with \
+[\"gmail\",\"draft\",\"create\",...] or [\"slack\",\"react\",...]).\n\
+4. **Archive** — once a message is handled, call `archive` with its id so it \
+leaves the inbox. Use `mute` for noisy channels you never want to see.\n\
+5. **Done** — when `inbox` returns nothing, you are at Inbox Zero.\n\n\
+## Rules\n\
+- Always read before you act; never reply without checking the thread.\n\
+- Confirm with the user before sending external messages or deleting anything.\n\
+- For any command without a dedicated tool, use `run` with the CLI args array \
+(e.g. [\"calendar\",\"create\",...], [\"hook\",\"list\"]).\n\
+- Reads come from a local cache kept fresh by `void sync --daemon`.\n\n\
+Start by calling `inbox` now and summarize what needs attention."
+        );
+
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            guide,
+        )])
     }
 }
 
@@ -652,10 +716,18 @@ impl VoidMcpServer {
 }
 
 #[tool_handler]
+#[prompt_handler]
 impl ServerHandler for VoidMcpServer {
     fn get_info(&self) -> ServerInfo {
         // Prefer the binary/product name over CARGO_CRATE_NAME ("void-cli").
-        ServerInfo::default().with_server_info(rmcp::model::Implementation::new(
+        // Declare tools + prompts capabilities explicitly (prompt_handler needs prompts enabled).
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .build(),
+        )
+        .with_server_info(rmcp::model::Implementation::new(
             "void",
             env!("CARGO_PKG_VERSION"),
         ))
@@ -700,6 +772,25 @@ mod tests {
                 "missing tool {expected}, got {names:?}"
             );
         }
+    }
+
+    #[test]
+    fn void_mcp_server_prompt_router_has_triage_inbox() {
+        let server = VoidMcpServer::new();
+        let prompts = server.prompt_router.list_all();
+        let names: Vec<_> = prompts.iter().map(|p| p.name.as_str()).collect();
+        assert!(
+            names.contains(&"triage_inbox"),
+            "missing prompt triage_inbox, got {names:?}"
+        );
+    }
+
+    #[test]
+    fn server_info_advertises_tools_and_prompts() {
+        let info = VoidMcpServer::new().get_info();
+        assert_eq!(info.server_info.name, "void");
+        assert!(info.capabilities.tools.is_some());
+        assert!(info.capabilities.prompts.is_some());
     }
 
     #[test]

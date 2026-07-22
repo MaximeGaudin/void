@@ -37,6 +37,16 @@ Ensure `void sync --daemon` is running so the local SQLite cache stays current.
 
 Use the full path to the `void` binary if it is not on the agent's `PATH`.
 
+## Prompts
+
+The server exposes one MCP prompt (`prompts/list` + `prompts/get`) — a reusable workflow an agent or user can invoke directly.
+
+| Prompt | Arguments | Description |
+|--------|-----------|-------------|
+| `triage_inbox` | `focus?` (optional connector or topic to prioritize) | Returns the Inbox Zero operating guide: triage → understand → act → archive, with guidance on which tool to use. Use it to onboard an agent onto Void without external prompting |
+
+In Cursor or Claude Desktop, `triage_inbox` appears as a slash-command-style prompt. Calling it with `{ "focus": "slack" }` biases the guide toward Slack.
+
 ## Full CLI parity: the `run` tool
 
 The **`run`** tool executes any void CLI subcommand by re-invoking the same binary with your `--store` / `--config` globals. This is the escape hatch for **everything** the CLI supports: `void slack saved`, `void gmail search`, `void hook list`, `void hn keywords list`, media downloads, calendar API calls, and any future command.
@@ -95,7 +105,8 @@ In-process write tools (`send`, `reply`, `forward`, `archive`) require **local s
 ## Architecture
 
 ```
-Agent ──stdio JSON-RPC──► void mcp ──┬── named tools ──► service/ ──► void.db
+Agent ──stdio JSON-RPC──► void mcp ──┬── prompts ──► triage_inbox guide
+                                     ├── named tools ──► service/ ──► void.db
                                      └── run tool ──► void subprocess (full CLI)
 ```
 
