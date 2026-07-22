@@ -8,9 +8,14 @@ use rmcp::{
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
 };
 
+use crate::service::exec::{self, ExecParams};
 use crate::service::health;
 use crate::service::reads::{
     self, CalendarQuery, ChannelsQuery, ContactsQuery, InboxQuery, MessagesQuery, SearchQuery,
+    SlackSavedQuery,
+};
+use crate::service::writes::{
+    self, ArchiveParams, ForwardParams, MuteParams, ReplyParams, SendParams,
 };
 
 #[derive(Clone)]
@@ -29,6 +34,112 @@ impl VoidMcpServer {
 
 #[derive(Debug, Deserialize, JsonSchema, Default)]
 struct HealthToolParams {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SendToolParams {
+    via: String,
+    connection: Option<String>,
+    to: Option<String>,
+    conversation: Option<String>,
+    message: String,
+    subject: Option<String>,
+    file: Option<String>,
+    at: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReplyToolParams {
+    message_id: String,
+    message: String,
+    file: Option<String>,
+    #[serde(default)]
+    in_thread: bool,
+    at: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ForwardToolParams {
+    message_id: String,
+    to: String,
+    comment: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ArchiveToolParams {
+    #[serde(default)]
+    message_ids: Vec<String>,
+    before: Option<String>,
+    connector: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct MuteToolParams {
+    targets: Vec<String>,
+    #[serde(default)]
+    unmute: bool,
+    connection: Option<String>,
+    connector: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SlackSavedToolParams {
+    connection: Option<String>,
+    #[serde(default = "default_size")]
+    size: i64,
+    #[serde(default = "default_page")]
+    page: i64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RunToolParams {
+    /// void CLI arguments after the binary name (e.g. ["slack", "saved", "-n", "10"])
+    args: Vec<String>,
+    #[serde(default)]
+    no_context: bool,
+}
+
+fn require_local_store_for_writes() -> Option<CallToolResult> {
+    if crate::context::is_remote() {
+        Some(tool_err(
+            "MCP write tools require local store mode; run `void mcp` on the machine that hosts the sync daemon",
+        ))
+    } else {
+        None
+    }
+}
+
+fn exec_to_tool_result(result: exec::ExecResult) -> CallToolResult {
+    if result.exit_code != 0 {
+        let mut msg = result.stdout.trim().to_string();
+        if !result.stderr.trim().is_empty() {
+            if !msg.is_empty() {
+                msg.push('\n');
+            }
+            msg.push_str(result.stderr.trim());
+        }
+        if msg.is_empty() {
+            msg = format!("void exited with code {}", result.exit_code);
+        }
+        return tool_err(msg);
+    }
+
+    let stdout = result.stdout.trim();
+    if stdout.is_empty() {
+        return tool_ok(serde_json::json!({
+            "stdout": "",
+            "stderr": result.stderr.trim(),
+        }));
+    }
+
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(stdout) {
+        return json_result(val);
+    }
+
+    tool_ok(serde_json::json!({
+        "stdout": stdout,
+        "stderr": result.stderr.trim(),
+    }))
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct InboxToolParams {
@@ -342,6 +453,202 @@ impl VoidMcpServer {
         let statuses = health::check_connections(cfg, &store_path).await;
         Ok(tool_ok(statuses))
     }
+
+    #[tool(description = "List Slack messages saved for later (void slack saved)")]
+    async fn slack_saved(
+        &self,
+        params: Parameters<SlackSavedToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = match crate::context::open_db() {
+            Ok(db) => db,
+            Err(e) => return Ok(tool_err(e)),
+        };
+        let p = params.0;
+        Ok(service_result(reads::slack_saved(
+            &db,
+            &SlackSavedQuery {
+                connection: p.connection.as_deref(),
+                size: p.size,
+                page: p.page,
+            },
+        )))
+    }
+
+    #[tool(
+        description = "Run any void CLI subcommand with full parity (e.g. args=[\"slack\",\"saved\"], [\"gmail\",\"search\",\"from:alice\"], [\"hook\",\"list\"]). Blocks interactive setup and sync --daemon."
+    )]
+    async fn run(&self, params: Parameters<RunToolParams>) -> Result<CallToolResult, McpError> {
+        let p = params.0;
+        if p.args.is_empty() {
+            return Ok(tool_err("args must include a void subcommand"));
+        }
+        let store = crate::context::store_path();
+        let config = crate::context::client_config_path();
+        match exec::run_subcommand(&ExecParams {
+            args: &p.args,
+            store: Some(store.as_path()),
+            config: Some(config.as_path()),
+            no_context: p.no_context,
+        }) {
+            Ok(result) => Ok(exec_to_tool_result(result)),
+            Err(e) => Ok(tool_err(e)),
+        }
+    }
+
+    #[tool(description = "Send a new message via a connector")]
+    async fn send(&self, params: Parameters<SendToolParams>) -> Result<CallToolResult, McpError> {
+        if let Some(err) = require_local_store_for_writes() {
+            return Ok(err);
+        }
+        let cfg = crate::context::void_config();
+        let db = match crate::context::open_db() {
+            Ok(db) => db,
+            Err(e) => return Ok(tool_err(e)),
+        };
+        let store_path = crate::context::store_path();
+        let p = params.0;
+        match writes::send(
+            &db,
+            cfg,
+            &store_path,
+            SendParams {
+                via: &p.via,
+                connection: p.connection.as_deref(),
+                to: p.to.as_deref(),
+                conversation: p.conversation.as_deref(),
+                message: &p.message,
+                subject: p.subject.as_deref(),
+                file: p.file.as_deref(),
+                at: p.at.as_deref(),
+            },
+        )
+        .await
+        {
+            Ok(message_id) => Ok(tool_ok(serde_json::json!({ "message_id": message_id }))),
+            Err(e) => Ok(tool_err(e)),
+        }
+    }
+
+    #[tool(description = "Reply to a message")]
+    async fn reply(&self, params: Parameters<ReplyToolParams>) -> Result<CallToolResult, McpError> {
+        if let Some(err) = require_local_store_for_writes() {
+            return Ok(err);
+        }
+        let cfg = crate::context::void_config();
+        let db = match crate::context::open_db() {
+            Ok(db) => db,
+            Err(e) => return Ok(tool_err(e)),
+        };
+        let store_path = crate::context::store_path();
+        let p = params.0;
+        match writes::reply(
+            &db,
+            cfg,
+            &store_path,
+            ReplyParams {
+                message_id: &p.message_id,
+                message: &p.message,
+                file: p.file.as_deref(),
+                in_thread: p.in_thread,
+                at: p.at.as_deref(),
+            },
+        )
+        .await
+        {
+            Ok(message_id) => Ok(tool_ok(serde_json::json!({ "message_id": message_id }))),
+            Err(e) => Ok(tool_err(e)),
+        }
+    }
+
+    #[tool(description = "Forward a message to another recipient")]
+    async fn forward(
+        &self,
+        params: Parameters<ForwardToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(err) = require_local_store_for_writes() {
+            return Ok(err);
+        }
+        let cfg = crate::context::void_config();
+        let db = match crate::context::open_db() {
+            Ok(db) => db,
+            Err(e) => return Ok(tool_err(e)),
+        };
+        let store_path = crate::context::store_path();
+        let p = params.0;
+        match writes::forward(
+            &db,
+            cfg,
+            &store_path,
+            ForwardParams {
+                message_id: &p.message_id,
+                to: &p.to,
+                comment: p.comment.as_deref(),
+            },
+        )
+        .await
+        {
+            Ok(message_id) => Ok(tool_ok(serde_json::json!({ "message_id": message_id }))),
+            Err(e) => Ok(tool_err(e)),
+        }
+    }
+
+    #[tool(description = "Archive one or more messages, or bulk-archive before a date")]
+    async fn archive(
+        &self,
+        params: Parameters<ArchiveToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(err) = require_local_store_for_writes() {
+            return Ok(err);
+        }
+        let cfg = crate::context::void_config();
+        let db = match crate::context::open_db() {
+            Ok(db) => db,
+            Err(e) => return Ok(tool_err(e)),
+        };
+        let store_path = crate::context::store_path();
+        let p = params.0;
+        Ok(service_result(
+            writes::archive(
+                &db,
+                cfg,
+                &store_path,
+                ArchiveParams {
+                    message_ids: &p.message_ids,
+                    before: p.before.as_deref(),
+                    connector: p.connector.as_deref(),
+                },
+            )
+            .await,
+        ))
+    }
+
+    #[tool(description = "Mute or unmute conversations/channels")]
+    async fn mute(&self, params: Parameters<MuteToolParams>) -> Result<CallToolResult, McpError> {
+        let p = params.0;
+        if p.targets.is_empty() {
+            return Ok(tool_err("at least one target is required"));
+        }
+        let config_path = crate::context::client_config_path();
+        let mut cfg = match void_core::config::VoidConfig::load(&config_path) {
+            Ok(c) => c,
+            Err(e) => return Ok(tool_err(format!("Cannot load config: {e}"))),
+        };
+        let db = match crate::context::open_db() {
+            Ok(db) => db,
+            Err(e) => return Ok(tool_err(e)),
+        };
+        Ok(service_result(writes::mute(
+            &db,
+            &mut cfg,
+            &config_path,
+            MuteParams {
+                targets: &p.targets,
+                unmute: p.unmute,
+                connection: p.connection.as_deref(),
+                connector: p.connector.as_deref(),
+            },
+        )))
+    }
 }
 
 #[tool_handler]
@@ -367,7 +674,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn void_mcp_server_tool_router_has_read_tools() {
+    fn void_mcp_server_tool_router_has_catalog() {
         let server = VoidMcpServer::new();
         let tools = server.tool_router.list_all();
         let names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -380,6 +687,13 @@ mod tests {
             "channels",
             "calendar",
             "health",
+            "slack_saved",
+            "run",
+            "send",
+            "reply",
+            "forward",
+            "archive",
+            "mute",
         ] {
             assert!(
                 names.contains(&expected),

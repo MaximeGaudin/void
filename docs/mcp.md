@@ -1,6 +1,6 @@
 # MCP server
 
-Void exposes a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server so AI agents can read your unified inbox and check connector health over stdio — the same data the CLI uses, via the shared `void-cli/src/service` layer.
+Void exposes a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server so AI agents can drive the same unified inbox as the CLI — reads, writes, connector-specific commands, hooks, and more — over stdio.
 
 ## Running
 
@@ -37,9 +37,36 @@ Ensure `void sync --daemon` is running so the local SQLite cache stays current.
 
 Use the full path to the `void` binary if it is not on the agent's `PATH`.
 
-## Read tools (v1)
+## Full CLI parity: the `run` tool
 
-All tools return the same JSON envelope as the CLI: `{ "data": …, "error": null }` or paginated `{ "data", "pagination", "error" }`.
+The **`run`** tool executes any void CLI subcommand by re-invoking the same binary with your `--store` / `--config` globals. This is the escape hatch for **everything** the CLI supports: `void slack saved`, `void gmail search`, `void hook list`, `void hn keywords list`, media downloads, calendar API calls, and any future command.
+
+Example tool call:
+
+```json
+{
+  "args": ["slack", "saved", "-n", "20"],
+  "no_context": false
+}
+```
+
+Another:
+
+```json
+{
+  "args": ["gmail", "search", "from:alice newer_than:7d", "--max", "10"]
+}
+```
+
+Successful commands return the same JSON envelope printed by the CLI (`{ "data", "error" }` or paginated). Non-JSON stdout is wrapped as `{ "stdout": "...", "stderr": "..." }`.
+
+**Blocked via `run`:** `void mcp` (recursion), `void setup` (interactive wizard), `void sync --daemon` (background daemon — start from a terminal).
+
+## Named tools (convenience)
+
+These call the shared service layer in-process (faster, typed schemas). Prefer **`run`** when no named tool exists.
+
+### Read tools
 
 | Tool | CLI equivalent | Description |
 |------|----------------|-------------|
@@ -49,21 +76,27 @@ All tools return the same JSON envelope as the CLI: `{ "data": …, "error": nul
 | `search` | `void search` | FTS5 search across messages |
 | `contacts` | `void contacts` | List contacts |
 | `channels` | `void channels` | List channels/groups |
+| `slack_saved` | `void slack saved` | Slack Later / saved-for-later messages |
 | `calendar` | `void calendar` | Events from local sync cache |
-| `health` | `void doctor` (non-interactive subset) | Per-connection health checks |
+| `health` | `void doctor` (connectivity subset) | Per-connection health checks |
 
-Tool parameters mirror CLI flags (e.g. `connection`, `connector`, `size`, `page`). See each tool's JSON Schema via `list_tools`.
+### Write tools
 
-## Limitations
+| Tool | CLI equivalent | Description |
+|------|----------------|-------------|
+| `send` | `void send` | Send a message |
+| `reply` | `void reply` | Reply to a message |
+| `forward` | `void forward` | Forward a message |
+| `archive` | `void archive` | Archive by IDs or bulk `--before` |
+| `mute` | `void mute` | Mute/unmute conversations |
 
-- **Local store only** in v1 — remote SSH proxy mode is not supported for MCP tool calls yet; run `void mcp` on the machine that holds the store.
-- **Write tools** (`send`, `reply`, `forward`, `archive`, `mute`) are added in a follow-up release.
-- Connector-specific operations (Gmail drafts, Slack react, media download) remain CLI-only for now.
+In-process write tools (`send`, `reply`, `forward`, `archive`) require **local store mode**. Use **`run`** instead when on a remote client — it follows the same SSH proxy path as the CLI.
 
 ## Architecture
 
 ```
-Agent  ──stdio JSON-RPC──►  void mcp  ──►  service/reads  ──►  void.db (SQLite + FTS5)
+Agent ──stdio JSON-RPC──► void mcp ──┬── named tools ──► service/ ──► void.db
+                                     └── run tool ──► void subprocess (full CLI)
 ```
 
-The service layer is shared with the CLI so MCP and terminal commands stay in lockstep.
+Named tools and the CLI share `void-cli/src/service/` so behavior stays in lockstep.
