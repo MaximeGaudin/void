@@ -137,6 +137,12 @@ pub struct DraftCreateArgs {
     /// Message ID to reply to — associates the draft with the thread and sets In-Reply-To headers.
     #[arg(long)]
     pub reply_to: Option<String>,
+    /// Append the account's Gmail signature (fetched via users.settings.sendAs)
+    #[arg(long, default_value_t = false)]
+    pub signature: bool,
+    /// Send-as alias whose signature to use (requires --signature). Defaults to the account default/primary.
+    #[arg(long, requires = "signature")]
+    pub signature_from: Option<String>,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,
@@ -158,6 +164,12 @@ pub struct DraftUpdateArgs {
     /// File to attach
     #[arg(long)]
     pub file: Option<String>,
+    /// Append the account's Gmail signature (fetched via users.settings.sendAs)
+    #[arg(long, default_value_t = false)]
+    pub signature: bool,
+    /// Send-as alias whose signature to use (requires --signature). Defaults to the account default/primary.
+    #[arg(long, requires = "signature")]
+    pub signature_from: Option<String>,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,

@@ -9,8 +9,9 @@ mod tests;
 use crate::auth;
 
 pub use compose::{
-    build_forward_body, compose_rfc2822, compose_rfc2822_ex, compose_rfc2822_with_attachment,
-    encode_rfc2047, html_to_markdown, looks_like_html, parse_email_address, parse_email_name,
+    append_gmail_signature, build_forward_body, compose_rfc2822, compose_rfc2822_ex,
+    compose_rfc2822_with_attachment, encode_rfc2047, html_to_markdown, looks_like_html,
+    parse_email_address, parse_email_name,
 };
 
 pub struct GmailConnector {

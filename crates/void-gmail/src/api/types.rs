@@ -152,3 +152,20 @@ pub struct GmailDraft {
     pub id: Option<String>,
     pub message: Option<GmailMessage>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendAsListResponse {
+    pub send_as: Option<Vec<SendAsAlias>>,
+}
+
+/// A send-as alias, including its HTML signature from Gmail settings.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendAsAlias {
+    pub send_as_email: Option<String>,
+    pub display_name: Option<String>,
+    pub signature: Option<String>,
+    pub is_primary: Option<bool>,
+    pub is_default: Option<bool>,
+}

@@ -5,7 +5,8 @@ use tracing::{debug, info};
 
 use super::types::{
     AttachmentResponse, DraftListResponse, GmailDraft, GmailMessage, GmailProfile, GmailThread,
-    HistoryListResponse, HistoryRecord, LabelListResponse, MessageListResponse,
+    HistoryListResponse, HistoryRecord, LabelListResponse, MessageListResponse, SendAsAlias,
+    SendAsListResponse,
 };
 
 const DEFAULT_BASE_URL: &str = "https://gmail.googleapis.com";
@@ -445,5 +446,70 @@ impl GmailApiClient {
             .error_for_status()?;
         debug!(draft_id, "gmail: delete_draft ok");
         Ok(())
+    }
+
+    /// List send-as aliases (including HTML signatures) for the authenticated user.
+    pub async fn list_send_as(&self) -> Result<SendAsListResponse, GmailError> {
+        debug!("gmail: list_send_as");
+        let resp: SendAsListResponse = self
+            .http
+            .get(format!(
+                "{}/gmail/v1/users/me/settings/sendAs",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        let count = resp.send_as.as_ref().map(|s| s.len()).unwrap_or(0);
+        debug!(count, "gmail: list_send_as ok");
+        Ok(resp)
+    }
+
+    /// Get a specific send-as alias (including its HTML signature).
+    pub async fn get_send_as(&self, send_as_email: &str) -> Result<SendAsAlias, GmailError> {
+        debug!(send_as_email, "gmail: get_send_as");
+        let encoded = urlencoding::encode(send_as_email);
+        let resp: SendAsAlias = self
+            .http
+            .get(format!(
+                "{}/gmail/v1/users/me/settings/sendAs/{encoded}",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        debug!(send_as_email, "gmail: get_send_as ok");
+        Ok(resp)
+    }
+
+    /// Resolve the HTML signature for a send-as alias.
+    ///
+    /// When `send_as_email` is `None`, prefers the default alias, then primary, then first listed.
+    pub async fn resolve_signature(
+        &self,
+        send_as_email: Option<&str>,
+    ) -> Result<String, GmailError> {
+        if let Some(email) = send_as_email {
+            let alias = self.get_send_as(email).await?;
+            return Ok(alias.signature.unwrap_or_default());
+        }
+
+        let list = self.list_send_as().await?;
+        let aliases = list.send_as.unwrap_or_default();
+        let alias = aliases
+            .iter()
+            .find(|a| a.is_default.unwrap_or(false))
+            .or_else(|| aliases.iter().find(|a| a.is_primary.unwrap_or(false)))
+            .or_else(|| aliases.first());
+
+        Ok(alias
+            .and_then(|a| a.signature.clone())
+            .unwrap_or_default())
     }
 }

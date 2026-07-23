@@ -628,6 +628,33 @@ fn looks_like_html_plain_text_is_false() {
 }
 
 #[test]
+fn looks_like_html_detects_br_and_anchor() {
+    assert!(looks_like_html("Hi,<br><br>Thanks"));
+    assert!(looks_like_html("See <a href=\"https://example.com\">link</a>"));
+}
+
+#[test]
+fn append_gmail_signature_skips_empty() {
+    assert_eq!(append_gmail_signature("Hello", ""), "Hello");
+    assert_eq!(append_gmail_signature("Hello", "   "), "Hello");
+}
+
+#[test]
+fn append_gmail_signature_converts_plain_and_wraps() {
+    let out = append_gmail_signature("Hi\nthere", "<b>Best</b>");
+    assert!(out.contains("Hi<br>\nthere"));
+    assert!(out.contains("gmail_signature"));
+    assert!(out.contains("<b>Best</b>"));
+}
+
+#[test]
+fn append_gmail_signature_preserves_html_body() {
+    let out = append_gmail_signature("<div>Hi</div>", "<i>Sig</i>");
+    assert!(out.starts_with("<div>Hi</div>"));
+    assert!(out.contains("<i>Sig</i>"));
+}
+
+#[test]
 fn gmail_url_formats_correctly() {
     let url = GmailConnector::gmail_url("thread123");
     assert_eq!(url, "https://mail.google.com/mail/u/0/#inbox/thread123");

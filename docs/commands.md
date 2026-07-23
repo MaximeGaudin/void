@@ -93,8 +93,8 @@ All Gmail subcommands accept `--connection <id>` to target a specific account.
 | `void gmail label <id> --add <labels> --remove <labels>` | Modify labels on a thread |
 | `void gmail batch-modify <ids...> --add <labels> --remove <labels>` | Batch-modify labels on multiple messages |
 | `void gmail drafts` | List drafts. `--max <N>` |
-| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--file` to attach, `--reply-to <id>` to draft a reply |
-| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft |
+| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--file` to attach, `--reply-to <id>` to draft a reply, `--signature` to append the account Gmail signature, `--signature-from <email>` to pick a send-as alias |
+| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--signature` / `--signature-from` flags as create |
 | `void gmail draft delete <id>` | Delete a draft |
 | `void gmail attachment <id> <attachment-id> --out <path>` | Download an attachment |
 | `void gmail forward <id> --to <recipient>` | Forward a message. `--comment` |

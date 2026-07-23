@@ -220,7 +220,15 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             let file_path = a.file.as_deref().map(std::path::Path::new);
             let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
             let draft = connector
-                .create_draft(a.to.as_deref(), &a.subject, &a.body, reply_to, file_path)
+                .create_draft(
+                    a.to.as_deref(),
+                    &a.subject,
+                    &a.body,
+                    reply_to,
+                    file_path,
+                    a.signature,
+                    a.signature_from.as_deref(),
+                )
                 .await?;
 
             let draft_id = draft.id.as_deref().unwrap_or("?");
@@ -237,7 +245,15 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             let connector = build_gmail_connector(a.connection.as_deref())?;
             let file_path = a.file.as_deref().map(std::path::Path::new);
             let draft = connector
-                .update_draft(&a.draft_id, &a.to, &a.subject, &a.body, file_path)
+                .update_draft(
+                    &a.draft_id,
+                    &a.to,
+                    &a.subject,
+                    &a.body,
+                    file_path,
+                    a.signature,
+                    a.signature_from.as_deref(),
+                )
                 .await?;
 
             let draft_id = draft.id.as_deref().unwrap_or("?");

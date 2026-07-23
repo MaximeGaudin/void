@@ -208,6 +208,33 @@ pub fn looks_like_html(text: &str) -> bool {
         || (trimmed.contains("<div") && trimmed.contains("</div>"))
         || (trimmed.contains("<table") && trimmed.contains("</table>"))
         || (trimmed.contains("<body") && trimmed.contains("</body>"))
+        // Draft bodies often use <br> / anchors without a wrapping <div>/<html>.
+        // Treat those as HTML so we do not turn existing newlines into extra <br>s.
+        || trimmed.contains("<br")
+        || trimmed.contains("<BR")
+        || (trimmed.contains("<a ") && trimmed.contains("</a>"))
+        || (trimmed.contains("<a\n") && trimmed.contains("</a>"))
+}
+
+/// Append a Gmail HTML signature to a draft body.
+///
+/// Plain-text bodies are converted to HTML first so the signature renders correctly
+/// (Gmail API drafts do not auto-inject account signatures).
+pub fn append_gmail_signature(body: &str, signature_html: &str) -> String {
+    let signature_html = signature_html.trim();
+    if signature_html.is_empty() {
+        return body.to_string();
+    }
+
+    let body_html = if looks_like_html(body) {
+        body.to_string()
+    } else {
+        body.replace('\n', "<br>\n")
+    };
+
+    format!(
+        "{body_html}<br><br><div class=\"gmail_signature\" data-smartmail=\"gmail_signature\">{signature_html}</div>"
+    )
 }
 
 pub fn html_to_markdown(html: &str) -> String {

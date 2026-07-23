@@ -8,7 +8,8 @@ use tracing::{debug, info};
 
 const GMAIL_SCOPES: &str = "https://www.googleapis.com/auth/gmail.readonly \
                             https://www.googleapis.com/auth/gmail.send \
-                            https://www.googleapis.com/auth/gmail.modify";
+                            https://www.googleapis.com/auth/gmail.modify \
+                            https://www.googleapis.com/auth/gmail.settings.basic";
 
 /// Google OAuth2 token state, cached to disk.
 #[derive(Clone, Serialize, Deserialize)]

@@ -128,6 +128,9 @@ impl GmailConnector {
     /// When `reply_to_message_id` is provided the original message is fetched
     /// once to derive both the Gmail `threadId` (for API association) and the
     /// reply-all recipient list (when `to` is `None`).
+    ///
+    /// When `append_signature` is true, the HTML signature for `signature_from`
+    /// (or the account default/primary send-as) is fetched and appended to `body`.
     pub async fn create_draft(
         &self,
         to: Option<&str>,
@@ -135,14 +138,25 @@ impl GmailConnector {
         body: &str,
         reply_to_message_id: Option<&str>,
         file: Option<&std::path::Path>,
+        append_signature: bool,
+        signature_from: Option<&str>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
+        let body = if append_signature {
+            let signature = api
+                .resolve_signature(signature_from)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
+            super::compose::append_gmail_signature(body, &signature)
+        } else {
+            body.to_string()
+        };
         create_draft_with_api(
             &api,
             &self.config_id,
             to,
             subject,
-            body,
+            &body,
             reply_to_message_id,
             file,
         )
@@ -156,15 +170,32 @@ impl GmailConnector {
         subject: &str,
         body: &str,
         file: Option<&std::path::Path>,
+        append_signature: bool,
+        signature_from: Option<&str>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
+        let body = if append_signature {
+            let signature = api
+                .resolve_signature(signature_from)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
+            super::compose::append_gmail_signature(body, &signature)
+        } else {
+            body.to_string()
+        };
 
         let raw = if let Some(file_path) = file {
             super::compose::compose_rfc2822_with_attachment(
-                to, subject, body, file_path, None, None, None,
+                to,
+                subject,
+                &body,
+                file_path,
+                None,
+                None,
+                None,
             )?
         } else {
-            super::compose::compose_rfc2822(to, subject, body, None, None)
+            super::compose::compose_rfc2822(to, subject, &body, None, None)
         };
 
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());

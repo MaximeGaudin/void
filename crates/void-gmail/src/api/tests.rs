@@ -262,3 +262,54 @@ async fn list_messages_malformed_json_is_clean_err() {
         .expect_err("expected decode error for missing id");
     assert!(matches!(err, GmailError::Http(_)), "got {err:?}");
 }
+
+
+#[tokio::test]
+async fn resolve_signature_uses_named_send_as() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs/you%40example.com"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sendAsEmail": "you@example.com",
+            "signature": "<div>Named sig</div>",
+            "isPrimary": true
+        })))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let sig = api
+        .resolve_signature(Some("you@example.com"))
+        .await
+        .unwrap();
+    assert_eq!(sig, "<div>Named sig</div>");
+}
+
+#[tokio::test]
+async fn resolve_signature_prefers_default_alias() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sendAs": [
+                {
+                    "sendAsEmail": "a@example.com",
+                    "signature": "<div>Primary</div>",
+                    "isPrimary": true,
+                    "isDefault": false
+                },
+                {
+                    "sendAsEmail": "b@example.com",
+                    "signature": "<div>Default</div>",
+                    "isPrimary": false,
+                    "isDefault": true
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let sig = api.resolve_signature(None).await.unwrap();
+    assert_eq!(sig, "<div>Default</div>");
+}
