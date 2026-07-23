@@ -312,3 +312,42 @@ async fn resolve_signature_prefers_default_alias() {
     let sig = api.resolve_signature(None).await.unwrap();
     assert_eq!(sig, "<div>Default</div>");
 }
+
+#[tokio::test]
+async fn resolve_signature_unknown_send_as_is_not_found() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/settings/sendAs/missing%40example.com",
+        ))
+        .respond_with(ResponseTemplate::new(404).set_body_string("not found"))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api
+        .resolve_signature(Some("missing@example.com"))
+        .await
+        .expect_err("expected 404");
+    match err {
+        GmailError::Http(e) => assert_eq!(e.status(), Some(reqwest::StatusCode::NOT_FOUND)),
+        other => panic!("expected Http error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn resolve_signature_missing_scope_is_forbidden() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("insufficient permissions"))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api.resolve_signature(None).await.expect_err("expected 403");
+    match err {
+        GmailError::Http(e) => assert_eq!(e.status(), Some(reqwest::StatusCode::FORBIDDEN)),
+        other => panic!("expected Http error, got {other:?}"),
+    }
+}

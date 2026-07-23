@@ -657,6 +657,26 @@ fn append_gmail_signature_preserves_html_body() {
 }
 
 #[test]
+fn draft_signature_from_flags() {
+    assert_eq!(
+        DraftSignature::from_flags(false, None),
+        DraftSignature::None
+    );
+    assert_eq!(
+        DraftSignature::from_flags(false, Some("a@example.com")),
+        DraftSignature::None
+    );
+    assert_eq!(
+        DraftSignature::from_flags(true, None),
+        DraftSignature::Default
+    );
+    assert_eq!(
+        DraftSignature::from_flags(true, Some("a@example.com")),
+        DraftSignature::From("a@example.com")
+    );
+}
+
+#[test]
 fn gmail_url_formats_correctly() {
     let url = GmailConnector::gmail_url("thread123");
     assert_eq!(url, "https://mail.google.com/mail/u/0/#inbox/thread123");
