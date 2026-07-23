@@ -131,6 +131,7 @@ impl GmailConnector {
     ///
     /// When `signature` is not [`DraftSignature::None`], the HTML signature for the
     /// chosen send-as (or account default/primary) is fetched and appended to `body`.
+    /// Pass `body` without an existing signature — append is not idempotent.
     pub async fn create_draft(
         &self,
         to: Option<&str>,
@@ -154,6 +155,9 @@ impl GmailConnector {
         .await
     }
 
+    /// Replace a draft. When `signature` is not [`DraftSignature::None`], the HTML
+    /// signature is appended to `body` (same non-idempotent append as
+    /// [`Self::create_draft`] — pass a body without an existing signature).
     pub async fn update_draft(
         &self,
         draft_id: &str,
@@ -195,8 +199,11 @@ async fn maybe_append_signature(
     body: &str,
     signature: super::compose::DraftSignature<'_>,
 ) -> anyhow::Result<String> {
-    let Some(send_as) = signature.resolve_send_as() else {
-        return Ok(body.to_string());
+    use super::compose::DraftSignature;
+    let send_as = match signature {
+        DraftSignature::None => return Ok(body.to_string()),
+        DraftSignature::Default => None,
+        DraftSignature::From(email) => Some(email),
     };
     let html = api
         .resolve_signature(send_as)

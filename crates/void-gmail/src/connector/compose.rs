@@ -199,6 +199,12 @@ pub fn build_forward_body(
     }
 }
 
+/// Heuristic for whether a body should be treated as HTML.
+///
+/// Used when composing RFC 2822 (`Content-Type`), appending Gmail signatures
+/// (skip newline→`<br>` conversion), and choosing sync display text. Treating
+/// bare `<br>` / `<a>` as HTML therefore also affects compose and sync paths,
+/// not only signature append.
 pub fn looks_like_html(text: &str) -> bool {
     let trimmed = text.trim_start();
     trimmed.starts_with("<!DOCTYPE")
@@ -239,21 +245,15 @@ impl<'a> DraftSignature<'a> {
             Self::Default
         }
     }
-
-    /// Argument for [`crate::api::GmailApiClient::resolve_signature`], if appending.
-    pub fn resolve_send_as(self) -> Option<Option<&'a str>> {
-        match self {
-            Self::None => None,
-            Self::Default => Some(None),
-            Self::From(email) => Some(Some(email)),
-        }
-    }
 }
 
 /// Append a Gmail HTML signature to a draft body.
 ///
 /// Plain-text bodies are converted to HTML first so the signature renders correctly
 /// (Gmail API drafts do not auto-inject account signatures).
+///
+/// Not idempotent: if `body` already ends with a `gmail_signature` block, calling
+/// again duplicates it. Callers should pass the message body without a signature.
 pub fn append_gmail_signature(body: &str, signature_html: &str) -> String {
     let signature_html = signature_html.trim();
     if signature_html.is_empty() {
