@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Docs** — Add a copy-adaptable Inbox Zero system-prompt example to [docs/mcp.md](docs/mcp.md) (workflows stay in user config, not the MCP binary).
+- **Docs** — Add a copy-adaptable Inbox Zero system-prompt example to [docs/mcp.md](docs/mcp.md) (workflows stay in user config, not the MCP binary); note that the `health` MCP tool performs live network I/O.
+- **MCP** — `run` resolves the first non-flag token as the subcommand, rejects global CLI flags inside args, and omits informational stderr on successful JSON/`stdout`-empty results.
+- **Internal** — Split `ConversationsQuery` from `InboxQuery`; shared `open_db` helper in the MCP server; `archive_bulk_before` is sync; `send`/`reply` return `OutboundResult` (no CLI re-parse of `--at`).
 
 - **Internal** — Connector wiring uses a compile-time plugin registry (`inventory`). `ConnectorType` is a string newtype; connection settings are a generic TOML table. Adding a connector no longer edits ~13 central files. Connection settings are validated at setup reload, sync start, and `void doctor`. Poll intervals are read from `[sync]` via the generic `{id}_poll_interval_secs` keys. No user-facing CLI behavior change.
 - **Internal** — Expanded connector registry tests (validation, build, badges, aliases, debug redaction, poll defaults).

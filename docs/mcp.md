@@ -96,7 +96,9 @@ Another:
 }
 ```
 
-Successful commands return the same JSON envelope printed by the CLI (`{ "data", "error" }` or paginated). Non-JSON stdout is wrapped as `{ "stdout": "...", "stderr": "..." }`.
+Successful commands return the same JSON envelope printed by the CLI (`{ "data", "error" }` or paginated). Non-JSON stdout is wrapped as `{ "stdout": "..." }` with optional `stderr` when present. On success, informational stderr is omitted when stdout is already a JSON envelope (agents should not treat status lines as failures).
+
+Do **not** pass global CLI flags (`--store`, `--config`, `--verbose`/`-v`, `--no-context`, `--local-store`) inside `run` args — the server already injects `--store`/`--config`, and `no_context` is a tool parameter.
 
 **Blocked via `run`:** `void mcp` (recursion), `void setup` (interactive wizard), `void sync --daemon` (background daemon — start from a terminal).
 
@@ -116,7 +118,7 @@ These call the shared service layer in-process (faster, typed schemas). Prefer *
 | `channels` | `void channels` | List channels/groups |
 | `slack_saved` | `void slack saved` | Slack Later / saved-for-later messages |
 | `calendar` | `void calendar` | Events from local sync cache |
-| `health` | `void doctor` (connectivity subset) | Per-connection health checks |
+| `health` | `void doctor` (connectivity subset) | Per-connection health checks (**live network I/O**, unlike the DB-only read tools) |
 
 ### Write tools
 

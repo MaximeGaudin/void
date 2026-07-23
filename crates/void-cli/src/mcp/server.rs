@@ -11,8 +11,8 @@ use rmcp::{
 use crate::service::exec::{self, ExecParams};
 use crate::service::health;
 use crate::service::reads::{
-    self, CalendarQuery, ChannelsQuery, ContactsQuery, InboxQuery, MessagesQuery, SearchQuery,
-    SlackSavedQuery,
+    self, CalendarQuery, ChannelsQuery, ContactsQuery, ConversationsQuery, InboxQuery,
+    MessagesQuery, SearchQuery, SlackSavedQuery,
 };
 use crate::service::writes::{
     self, ArchiveParams, ForwardParams, MuteParams, ReplyParams, SendParams,
@@ -125,20 +125,26 @@ fn exec_to_tool_result(result: exec::ExecResult) -> CallToolResult {
 
     let stdout = result.stdout.trim();
     if stdout.is_empty() {
-        return tool_ok(serde_json::json!({
-            "stdout": "",
-            "stderr": result.stderr.trim(),
-        }));
+        // Success with no stdout — omit informational stderr so agents don't
+        // treat status lines as failures.
+        return tool_ok(serde_json::json!({ "stdout": "" }));
     }
 
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(stdout) {
+        // CLI JSON envelopes already carry errors in-band; drop stderr noise.
         return json_result(val);
     }
 
-    tool_ok(serde_json::json!({
-        "stdout": stdout,
-        "stderr": result.stderr.trim(),
-    }))
+    let mut wrap = serde_json::json!({ "stdout": stdout });
+    let stderr = result.stderr.trim();
+    if !stderr.is_empty() {
+        wrap["stderr"] = serde_json::Value::String(stderr.to_string());
+    }
+    tool_ok(wrap)
+}
+
+fn open_db() -> Result<void_core::db::Database, CallToolResult> {
+    crate::context::open_db().map_err(tool_err)
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -282,9 +288,9 @@ fn service_result(result: anyhow::Result<serde_json::Value>) -> CallToolResult {
 impl VoidMcpServer {
     #[tool(description = "Show recent messages across all connectors (void inbox)")]
     async fn inbox(&self, params: Parameters<InboxToolParams>) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         Ok(service_result(reads::inbox(
@@ -306,19 +312,18 @@ impl VoidMcpServer {
         &self,
         params: Parameters<ConversationsToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         Ok(service_result(reads::conversations(
             &db,
-            &InboxQuery {
+            &ConversationsQuery {
                 connection: p.connection.as_deref(),
                 connector: p.connector.as_deref(),
                 size: p.size,
                 page: p.page,
-                all: false,
                 include_muted: p.include_muted,
             },
         )))
@@ -329,9 +334,9 @@ impl VoidMcpServer {
         &self,
         params: Parameters<MessagesToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         Ok(service_result(reads::messages(
@@ -352,9 +357,9 @@ impl VoidMcpServer {
         &self,
         params: Parameters<SearchToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         Ok(service_result(reads::search(
@@ -376,9 +381,9 @@ impl VoidMcpServer {
         &self,
         params: Parameters<ContactsToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         Ok(service_result(reads::contacts(
@@ -398,9 +403,9 @@ impl VoidMcpServer {
         &self,
         params: Parameters<ChannelsToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         Ok(service_result(reads::channels(
@@ -421,9 +426,9 @@ impl VoidMcpServer {
         &self,
         params: Parameters<CalendarToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         let result = if p.week {
@@ -459,9 +464,9 @@ impl VoidMcpServer {
         &self,
         params: Parameters<SlackSavedToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let p = params.0;
         Ok(service_result(reads::slack_saved(
@@ -501,9 +506,9 @@ impl VoidMcpServer {
             return Ok(err);
         }
         let cfg = crate::context::void_config();
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let store_path = crate::context::store_path();
         let p = params.0;
@@ -524,7 +529,13 @@ impl VoidMcpServer {
         )
         .await
         {
-            Ok(message_id) => Ok(tool_ok(serde_json::json!({ "message_id": message_id }))),
+            Ok(result) => {
+                let mut payload = serde_json::json!({ "message_id": result.id });
+                if let Some(at) = result.scheduled_at {
+                    payload["scheduled_at"] = serde_json::json!(at);
+                }
+                Ok(tool_ok(payload))
+            }
             Err(e) => Ok(tool_err(e)),
         }
     }
@@ -535,9 +546,9 @@ impl VoidMcpServer {
             return Ok(err);
         }
         let cfg = crate::context::void_config();
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let store_path = crate::context::store_path();
         let p = params.0;
@@ -555,7 +566,13 @@ impl VoidMcpServer {
         )
         .await
         {
-            Ok(message_id) => Ok(tool_ok(serde_json::json!({ "message_id": message_id }))),
+            Ok(result) => {
+                let mut payload = serde_json::json!({ "message_id": result.id });
+                if let Some(at) = result.scheduled_at {
+                    payload["scheduled_at"] = serde_json::json!(at);
+                }
+                Ok(tool_ok(payload))
+            }
             Err(e) => Ok(tool_err(e)),
         }
     }
@@ -569,9 +586,9 @@ impl VoidMcpServer {
             return Ok(err);
         }
         let cfg = crate::context::void_config();
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let store_path = crate::context::store_path();
         let p = params.0;
@@ -601,9 +618,9 @@ impl VoidMcpServer {
             return Ok(err);
         }
         let cfg = crate::context::void_config();
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         let store_path = crate::context::store_path();
         let p = params.0;
@@ -633,9 +650,9 @@ impl VoidMcpServer {
             Ok(c) => c,
             Err(e) => return Ok(tool_err(format!("Cannot load config: {e}"))),
         };
-        let db = match crate::context::open_db() {
+        let db = match open_db() {
             Ok(db) => db,
-            Err(e) => return Ok(tool_err(e)),
+            Err(err) => return Ok(err),
         };
         Ok(service_result(writes::mute(
             &db,
