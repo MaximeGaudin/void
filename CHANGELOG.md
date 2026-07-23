@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Internal** — Connector wiring uses a compile-time plugin registry (`inventory`). `ConnectorType` is a string newtype; connection settings are a generic TOML table. Adding a connector no longer edits ~13 central files. Connection settings are validated at setup reload, sync start, and `void doctor`. Poll intervals are read from `[sync]` via the generic `{id}_poll_interval_secs` keys. No user-facing CLI behavior change.
 - **Internal** — Expanded connector registry tests (validation, build, badges, aliases, debug redaction, poll defaults).
 - **Build** — Bump minimum supported Rust version to 1.95 (required by sysinfo 0.39).
+- **Gmail** — Bodies containing bare `<br>` / `<a>` tags are treated as HTML for compose and sync display text (same heuristic used when appending signatures), not only when wrapping a signature.
 
 ### Fixed
 
@@ -19,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Gmail** — `void gmail draft create` / `draft update` accept `--signature` to append the account HTML signature from Gmail send-as settings, and `--signature-from <email>` to pick a specific send-as alias. Pass a body without an existing signature (append is not idempotent). Requires the `gmail.settings.basic` OAuth scope (re-auth if needed).
+- **Gmail** — `--signature` / `--signature-from <email>` append the account HTML signature from Gmail send-as settings on all outgoing compose paths: `void gmail draft create` / `draft update`, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward`. Pass a body/comment without an existing signature (append is not idempotent). Forwards place the signature between the comment and the quoted message. Requires the `gmail.settings.basic` OAuth scope (re-auth if needed).
 - **MCP** — `void mcp` stdio server: named read/write tools (`inbox`, `conversations`, `messages`, `search`, `contacts`, `channels`, `slack_saved`, `calendar`, `health`, `send`, `reply`, `forward`, `archive`, `mute`) plus a `run` tool for full CLI parity via subprocess. See [docs/mcp.md](docs/mcp.md).
 - **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.
 - **Reddit** — New connector that polls watched subreddits and surfaces posts matching your keywords and minimum score (one channel conversation per subreddit). Read-only mode uses application-only OAuth (`client_id` + `client_secret`); enabling commenting during `void setup` runs a browser OAuth flow, stores a `refresh_token`, syncs matching posts as comment threads, and lets you reply via `void reply` / `void send --via reddit`. Tune filters at runtime with `void reddit subreddits|keywords|min-score|config`.

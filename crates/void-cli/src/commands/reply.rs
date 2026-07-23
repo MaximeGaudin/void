@@ -16,6 +16,13 @@ pub struct ReplyArgs {
     /// Reply in thread (Slack) or as quote (WhatsApp)
     #[arg(long)]
     pub in_thread: bool,
+    /// Append the account's Gmail signature (gmail only).
+    /// Pass a body without an existing signature — re-appending doubles it.
+    #[arg(long)]
+    pub signature: bool,
+    /// Send-as alias whose signature to use (requires --signature; gmail only).
+    #[arg(long, requires = "signature")]
+    pub signature_from: Option<String>,
     /// Schedule for later — "HH:MM", "YYYY-MM-DD HH:MM", or Unix timestamp (Slack only)
     #[arg(long)]
     pub at: Option<String>,
@@ -32,6 +39,8 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
         message: &args.message,
         file: args.file.as_deref(),
         in_thread: args.in_thread,
+        signature: args.signature,
+        signature_from: args.signature_from.as_deref(),
         at: args.at.as_deref(),
     };
 

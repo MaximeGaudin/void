@@ -222,7 +222,8 @@ pub fn looks_like_html(text: &str) -> bool {
         || (trimmed.contains("<a\n") && trimmed.contains("</a>"))
 }
 
-/// Whether to append a Gmail HTML signature when creating/updating a draft.
+/// Whether to append a Gmail HTML signature when composing an outgoing message
+/// (draft create/update, send, reply, or forward).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DraftSignature<'a> {
     /// Do not append a signature.
@@ -247,10 +248,10 @@ impl<'a> DraftSignature<'a> {
     }
 }
 
-/// Append a Gmail HTML signature to a draft body.
+/// Append a Gmail HTML signature to a message body.
 ///
 /// Plain-text bodies are converted to HTML first so the signature renders correctly
-/// (Gmail API drafts do not auto-inject account signatures).
+/// (Gmail API compose paths do not auto-inject account signatures).
 ///
 /// Not idempotent: if `body` already ends with a `gmail_signature` block, calling
 /// again duplicates it. Callers should pass the message body without a signature.
@@ -269,6 +270,38 @@ pub fn append_gmail_signature(body: &str, signature_html: &str) -> String {
     format!(
         "{body_html}<br><br><div class=\"gmail_signature\" data-smartmail=\"gmail_signature\">{signature_html}</div>"
     )
+}
+
+/// Insert a Gmail signature into a forward body.
+///
+/// When the body already contains a `gmail_quote` block, the signature is placed
+/// between the optional comment and the quote (matching Gmail UI). Otherwise the
+/// signature is appended at the end. Plain-text forwards are converted to HTML.
+pub fn apply_signature_to_forward(
+    body: &str,
+    is_html: bool,
+    signature_html: &str,
+) -> (String, bool) {
+    let signature_html = signature_html.trim();
+    if signature_html.is_empty() {
+        return (body.to_string(), is_html);
+    }
+
+    let marker = "<div class=\"gmail_quote\">";
+    if is_html {
+        if let Some(idx) = body.find(marker) {
+            let sig_block = format!(
+                "<br><br><div class=\"gmail_signature\" data-smartmail=\"gmail_signature\">{signature_html}</div><br>"
+            );
+            let mut out = String::with_capacity(body.len() + sig_block.len());
+            out.push_str(&body[..idx]);
+            out.push_str(&sig_block);
+            out.push_str(&body[idx..]);
+            return (out, true);
+        }
+    }
+
+    (append_gmail_signature(body, signature_html), true)
 }
 
 pub fn html_to_markdown(html: &str) -> String {

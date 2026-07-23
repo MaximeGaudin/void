@@ -246,7 +246,7 @@ impl Connector for TelegramConnector {
         external_id: &str,
         conversation_external_id: &str,
         to: &str,
-        _comment: Option<&str>,
+        _options: void_core::connector::ForwardOptions<'_>,
     ) -> anyhow::Result<String> {
         let raw_msg_id: i32 = send::strip_telegram_prefix(external_id, &self.config_id)
             .parse()

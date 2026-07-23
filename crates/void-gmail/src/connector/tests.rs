@@ -657,6 +657,32 @@ fn append_gmail_signature_preserves_html_body() {
 }
 
 #[test]
+fn apply_signature_to_forward_inserts_before_quote() {
+    let body = concat!(
+        "<div dir=\"ltr\">FYI</div><br><br>",
+        "<div class=\"gmail_quote\">",
+        "<div dir=\"ltr\" class=\"gmail_attr\">---------- Forwarded message ---------</div>",
+        "</div>"
+    );
+    let (out, is_html) = apply_signature_to_forward(body, true, "<b>Best</b>");
+    assert!(is_html);
+    assert!(out.contains("gmail_signature"));
+    assert!(out.contains("<b>Best</b>"));
+    let sig_idx = out.find("gmail_signature").unwrap();
+    let quote_idx = out.find("gmail_quote").unwrap();
+    assert!(sig_idx < quote_idx, "signature should precede quote block");
+}
+
+#[test]
+fn apply_signature_to_forward_appends_when_no_quote() {
+    let (out, is_html) = apply_signature_to_forward("Hello", false, "<b>Sig</b>");
+    assert!(is_html);
+    assert!(out.contains("Hello"));
+    assert!(out.contains("gmail_signature"));
+    assert!(out.contains("<b>Sig</b>"));
+}
+
+#[test]
 fn draft_signature_from_flags() {
     assert_eq!(
         DraftSignature::from_flags(false, None),

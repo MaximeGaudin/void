@@ -139,7 +139,7 @@ pub struct DraftCreateArgs {
     pub reply_to: Option<String>,
     /// Append the account's Gmail signature (fetched via users.settings.sendAs).
     /// Pass a body without an existing signature — re-appending doubles it.
-    #[arg(long, default_value_t = false)]
+    #[arg(long)]
     pub signature: bool,
     /// Send-as alias whose signature to use (requires --signature). Defaults to the account default/primary.
     #[arg(long, requires = "signature")]
@@ -167,7 +167,7 @@ pub struct DraftUpdateArgs {
     pub file: Option<String>,
     /// Append the account's Gmail signature (fetched via users.settings.sendAs).
     /// Not idempotent: pass `--body` without an existing signature or it will be duplicated.
-    #[arg(long, default_value_t = false)]
+    #[arg(long)]
     pub signature: bool,
     /// Send-as alias whose signature to use (requires --signature). Defaults to the account default/primary.
     #[arg(long, requires = "signature")]
@@ -196,6 +196,13 @@ pub struct ForwardArgs {
     /// Optional comment to include above the forwarded message
     #[arg(long)]
     pub comment: Option<String>,
+    /// Append the account's Gmail signature (fetched via users.settings.sendAs).
+    /// Placed between the comment and the forwarded quote (Gmail UI order).
+    #[arg(long)]
+    pub signature: bool,
+    /// Send-as alias whose signature to use (requires --signature). Defaults to the account default/primary.
+    #[arg(long, requires = "signature")]
+    pub signature_from: Option<String>,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,

@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 /// `SystemTime` survives macOS sleep where the monotonic clock pauses).
 const IDLE_THRESHOLD: Duration = Duration::from_secs(3 * 60);
 
-use void_core::connector::Connector;
+use void_core::connector::{Connector, ForwardOptions};
 use void_core::db::Database;
 use void_core::models::*;
 
@@ -20,7 +20,8 @@ use crate::auth;
 use crate::CONNECTOR_ID;
 
 use super::compose::{
-    build_forward_body, compose_rfc2822, compose_rfc2822_ex, compose_rfc2822_with_attachment,
+    apply_signature_to_forward, build_forward_body, compose_rfc2822, compose_rfc2822_ex,
+    compose_rfc2822_with_attachment, DraftSignature,
 };
 use super::GmailConnector;
 
@@ -133,23 +134,31 @@ impl Connector for GmailConnector {
     }
 
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
+        let api = self.get_client().await?;
+        let signature =
+            DraftSignature::from_flags(content.append_signature(), content.signature_from());
+
         let raw = match &content {
             MessageContent::Text { body, subject, .. } => {
                 let subject = subject.as_deref().unwrap_or("(no subject)");
+                let body = super::api_methods::maybe_append_signature(&api, body, signature).await?;
                 info!(recipient = %to, subject = %subject, "sending Gmail message");
-                compose_rfc2822(to, subject, body, None, None)
+                compose_rfc2822(to, subject, &body, None, None)
             }
             MessageContent::File {
                 path,
                 caption,
                 mime_type,
                 subject,
+                ..
             } => {
                 let subject = subject
                     .as_deref()
                     .or_else(|| path.file_name().and_then(|n| n.to_str()))
                     .unwrap_or("(attachment)");
                 let body = caption.clone().unwrap_or_default();
+                let body =
+                    super::api_methods::maybe_append_signature(&api, &body, signature).await?;
                 info!(recipient = %to, subject = %subject, "sending Gmail message with attachment");
                 compose_rfc2822_with_attachment(
                     to,
@@ -164,8 +173,6 @@ impl Connector for GmailConnector {
         };
 
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-
-        let api = self.get_client().await?;
         let resp = api.send_message(&encoded).await?;
         let message_id = resp.id.clone().unwrap_or_default();
         debug!(message_id = %message_id, "Gmail message sent");
@@ -203,6 +210,8 @@ impl Connector for GmailConnector {
         info!(message_id = %message_id, in_thread = in_thread, "sending Gmail reply");
 
         let api = self.get_client().await?;
+        let signature =
+            DraftSignature::from_flags(content.append_signature(), content.signature_from());
 
         let orig = api.get_message(message_id).await?;
         let to = orig.get_header("From").unwrap_or_default();
@@ -219,7 +228,8 @@ impl Connector for GmailConnector {
 
         let raw = match &content {
             MessageContent::Text { body, .. } => {
-                compose_rfc2822(&to, &subject, body, in_reply_to.as_deref(), references)
+                let body = super::api_methods::maybe_append_signature(&api, body, signature).await?;
+                compose_rfc2822(&to, &subject, &body, in_reply_to.as_deref(), references)
             }
             MessageContent::File {
                 path,
@@ -228,6 +238,8 @@ impl Connector for GmailConnector {
                 ..
             } => {
                 let body = caption.clone().unwrap_or_default();
+                let body =
+                    super::api_methods::maybe_append_signature(&api, &body, signature).await?;
                 compose_rfc2822_with_attachment(
                     &to,
                     &subject,
@@ -253,7 +265,7 @@ impl Connector for GmailConnector {
         external_id: &str,
         _conversation_external_id: &str,
         to: &str,
-        comment: Option<&str>,
+        options: ForwardOptions<'_>,
     ) -> anyhow::Result<String> {
         info!(message_id = %external_id, to = %to, "forwarding Gmail message");
 
@@ -288,8 +300,8 @@ impl Connector for GmailConnector {
         )
         .await?;
 
-        let (body, is_html) = build_forward_body(
-            comment,
+        let (mut body, mut is_html) = build_forward_body(
+            options.comment,
             &orig_from,
             &orig_date,
             &orig_subject,
@@ -297,6 +309,21 @@ impl Connector for GmailConnector {
             html_body.as_deref(),
             text_body.as_deref(),
         );
+
+        let signature =
+            DraftSignature::from_flags(options.append_signature, options.signature_from);
+        if !matches!(signature, DraftSignature::None) {
+            let send_as = match signature {
+                DraftSignature::None => unreachable!(),
+                DraftSignature::Default => None,
+                DraftSignature::From(email) => Some(email),
+            };
+            let sig_html = api
+                .resolve_signature(send_as)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
+            (body, is_html) = apply_signature_to_forward(&body, is_html, &sig_html);
+        }
 
         let raw = compose_rfc2822_ex(to, &subject, &body, None, None, Some(is_html));
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());

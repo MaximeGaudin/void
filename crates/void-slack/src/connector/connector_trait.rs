@@ -205,8 +205,9 @@ impl Connector for SlackConnector {
         external_id: &str,
         conversation_external_id: &str,
         to: &str,
-        comment: Option<&str>,
+        options: void_core::connector::ForwardOptions<'_>,
     ) -> anyhow::Result<String> {
+        let comment = options.comment;
         info!(
             connection_id = %self.connection_id,
             message_ts = %external_id,

@@ -216,6 +216,8 @@ fn message_content_subject_returns_email_subject() {
     let with_subject = MessageContent::Text {
         body: "body".into(),
         subject: Some("Re: test".into()),
+        append_signature: false,
+        signature_from: None,
     };
     assert_eq!(with_subject.subject(), Some("Re: test"));
 
@@ -236,6 +238,8 @@ fn message_content_text_returns_caption_for_file() {
         caption: Some("a photo".into()),
         mime_type: Some("image/png".into()),
         subject: None,
+        append_signature: false,
+        signature_from: None,
     };
     assert_eq!(with_caption.text(), "a photo");
 
@@ -244,6 +248,8 @@ fn message_content_text_returns_caption_for_file() {
         caption: None,
         mime_type: None,
         subject: None,
+        append_signature: false,
+        signature_from: None,
     };
     assert_eq!(no_caption.text(), "");
 }

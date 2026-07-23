@@ -194,7 +194,7 @@ impl GmailConnector {
 // Free helpers — pub(super) so tests.rs can reach them directly.
 // ---------------------------------------------------------------------------
 
-async fn maybe_append_signature(
+pub(crate) async fn maybe_append_signature(
     api: &GmailApiClient,
     body: &str,
     signature: super::compose::DraftSignature<'_>,

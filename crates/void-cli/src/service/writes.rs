@@ -25,6 +25,8 @@ pub struct SendParams<'a> {
     pub connection: Option<&'a str>,
     pub message: &'a str,
     pub subject: Option<&'a str>,
+    pub signature: bool,
+    pub signature_from: Option<&'a str>,
     pub file: Option<&'a str>,
     pub at: Option<&'a str>,
 }
@@ -34,6 +36,8 @@ pub struct ReplyParams<'a> {
     pub message: &'a str,
     pub file: Option<&'a str>,
     pub in_thread: bool,
+    pub signature: bool,
+    pub signature_from: Option<&'a str>,
     pub at: Option<&'a str>,
 }
 
@@ -41,6 +45,8 @@ pub struct ForwardParams<'a> {
     pub message_id: &'a str,
     pub to: &'a str,
     pub comment: Option<&'a str>,
+    pub signature: bool,
+    pub signature_from: Option<&'a str>,
 }
 
 pub struct ArchiveParams<'a> {
@@ -97,11 +103,15 @@ pub async fn send(
             caption: Some(params.message.to_string()),
             mime_type: None,
             subject: params.subject.map(str::to_string),
+            append_signature: params.signature,
+            signature_from: params.signature_from.map(str::to_string),
         }
     } else {
         MessageContent::Text {
             body: params.message.to_string(),
             subject: params.subject.map(str::to_string),
+            append_signature: params.signature,
+            signature_from: params.signature_from.map(str::to_string),
         }
     };
 
@@ -164,9 +174,16 @@ pub async fn reply(
             caption: Some(params.message.to_string()),
             mime_type: None,
             subject: None,
+            append_signature: params.signature,
+            signature_from: params.signature_from.map(str::to_string),
         }
     } else {
-        MessageContent::from_text(params.message.to_string())
+        MessageContent::Text {
+            body: params.message.to_string(),
+            subject: None,
+            append_signature: params.signature,
+            signature_from: params.signature_from.map(str::to_string),
+        }
     };
 
     let sent_id = if plugin.uses_daemon_rpc && is_daemon_running(store_path) {
@@ -215,7 +232,11 @@ pub async fn forward(
             &msg.external_id,
             &conv.external_id,
             params.to,
-            params.comment,
+            void_core::connector::ForwardOptions {
+                comment: params.comment,
+                append_signature: params.signature,
+                signature_from: params.signature_from,
+            },
         )
         .await?;
     Ok(fwd_id)
