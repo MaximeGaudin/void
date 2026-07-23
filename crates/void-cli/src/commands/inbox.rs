@@ -2,7 +2,7 @@ use clap::Args;
 use tracing::debug;
 
 use crate::service;
-use crate::service::reads::{self, InboxQuery};
+use crate::service::reads::{self, ConversationsQuery, InboxQuery};
 
 #[derive(Debug, Args)]
 pub struct InboxArgs {
@@ -44,12 +44,11 @@ pub fn run(args: &InboxArgs, enrich_context: bool) -> anyhow::Result<()> {
 pub fn run_conversations(args: &InboxArgs) -> anyhow::Result<()> {
     debug!(connection = ?args.connection, connector = ?args.connector, size = args.size, page = args.page, "inbox conversations");
     let db = crate::context::open_db()?;
-    let query = InboxQuery {
+    let query = ConversationsQuery {
         connection: args.connection.as_deref(),
         connector: args.connector.as_deref(),
         size: args.size,
         page: args.page,
-        all: args.all,
         include_muted: args.include_muted,
     };
     let value = reads::conversations(&db, &query)?;

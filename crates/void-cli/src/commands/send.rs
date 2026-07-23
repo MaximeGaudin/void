@@ -60,18 +60,13 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         at: args.at.as_deref(),
     };
 
-    let msg_id = writes::send(&db, cfg, &store_path, params).await?;
+    let result = writes::send(&db, cfg, &store_path, params).await?;
 
-    if args.at.is_some() {
-        let at_str = args.at.as_deref().unwrap_or("");
-        let post_at = crate::commands::slack::parse_schedule_time(at_str)?;
-        let dt = chrono::DateTime::from_timestamp(post_at, 0)
-            .map(|utc| utc.with_timezone(&chrono::Local))
-            .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
-            .unwrap_or_else(|| post_at.to_string());
-        eprintln!("Message scheduled for {dt} (id: {msg_id})");
+    if let Some(post_at) = result.scheduled_at {
+        let dt = writes::format_scheduled_at(post_at);
+        eprintln!("Message scheduled for {dt} (id: {})", result.id);
     } else {
-        eprintln!("Message sent (id: {msg_id})");
+        eprintln!("Message sent (id: {})", result.id);
     }
     Ok(())
 }

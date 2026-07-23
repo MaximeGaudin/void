@@ -37,6 +37,44 @@ Ensure `void sync --daemon` is running so the local SQLite cache stays current.
 
 Use the full path to the `void` binary if it is not on the agent's `PATH`.
 
+## Example agent system prompt
+
+Void does not ship opinionated MCP prompts — workflows belong in **your** agent config so you can tweak them without a release. One common pattern is interactive Inbox Zero triage; copy and adapt the sample below into:
+
+- a Cursor rule (e.g. `.cursor/rules/void-triage.mdc`)
+- Claude Desktop / other client system prompt
+- a hook `--prompt-file` (e.g. `~/.config/void/prompts/triage.md`) for scheduled or event-driven runs
+
+This is one workflow among many (batch-by-connector, search-first, archive-first, headless auto-reply, etc.). Drop or rewrite rules that do not fit your setup — especially confirmation and “read before act” if you run unattended hooks.
+
+```markdown
+You are triaging the user's unified inbox via the Void MCP server.
+Void aggregates configured connectors (WhatsApp, Telegram, Slack, Gmail,
+Calendar, LinkedIn, GitHub, HN, Google News, Reddit, …) into one local inbox.
+
+## Loop
+1. **Triage** — call `inbox` for unprocessed messages. Scope with
+   `connector`/`connection`, or use `search` for a topic.
+2. **Understand** — call `messages` with the conversation id when you need
+   thread context; use `conversations` / `contacts` / `channels` to orient.
+3. **Act** — `reply`, `send`, or `forward` when a response is needed.
+   Draft email or Slack react via `run` (e.g. `["gmail","draft","create",...]`
+   or `["slack","react",...]`).
+4. **Archive** — after handling, `archive` so the item leaves the inbox.
+   Use `mute` for noisy channels you never want to see.
+5. **Done** — when `inbox` returns nothing, you are at Inbox Zero.
+
+## Rules (interactive triage)
+- Read the thread before replying.
+- Confirm with the user before sending external messages or deleting anything.
+- For commands without a named tool, use `run` with a CLI args array
+  (e.g. `["calendar","create",...]`, `["hook","list"]`).
+- Reads come from a local cache kept fresh by `void sync --daemon`.
+
+Start by calling `inbox` and summarize what needs attention.
+Optional focus: prioritize anything related to <connector or topic>.
+```
+
 ## Full CLI parity: the `run` tool
 
 The **`run`** tool executes any void CLI subcommand by re-invoking the same binary with your `--store` / `--config` globals. This is the escape hatch for **everything** the CLI supports: `void slack saved`, `void gmail search`, `void hook list`, `void hn keywords list`, media downloads, calendar API calls, and any future command.
@@ -58,7 +96,9 @@ Another:
 }
 ```
 
-Successful commands return the same JSON envelope printed by the CLI (`{ "data", "error" }` or paginated). Non-JSON stdout is wrapped as `{ "stdout": "...", "stderr": "..." }`.
+Successful commands return the same JSON envelope printed by the CLI (`{ "data", "error" }` or paginated). Non-JSON stdout is wrapped as `{ "stdout": "..." }` with optional `stderr` when present. On success, informational stderr is omitted when stdout is already a JSON envelope (agents should not treat status lines as failures).
+
+Do **not** pass global CLI flags (`--store`, `--config`, `--verbose`/`-v`, `--no-context`, `--local-store`) inside `run` args — the server already injects `--store`/`--config`, and `no_context` is a tool parameter.
 
 **Blocked via `run`:** `void mcp` (recursion), `void setup` (interactive wizard), `void sync --daemon` (background daemon — start from a terminal).
 
@@ -78,7 +118,7 @@ These call the shared service layer in-process (faster, typed schemas). Prefer *
 | `channels` | `void channels` | List channels/groups |
 | `slack_saved` | `void slack saved` | Slack Later / saved-for-later messages |
 | `calendar` | `void calendar` | Events from local sync cache |
-| `health` | `void doctor` (connectivity subset) | Per-connection health checks |
+| `health` | `void doctor` (connectivity subset) | Per-connection health checks (**live network I/O**, unlike the DB-only read tools) |
 
 ### Write tools
 
