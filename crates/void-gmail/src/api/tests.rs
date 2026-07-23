@@ -263,7 +263,6 @@ async fn list_messages_malformed_json_is_clean_err() {
     assert!(matches!(err, GmailError::Http(_)), "got {err:?}");
 }
 
-
 #[tokio::test]
 async fn resolve_signature_uses_named_send_as() {
     let server = MockServer::start().await;

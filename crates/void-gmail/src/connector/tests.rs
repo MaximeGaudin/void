@@ -630,7 +630,9 @@ fn looks_like_html_plain_text_is_false() {
 #[test]
 fn looks_like_html_detects_br_and_anchor() {
     assert!(looks_like_html("Hi,<br><br>Thanks"));
-    assert!(looks_like_html("See <a href=\"https://example.com\">link</a>"));
+    assert!(looks_like_html(
+        "See <a href=\"https://example.com\">link</a>"
+    ));
 }
 
 #[test]

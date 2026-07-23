@@ -216,6 +216,40 @@ pub fn looks_like_html(text: &str) -> bool {
         || (trimmed.contains("<a\n") && trimmed.contains("</a>"))
 }
 
+/// Whether to append a Gmail HTML signature when creating/updating a draft.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DraftSignature<'a> {
+    /// Do not append a signature.
+    #[default]
+    None,
+    /// Append the account default/primary send-as signature.
+    Default,
+    /// Append the signature for a specific send-as alias.
+    From(&'a str),
+}
+
+impl<'a> DraftSignature<'a> {
+    /// Build from CLI `--signature` / `--signature-from` flags.
+    pub fn from_flags(enabled: bool, from: Option<&'a str>) -> Self {
+        if !enabled {
+            Self::None
+        } else if let Some(email) = from {
+            Self::From(email)
+        } else {
+            Self::Default
+        }
+    }
+
+    /// Argument for [`crate::api::GmailApiClient::resolve_signature`], if appending.
+    pub fn resolve_send_as(self) -> Option<Option<&'a str>> {
+        match self {
+            Self::None => None,
+            Self::Default => Some(None),
+            Self::From(email) => Some(Some(email)),
+        }
+    }
+}
+
 /// Append a Gmail HTML signature to a draft body.
 ///
 /// Plain-text bodies are converted to HTML first so the signature renders correctly

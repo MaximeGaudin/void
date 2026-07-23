@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Gmail** — `void gmail draft create` / `draft update` accept `--signature` to append the account HTML signature from Gmail send-as settings, and `--signature-from <email>` to pick a specific send-as alias. Requires the `gmail.settings.basic` OAuth scope (re-auth if needed).
 - **MCP** — `void mcp` stdio server: named read/write tools (`inbox`, `conversations`, `messages`, `search`, `contacts`, `channels`, `slack_saved`, `calendar`, `health`, `send`, `reply`, `forward`, `archive`, `mute`) plus a `run` tool for full CLI parity via subprocess. See [docs/mcp.md](docs/mcp.md).
 - **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.
 - **Reddit** — New connector that polls watched subreddits and surfaces posts matching your keywords and minimum score (one channel conversation per subreddit). Read-only mode uses application-only OAuth (`client_id` + `client_secret`); enabling commenting during `void setup` runs a browser OAuth flow, stores a `refresh_token`, syncs matching posts as comment threads, and lets you reply via `void reply` / `void send --via reddit`. Tune filters at runtime with `void reddit subreddits|keywords|min-score|config`.

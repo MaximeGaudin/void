@@ -508,8 +508,6 @@ impl GmailApiClient {
             .or_else(|| aliases.iter().find(|a| a.is_primary.unwrap_or(false)))
             .or_else(|| aliases.first());
 
-        Ok(alias
-            .and_then(|a| a.signature.clone())
-            .unwrap_or_default())
+        Ok(alias.and_then(|a| a.signature.clone()).unwrap_or_default())
     }
 }

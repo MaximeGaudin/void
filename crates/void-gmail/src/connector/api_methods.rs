@@ -129,8 +129,8 @@ impl GmailConnector {
     /// once to derive both the Gmail `threadId` (for API association) and the
     /// reply-all recipient list (when `to` is `None`).
     ///
-    /// When `append_signature` is true, the HTML signature for `signature_from`
-    /// (or the account default/primary send-as) is fetched and appended to `body`.
+    /// When `signature` is not [`DraftSignature::None`], the HTML signature for the
+    /// chosen send-as (or account default/primary) is fetched and appended to `body`.
     pub async fn create_draft(
         &self,
         to: Option<&str>,
@@ -138,19 +138,10 @@ impl GmailConnector {
         body: &str,
         reply_to_message_id: Option<&str>,
         file: Option<&std::path::Path>,
-        append_signature: bool,
-        signature_from: Option<&str>,
+        signature: super::compose::DraftSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
-        let body = if append_signature {
-            let signature = api
-                .resolve_signature(signature_from)
-                .await
-                .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
-            super::compose::append_gmail_signature(body, &signature)
-        } else {
-            body.to_string()
-        };
+        let body = maybe_append_signature(&api, body, signature).await?;
         create_draft_with_api(
             &api,
             &self.config_id,
@@ -170,29 +161,14 @@ impl GmailConnector {
         subject: &str,
         body: &str,
         file: Option<&std::path::Path>,
-        append_signature: bool,
-        signature_from: Option<&str>,
+        signature: super::compose::DraftSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
-        let body = if append_signature {
-            let signature = api
-                .resolve_signature(signature_from)
-                .await
-                .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
-            super::compose::append_gmail_signature(body, &signature)
-        } else {
-            body.to_string()
-        };
+        let body = maybe_append_signature(&api, body, signature).await?;
 
         let raw = if let Some(file_path) = file {
             super::compose::compose_rfc2822_with_attachment(
-                to,
-                subject,
-                &body,
-                file_path,
-                None,
-                None,
-                None,
+                to, subject, &body, file_path, None, None, None,
             )?
         } else {
             super::compose::compose_rfc2822(to, subject, &body, None, None)
@@ -213,6 +189,21 @@ impl GmailConnector {
 // ---------------------------------------------------------------------------
 // Free helpers — pub(super) so tests.rs can reach them directly.
 // ---------------------------------------------------------------------------
+
+async fn maybe_append_signature(
+    api: &GmailApiClient,
+    body: &str,
+    signature: super::compose::DraftSignature<'_>,
+) -> anyhow::Result<String> {
+    let Some(send_as) = signature.resolve_send_as() else {
+        return Ok(body.to_string());
+    };
+    let html = api
+        .resolve_signature(send_as)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
+    Ok(super::compose::append_gmail_signature(body, &html))
+}
 
 /// Core draft-creation logic, decoupled from token acquisition so that tests
 /// can pass a pre-configured `GmailApiClient` (e.g. pointed at a wiremock server).
