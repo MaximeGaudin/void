@@ -62,12 +62,41 @@ pub struct MuteParams<'a> {
     pub connector: Option<&'a str>,
 }
 
+/// Result of `send` / `reply`, including optional Slack schedule timestamp.
+pub struct OutboundResult {
+    pub id: String,
+    pub scheduled_at: Option<i64>,
+}
+
+impl OutboundResult {
+    fn immediate(id: String) -> Self {
+        Self {
+            id,
+            scheduled_at: None,
+        }
+    }
+
+    fn scheduled(id: String, at: i64) -> Self {
+        Self {
+            id,
+            scheduled_at: Some(at),
+        }
+    }
+}
+
+pub fn format_scheduled_at(post_at: i64) -> String {
+    chrono::DateTime::from_timestamp(post_at, 0)
+        .map(|utc| utc.with_timezone(&chrono::Local))
+        .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
+        .unwrap_or_else(|| post_at.to_string())
+}
+
 pub async fn send(
     db: &Database,
     cfg: &VoidConfig,
     store_path: &Path,
     params: SendParams<'_>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<OutboundResult> {
     let connector_type = parse_connector_type(params.via)
         .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", params.via))?;
 
@@ -92,7 +121,9 @@ pub async fn send(
         let to = params
             .to
             .ok_or_else(|| anyhow::anyhow!("--to is required for scheduled Slack sends"))?;
-        return run_slack_scheduled_send(connection, to, params.message, at_str).await;
+        let (id, scheduled_at) =
+            run_slack_scheduled_send(connection, to, params.message, at_str).await?;
+        return Ok(OutboundResult::scheduled(id, scheduled_at));
     }
 
     let to = resolve_send_target(db, params.to, params.conversation, &target_type)?;
@@ -121,7 +152,7 @@ pub async fn send(
         let conn = connector_factory::build_connector(connection, store_path)?;
         conn.send_message(&to, content).await?
     };
-    Ok(msg_id)
+    Ok(OutboundResult::immediate(msg_id))
 }
 
 pub async fn reply(
@@ -129,7 +160,7 @@ pub async fn reply(
     cfg: &VoidConfig,
     store_path: &Path,
     params: ReplyParams<'_>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<OutboundResult> {
     let msg = resolve_message(db, params.message_id)?;
 
     let conv = db
@@ -153,14 +184,15 @@ pub async fn reply(
         if !plugin.supports_scheduling {
             anyhow::bail!("Scheduled sending (--at) is only supported for Slack.");
         }
-        return run_slack_scheduled_reply(
+        let (id, scheduled_at) = run_slack_scheduled_reply(
             connection,
             &conv.external_id,
             &msg.external_id,
             params.message,
             at_str,
         )
-        .await;
+        .await?;
+        return Ok(OutboundResult::scheduled(id, scheduled_at));
     }
 
     let connector_type = parse_connector_type(&connection.connector_type.to_string())
@@ -199,7 +231,7 @@ pub async fn reply(
         let conn = connector_factory::build_connector(connection, store_path)?;
         conn.reply(&reply_id, content, params.in_thread).await?
     };
-    Ok(sent_id)
+    Ok(OutboundResult::immediate(sent_id))
 }
 
 pub async fn forward(
@@ -249,7 +281,7 @@ pub async fn archive(
     params: ArchiveParams<'_>,
 ) -> anyhow::Result<Value> {
     if let Some(before) = params.before {
-        return archive_bulk_before(db, before, params.connector).await;
+        return archive_bulk_before(db, before, params.connector);
     }
 
     if params.message_ids.is_empty() {
@@ -359,7 +391,7 @@ pub fn resolve_send_target(
     }
 }
 
-async fn archive_bulk_before(
+fn archive_bulk_before(
     db: &Database,
     date_str: &str,
     connector: Option<&str>,
@@ -449,7 +481,7 @@ async fn run_slack_scheduled_send(
     channel: &str,
     message: &str,
     at_str: &str,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, i64)> {
     use crate::commands::slack::parse_schedule_time;
 
     let post_at = parse_schedule_time(at_str)?;
@@ -473,9 +505,10 @@ async fn run_slack_scheduled_send(
         None,
     )?;
 
-    connector
+    let id = connector
         .schedule_message(channel, message, post_at, None)
-        .await
+        .await?;
+    Ok((id, post_at))
 }
 
 async fn run_slack_scheduled_reply(
@@ -484,7 +517,7 @@ async fn run_slack_scheduled_reply(
     thread_ts: &str,
     message: &str,
     at_str: &str,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, i64)> {
     use crate::commands::slack::parse_schedule_time;
 
     let post_at = parse_schedule_time(at_str)?;
@@ -508,9 +541,10 @@ async fn run_slack_scheduled_reply(
         None,
     )?;
 
-    connector
+    let id = connector
         .schedule_message(channel_id, message, post_at, Some(thread_ts))
-        .await
+        .await?;
+    Ok((id, post_at))
 }
 
 fn cleanup_cached_files(msg: &void_core::models::Message) {

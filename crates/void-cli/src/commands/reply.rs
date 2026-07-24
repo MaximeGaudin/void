@@ -44,18 +44,13 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
         at: args.at.as_deref(),
     };
 
-    let sent_id = writes::reply(&db, cfg, &store_path, params).await?;
+    let result = writes::reply(&db, cfg, &store_path, params).await?;
 
-    if args.at.is_some() {
-        let at_str = args.at.as_deref().unwrap_or("");
-        let post_at = crate::commands::slack::parse_schedule_time(at_str)?;
-        let dt = chrono::DateTime::from_timestamp(post_at, 0)
-            .map(|utc| utc.with_timezone(&chrono::Local))
-            .map(|local| local.format("%Y-%m-%d %H:%M %Z").to_string())
-            .unwrap_or_else(|| post_at.to_string());
-        eprintln!("Reply scheduled for {dt} (id: {sent_id})");
+    if let Some(post_at) = result.scheduled_at {
+        let dt = writes::format_scheduled_at(post_at);
+        eprintln!("Reply scheduled for {dt} (id: {})", result.id);
     } else {
-        eprintln!("Reply sent (id: {sent_id})");
+        eprintln!("Reply sent (id: {})", result.id);
     }
     Ok(())
 }

@@ -20,6 +20,14 @@ pub struct InboxQuery<'a> {
     pub include_muted: bool,
 }
 
+pub struct ConversationsQuery<'a> {
+    pub connection: Option<&'a str>,
+    pub connector: Option<&'a str>,
+    pub size: i64,
+    pub page: i64,
+    pub include_muted: bool,
+}
+
 pub struct SearchQuery<'a> {
     pub query: &'a str,
     pub connection: Option<&'a str>,
@@ -90,7 +98,7 @@ pub fn inbox(db: &Database, query: &InboxQuery<'_>, enrich_context: bool) -> any
     Ok(json_wrap_paginated(&messages, meta))
 }
 
-pub fn conversations(db: &Database, query: &InboxQuery<'_>) -> anyhow::Result<Value> {
+pub fn conversations(db: &Database, query: &ConversationsQuery<'_>) -> anyhow::Result<Value> {
     let connector = resolve_connector_filter(query.connector)?;
     let offset = parse_page(query.size, query.page)?;
 
