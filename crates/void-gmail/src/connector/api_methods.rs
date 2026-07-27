@@ -141,8 +141,8 @@ impl GmailConnector {
         file: Option<&std::path::Path>,
         signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
+        let body = maybe_append_signature(self, body, signature).await?;
         let api = self.get_client().await?;
-        let body = maybe_append_signature(&api, body, signature).await?;
         create_draft_with_api(
             &api,
             &self.config_id,
@@ -167,8 +167,8 @@ impl GmailConnector {
         file: Option<&std::path::Path>,
         signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
+        let body = maybe_append_signature(self, body, signature).await?;
         let api = self.get_client().await?;
-        let body = maybe_append_signature(&api, body, signature).await?;
 
         let raw = if let Some(file_path) = file {
             super::compose::compose_rfc2822_with_attachment(
@@ -194,20 +194,32 @@ impl GmailConnector {
 // Free helpers — pub(super) so tests.rs can reach them directly.
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn maybe_append_signature(
-    api: &GmailApiClient,
-    body: &str,
+/// Resolve send-as signature HTML when requested.
+pub(crate) async fn resolve_signature_html(
+    connector: &GmailConnector,
     signature: super::compose::ComposeSignature<'_>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<Option<String>> {
     use super::compose::ComposeSignature;
     if matches!(signature, ComposeSignature::None) {
-        return Ok(body.to_string());
+        return Ok(None);
     }
+    let api = connector.get_client().await?;
     let html = api
         .resolve_signature(signature.send_as_email())
         .await
         .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
-    Ok(super::compose::append_gmail_signature(body, &html))
+    Ok(Some(html))
+}
+
+pub(crate) async fn maybe_append_signature(
+    connector: &GmailConnector,
+    body: &str,
+    signature: super::compose::ComposeSignature<'_>,
+) -> anyhow::Result<String> {
+    match resolve_signature_html(connector, signature).await? {
+        None => Ok(body.to_string()),
+        Some(html) => Ok(super::compose::append_gmail_signature(body, &html)),
+    }
 }
 
 /// Core draft-creation logic, decoupled from token acquisition so that tests
