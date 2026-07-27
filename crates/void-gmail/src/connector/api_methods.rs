@@ -188,13 +188,35 @@ impl GmailConnector {
         let api = self.get_client().await?;
         api.delete_draft(draft_id).await.map_err(Into::into)
     }
+
+    /// Re-auth with `gmail.settings.basic` (plus previously granted scopes).
+    async fn ensure_settings_scope(&self) -> anyhow::Result<()> {
+        eprintln!(
+            "Gmail signature needs the gmail.settings.basic permission; opening browser to grant it..."
+        );
+        let creds = auth::load_client_credentials(self.credentials_file.as_deref())?;
+        let scopes = auth::scopes_with_settings();
+        let cache = auth::authorize_interactive(&creds, Some(&scopes)).await?;
+        cache.save(&self.token_path())?;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Free helpers — pub(super) so tests.rs can reach them directly.
 // ---------------------------------------------------------------------------
 
+fn is_forbidden(err: &crate::error::GmailError) -> bool {
+    matches!(
+        err,
+        crate::error::GmailError::Http(e) if e.status() == Some(reqwest::StatusCode::FORBIDDEN)
+    )
+}
+
 /// Resolve send-as signature HTML when requested.
+///
+/// On 403 (missing `gmail.settings.basic`), prompts an incremental OAuth grant
+/// and retries once.
 pub(crate) async fn resolve_signature_html(
     connector: &GmailConnector,
     signature: super::compose::ComposeSignature<'_>,
@@ -203,12 +225,21 @@ pub(crate) async fn resolve_signature_html(
     if matches!(signature, ComposeSignature::None) {
         return Ok(None);
     }
+    let send_as = signature.send_as_email();
+
     let api = connector.get_client().await?;
-    let html = api
-        .resolve_signature(signature.send_as_email())
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
-    Ok(Some(html))
+    match api.resolve_signature(send_as).await {
+        Ok(html) => Ok(Some(html)),
+        Err(e) if is_forbidden(&e) => {
+            connector.ensure_settings_scope().await?;
+            let api = connector.get_client().await?;
+            let html = api.resolve_signature(send_as).await.map_err(|e| {
+                anyhow::anyhow!("failed to fetch Gmail signature after re-auth: {e}")
+            })?;
+            Ok(Some(html))
+        }
+        Err(e) => Err(anyhow::anyhow!("failed to fetch Gmail signature: {e}")),
+    }
 }
 
 pub(crate) async fn maybe_append_signature(

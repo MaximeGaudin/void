@@ -6,10 +6,13 @@ use crate::error::GmailError;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
-const GMAIL_SCOPES: &str = "https://www.googleapis.com/auth/gmail.readonly \
+/// Scopes required for sync, send, reply, forward, and drafts.
+const GMAIL_BASE_SCOPES: &str = "https://www.googleapis.com/auth/gmail.readonly \
                             https://www.googleapis.com/auth/gmail.send \
-                            https://www.googleapis.com/auth/gmail.modify \
-                            https://www.googleapis.com/auth/gmail.settings.basic";
+                            https://www.googleapis.com/auth/gmail.modify";
+
+/// Extra scope for reading send-as HTML signatures (`--signature`).
+const GMAIL_SETTINGS_BASIC: &str = "https://www.googleapis.com/auth/gmail.settings.basic";
 
 /// Google OAuth2 token state, cached to disk.
 #[derive(Clone, Serialize, Deserialize)]
@@ -122,8 +125,14 @@ pub fn load_client_credentials(
         .ok_or_else(|| GmailError::Auth("credentials missing 'installed' key".into()))
 }
 
+/// Base Gmail scopes (no settings). Used for setup / normal re-auth.
 pub fn scopes() -> &'static str {
-    GMAIL_SCOPES
+    GMAIL_BASE_SCOPES
+}
+
+/// Base scopes plus `gmail.settings.basic` for `--signature` send-as lookups.
+pub fn scopes_with_settings() -> String {
+    format!("{GMAIL_BASE_SCOPES} {GMAIL_SETTINGS_BASIC}")
 }
 
 /// Run the full OAuth2 installed-app flow: open browser, listen on localhost
@@ -137,10 +146,10 @@ pub async fn authorize_interactive(
     let port = listener.local_addr()?.port();
     info!(port, "starting OAuth flow");
     let redirect_uri = format!("http://127.0.0.1:{port}");
-    let scopes = custom_scopes.unwrap_or(GMAIL_SCOPES);
+    let scopes = custom_scopes.unwrap_or(GMAIL_BASE_SCOPES);
 
     let auth_url = format!(
-        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent",
+        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&include_granted_scopes=true",
         creds.auth_uri,
         urlencoding::encode(&creds.client_id),
         urlencoding::encode(&redirect_uri),
@@ -282,6 +291,21 @@ pub async fn refresh_access_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scopes_exclude_settings_basic() {
+        assert!(!scopes().contains("gmail.settings.basic"));
+        assert!(scopes().contains("gmail.readonly"));
+        assert!(scopes().contains("gmail.send"));
+        assert!(scopes().contains("gmail.modify"));
+    }
+
+    #[test]
+    fn scopes_with_settings_includes_basic() {
+        let s = scopes_with_settings();
+        assert!(s.contains("gmail.settings.basic"));
+        assert!(s.contains("gmail.readonly"));
+    }
 
     #[test]
     fn token_cache_save_load_roundtrip() {

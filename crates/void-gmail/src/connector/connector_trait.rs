@@ -254,7 +254,8 @@ impl Connector for GmailConnector {
         };
 
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-                let api = self.get_client().await?;
+        // Fresh client in case signature append triggered settings-scope re-auth.
+        let api = self.get_client().await?;
         let resp = api.send_message(&encoded).await?;
         let reply_id = resp.id.clone().unwrap_or_default();
         debug!(reply_id = %reply_id, "Gmail reply sent");
@@ -322,7 +323,8 @@ impl Connector for GmailConnector {
         let raw = compose_rfc2822_ex(to, &subject, &body, None, None, Some(is_html));
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
 
-                let api = self.get_client().await?;
+        // Fresh client in case signature resolve triggered settings-scope re-auth.
+        let api = self.get_client().await?;
         let resp = api.send_message(&encoded).await?;
         let fwd_id = resp.id.clone().unwrap_or_default();
         debug!(fwd_id = %fwd_id, "Gmail message forwarded");
