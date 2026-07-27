@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **WhatsApp** — The daemon's RPC socket no longer disappears from disk, which broke every `void send --via whatsapp` with `No such file or directory`. A second `void sync` used to unlink the running daemon's socket before discovering it could not take the lock; the sync lock is now acquired before the RPC endpoint is touched, a live endpoint is never replaced, and a watchdog rebinds the socket if it vanishes anyway (manual `rm`, `/tmp` pruning).
+- **Sync** — A lock file whose PID has been recycled by an unrelated process is now treated as stale instead of "another sync instance is running", so `void sync --restart` starts cleanly and `void sync --stop` can no longer signal a stranger. `--restart` also clears a lock that survives the stop.
 - **Messages** — Restore UTC midnight semantics for `void messages --since/--until` date filters during service-layer extraction (calendar date ranges remain local midnight).
 
 ### Added

@@ -41,6 +41,16 @@ pub fn remove_stale_endpoint(path: &Path) {
     }
 }
 
+/// Whether a server is currently accepting connections on `path`.
+///
+/// A socket file left behind by a dead process refuses connections, while one
+/// owned by a live server accepts them. Probing before unlinking is what keeps
+/// a second `void sync` from destroying the running daemon's endpoint.
+#[cfg(unix)]
+pub async fn endpoint_is_live(path: &Path) -> bool {
+    path.exists() && tokio::net::UnixStream::connect(path).await.is_ok()
+}
+
 #[cfg(windows)]
 pub fn remove_stale_endpoint(_path: &str) {}
 
