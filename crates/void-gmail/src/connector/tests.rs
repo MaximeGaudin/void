@@ -694,31 +694,31 @@ fn apply_signature_to_forward_appends_when_no_quote() {
 }
 
 #[test]
-fn draft_signature_from_flags() {
+fn compose_signature_from_flags() {
     assert_eq!(
-        DraftSignature::from_flags(false, None),
-        DraftSignature::None
+        ComposeSignature::from_flags(false, None),
+        ComposeSignature::None
     );
     assert_eq!(
-        DraftSignature::from_flags(false, Some("a@example.com")),
-        DraftSignature::None
+        ComposeSignature::from_flags(false, Some("a@example.com")),
+        ComposeSignature::None
     );
     assert_eq!(
-        DraftSignature::from_flags(true, None),
-        DraftSignature::Default
+        ComposeSignature::from_flags(true, None),
+        ComposeSignature::Default
     );
     assert_eq!(
-        DraftSignature::from_flags(true, Some("a@example.com")),
-        DraftSignature::From("a@example.com")
+        ComposeSignature::from_flags(true, Some("a@example.com")),
+        ComposeSignature::From("a@example.com")
     );
 }
 
 #[test]
-fn draft_signature_send_as_email() {
-    assert_eq!(DraftSignature::None.send_as_email(), None);
-    assert_eq!(DraftSignature::Default.send_as_email(), None);
+fn compose_signature_send_as_email() {
+    assert_eq!(ComposeSignature::None.send_as_email(), None);
+    assert_eq!(ComposeSignature::Default.send_as_email(), None);
     assert_eq!(
-        DraftSignature::From("a@example.com").send_as_email(),
+        ComposeSignature::From("a@example.com").send_as_email(),
         Some("a@example.com")
     );
 }

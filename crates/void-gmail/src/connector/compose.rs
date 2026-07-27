@@ -233,7 +233,7 @@ pub fn looks_like_html_for_compose(text: &str) -> bool {
 /// Whether to append a Gmail HTML signature when composing an outgoing message
 /// (draft create/update, send, reply, or forward).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum DraftSignature<'a> {
+pub enum ComposeSignature<'a> {
     /// Do not append a signature.
     #[default]
     None,
@@ -243,7 +243,7 @@ pub enum DraftSignature<'a> {
     From(&'a str),
 }
 
-impl<'a> DraftSignature<'a> {
+impl<'a> ComposeSignature<'a> {
     /// Build from CLI `--signature` / `--signature-from` flags.
     pub fn from_flags(enabled: bool, from: Option<&'a str>) -> Self {
         if !enabled {

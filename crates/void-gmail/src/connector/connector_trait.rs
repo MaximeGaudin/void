@@ -21,7 +21,7 @@ use crate::CONNECTOR_ID;
 
 use super::compose::{
     apply_signature_to_forward, build_forward_body, compose_rfc2822, compose_rfc2822_ex,
-    compose_rfc2822_with_attachment, DraftSignature,
+    compose_rfc2822_with_attachment, ComposeSignature,
 };
 use super::GmailConnector;
 
@@ -136,7 +136,7 @@ impl Connector for GmailConnector {
     async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
         let api = self.get_client().await?;
         let signature =
-            DraftSignature::from_flags(content.append_signature(), content.signature_from());
+            ComposeSignature::from_flags(content.append_signature(), content.signature_from());
 
         let raw = match &content {
             MessageContent::Text { body, subject, .. } => {
@@ -212,7 +212,7 @@ impl Connector for GmailConnector {
 
         let api = self.get_client().await?;
         let signature =
-            DraftSignature::from_flags(content.append_signature(), content.signature_from());
+            ComposeSignature::from_flags(content.append_signature(), content.signature_from());
 
         let orig = api.get_message(message_id).await?;
         let to = orig.get_header("From").unwrap_or_default();
@@ -313,8 +313,8 @@ impl Connector for GmailConnector {
         );
 
         let signature =
-            DraftSignature::from_flags(options.append_signature, options.signature_from);
-        if !matches!(signature, DraftSignature::None) {
+            ComposeSignature::from_flags(options.append_signature, options.signature_from);
+        if !matches!(signature, ComposeSignature::None) {
             let sig_html = api
                 .resolve_signature(signature.send_as_email())
                 .await

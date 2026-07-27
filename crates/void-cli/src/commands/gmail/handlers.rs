@@ -226,7 +226,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                     &a.body,
                     reply_to,
                     file_path,
-                    void_gmail::connector::DraftSignature::from_flags(
+                    void_gmail::connector::ComposeSignature::from_flags(
                         a.signature,
                         a.signature_from.as_deref(),
                     ),
@@ -253,7 +253,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                     &a.subject,
                     &a.body,
                     file_path,
-                    void_gmail::connector::DraftSignature::from_flags(
+                    void_gmail::connector::ComposeSignature::from_flags(
                         a.signature,
                         a.signature_from.as_deref(),
                     ),

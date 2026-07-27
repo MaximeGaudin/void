@@ -129,7 +129,7 @@ impl GmailConnector {
     /// once to derive both the Gmail `threadId` (for API association) and the
     /// reply-all recipient list (when `to` is `None`).
     ///
-    /// When `signature` is not [`DraftSignature::None`], the HTML signature for the
+    /// When `signature` is not [`ComposeSignature::None`], the HTML signature for the
     /// chosen send-as (or account default/primary) is fetched and appended to `body`.
     /// Pass `body` without an existing signature — append is not idempotent.
     pub async fn create_draft(
@@ -139,7 +139,7 @@ impl GmailConnector {
         body: &str,
         reply_to_message_id: Option<&str>,
         file: Option<&std::path::Path>,
-        signature: super::compose::DraftSignature<'_>,
+        signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
         let body = maybe_append_signature(&api, body, signature).await?;
@@ -155,7 +155,7 @@ impl GmailConnector {
         .await
     }
 
-    /// Replace a draft. When `signature` is not [`DraftSignature::None`], the HTML
+    /// Replace a draft. When `signature` is not [`ComposeSignature::None`], the HTML
     /// signature is appended to `body` (same non-idempotent append as
     /// [`Self::create_draft`] — pass a body without an existing signature).
     pub async fn update_draft(
@@ -165,7 +165,7 @@ impl GmailConnector {
         subject: &str,
         body: &str,
         file: Option<&std::path::Path>,
-        signature: super::compose::DraftSignature<'_>,
+        signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let api = self.get_client().await?;
         let body = maybe_append_signature(&api, body, signature).await?;
@@ -197,10 +197,10 @@ impl GmailConnector {
 pub(crate) async fn maybe_append_signature(
     api: &GmailApiClient,
     body: &str,
-    signature: super::compose::DraftSignature<'_>,
+    signature: super::compose::ComposeSignature<'_>,
 ) -> anyhow::Result<String> {
-    use super::compose::DraftSignature;
-    if matches!(signature, DraftSignature::None) {
+    use super::compose::ComposeSignature;
+    if matches!(signature, ComposeSignature::None) {
         return Ok(body.to_string());
     }
     let html = api
