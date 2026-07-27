@@ -200,13 +200,11 @@ pub(crate) async fn maybe_append_signature(
     signature: super::compose::DraftSignature<'_>,
 ) -> anyhow::Result<String> {
     use super::compose::DraftSignature;
-    let send_as = match signature {
-        DraftSignature::None => return Ok(body.to_string()),
-        DraftSignature::Default => None,
-        DraftSignature::From(email) => Some(email),
-    };
+    if matches!(signature, DraftSignature::None) {
+        return Ok(body.to_string());
+    }
     let html = api
-        .resolve_signature(send_as)
+        .resolve_signature(signature.send_as_email())
         .await
         .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
     Ok(super::compose::append_gmail_signature(body, &html))

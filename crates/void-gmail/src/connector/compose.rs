@@ -228,7 +228,6 @@ pub fn looks_like_html_for_compose(text: &str) -> bool {
     trimmed.contains("<br")
         || trimmed.contains("<BR")
         || (trimmed.contains("<a ") && trimmed.contains("</a>"))
-        || (trimmed.contains("<a\n") && trimmed.contains("</a>"))
 }
 
 /// Whether to append a Gmail HTML signature when composing an outgoing message
@@ -253,6 +252,15 @@ impl<'a> DraftSignature<'a> {
             Self::From(email)
         } else {
             Self::Default
+        }
+    }
+
+    /// Send-as email for [`GmailApiClient::resolve_signature`](crate::api::GmailApiClient::resolve_signature),
+    /// or `None` for the account default/primary. Only meaningful when this is not [`Self::None`].
+    pub fn send_as_email(self) -> Option<&'a str> {
+        match self {
+            Self::None | Self::Default => None,
+            Self::From(email) => Some(email),
         }
     }
 }

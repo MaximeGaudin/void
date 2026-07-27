@@ -315,13 +315,8 @@ impl Connector for GmailConnector {
         let signature =
             DraftSignature::from_flags(options.append_signature, options.signature_from);
         if !matches!(signature, DraftSignature::None) {
-            let send_as = match signature {
-                DraftSignature::None => unreachable!(),
-                DraftSignature::Default => None,
-                DraftSignature::From(email) => Some(email),
-            };
             let sig_html = api
-                .resolve_signature(send_as)
+                .resolve_signature(signature.send_as_email())
                 .await
                 .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
             (body, is_html) = apply_signature_to_forward(&body, is_html, &sig_html);

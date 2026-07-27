@@ -714,6 +714,16 @@ fn draft_signature_from_flags() {
 }
 
 #[test]
+fn draft_signature_send_as_email() {
+    assert_eq!(DraftSignature::None.send_as_email(), None);
+    assert_eq!(DraftSignature::Default.send_as_email(), None);
+    assert_eq!(
+        DraftSignature::From("a@example.com").send_as_email(),
+        Some("a@example.com")
+    );
+}
+
+#[test]
 fn gmail_url_formats_correctly() {
     let url = GmailConnector::gmail_url("thread123");
     assert_eq!(url, "https://mail.google.com/mail/u/0/#inbox/thread123");
