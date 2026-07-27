@@ -439,14 +439,59 @@ fn compose_rfc2822_basic() {
 }
 
 #[test]
+fn compose_rfc2822_includes_cc_and_bcc_before_subject() {
+    let raw = compose_rfc2822_ex(
+        ComposeRecipients {
+            to: "alice@example.com",
+            cc: Some("billing@example.com, legal@example.com"),
+            bcc: Some("audit@example.com"),
+        },
+        "Test Subject",
+        "Hello",
+        None,
+        None,
+        None,
+    );
+    let to_pos = raw.find("To: alice@example.com\r\n").expect("To");
+    let cc_pos = raw
+        .find("Cc: billing@example.com, legal@example.com\r\n")
+        .expect("Cc");
+    let bcc_pos = raw.find("Bcc: audit@example.com\r\n").expect("Bcc");
+    let subject_pos = raw.find("Subject: Test Subject\r\n").expect("Subject");
+    assert!(to_pos < cc_pos && cc_pos < bcc_pos && bcc_pos < subject_pos);
+    // Empty/whitespace cc/bcc omitted
+    let raw2 = compose_rfc2822_ex(
+        ComposeRecipients {
+            to: "a@b.com",
+            cc: Some("  "),
+            bcc: None,
+        },
+        "S",
+        "B",
+        None,
+        None,
+        None,
+    );
+    assert!(!raw2.contains("Cc:"));
+    assert!(!raw2.contains("Bcc:"));
+}
+
+#[test]
 fn compose_rfc2822_with_attachment_creates_multipart() {
     let dir = std::env::temp_dir();
     let name = format!("void_gmail_test_{}.txt", uuid::Uuid::new_v4());
     let path = dir.join(&name);
     std::fs::write(&path, "test content").unwrap();
-    let result =
-        compose_rfc2822_with_attachment("a@b.com", "Subj", "body", &path, None, None, None)
-            .unwrap();
+    let result = compose_rfc2822_with_attachment(
+        ComposeRecipients::to_only("a@b.com"),
+        "Subj",
+        "body",
+        &path,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     std::fs::remove_file(&path).ok();
     assert!(result.contains("void_boundary_001"));
     assert!(result.contains("Content-Type: multipart/mixed"));
@@ -465,7 +510,7 @@ fn compose_rfc2822_with_attachment_uses_provided_mime_type() {
     let path = dir.join(&name);
     std::fs::write(&path, "PDF bytes").unwrap();
     let result = compose_rfc2822_with_attachment(
-        "x@y.com",
+        ComposeRecipients::to_only("x@y.com"),
         "Doc",
         "See attached",
         &path,
@@ -522,7 +567,14 @@ fn compose_rfc2822_ex_preserves_html_after_plain_forward_header() {
         None,
     );
     assert!(is_html);
-    let raw = compose_rfc2822_ex("a@b.com", "Fwd: Subj", &body, None, None, Some(is_html));
+    let raw = compose_rfc2822_ex(
+        ComposeRecipients::to_only("a@b.com"),
+        "Fwd: Subj",
+        &body,
+        None,
+        None,
+        Some(is_html),
+    );
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(
             raw.split("\r\n\r\n")
@@ -881,7 +933,11 @@ async fn create_draft_derives_thread_id_from_reply_to_message() {
     let draft = create_draft_with_api(
         &api,
         "me@example.com",
-        Some("alice@example.com"),
+        DraftRecipients {
+            to: Some("alice@example.com"),
+            cc: None,
+            bcc: None,
+        },
         "Re: Hello",
         "Thanks!",
         Some("msg1"),
@@ -929,7 +985,11 @@ async fn create_draft_derives_thread_id_and_recipients_together() {
     let draft = create_draft_with_api(
         &api,
         "me@example.com",
-        None,
+        DraftRecipients {
+            to: None,
+            cc: None,
+            bcc: None,
+        },
         "Re: Chat",
         "Got it.",
         Some("msg2"),
@@ -947,8 +1007,20 @@ async fn create_draft_errors_without_to_and_reply_to() {
     let server = MockServer::start().await;
     let api = GmailApiClient::with_base_url("test-token", &server.uri());
 
-    let result =
-        create_draft_with_api(&api, "me@example.com", None, "Subject", "Body", None, None).await;
+    let result = create_draft_with_api(
+        &api,
+        "me@example.com",
+        DraftRecipients {
+            to: None,
+            cc: None,
+            bcc: None,
+        },
+        "Subject",
+        "Body",
+        None,
+        None,
+    )
+    .await;
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("--to is required"));

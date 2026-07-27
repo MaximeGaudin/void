@@ -20,8 +20,8 @@ use crate::auth;
 use crate::CONNECTOR_ID;
 
 use super::compose::{
-    apply_signature_to_forward, build_forward_body, compose_rfc2822, compose_rfc2822_ex,
-    compose_rfc2822_with_attachment, DraftSignature,
+    apply_signature_to_forward, build_forward_body, compose_rfc2822_ex,
+    compose_rfc2822_with_attachment, ComposeRecipients, DraftSignature,
 };
 use super::GmailConnector;
 
@@ -144,7 +144,18 @@ impl Connector for GmailConnector {
                 let body =
                     super::api_methods::maybe_append_signature(&api, body, signature).await?;
                 info!(recipient = %to, subject = %subject, "sending Gmail message");
-                compose_rfc2822(to, subject, &body, None, None)
+                compose_rfc2822_ex(
+                    ComposeRecipients {
+                        to,
+                        cc: content.cc(),
+                        bcc: content.bcc(),
+                    },
+                    subject,
+                    &body,
+                    None,
+                    None,
+                    None,
+                )
             }
             MessageContent::File {
                 path,
@@ -162,7 +173,11 @@ impl Connector for GmailConnector {
                     super::api_methods::maybe_append_signature(&api, &body, signature).await?;
                 info!(recipient = %to, subject = %subject, "sending Gmail message with attachment");
                 compose_rfc2822_with_attachment(
-                    to,
+                    ComposeRecipients {
+                        to,
+                        cc: content.cc(),
+                        bcc: content.bcc(),
+                    },
                     subject,
                     &body,
                     path,
@@ -231,7 +246,18 @@ impl Connector for GmailConnector {
             MessageContent::Text { body, .. } => {
                 let body =
                     super::api_methods::maybe_append_signature(&api, body, signature).await?;
-                compose_rfc2822(&to, &subject, &body, in_reply_to.as_deref(), references)
+                compose_rfc2822_ex(
+                    ComposeRecipients {
+                        to: &to,
+                        cc: content.cc(),
+                        bcc: content.bcc(),
+                    },
+                    &subject,
+                    &body,
+                    in_reply_to.as_deref(),
+                    references,
+                    None,
+                )
             }
             MessageContent::File {
                 path,
@@ -243,7 +269,11 @@ impl Connector for GmailConnector {
                 let body =
                     super::api_methods::maybe_append_signature(&api, &body, signature).await?;
                 compose_rfc2822_with_attachment(
-                    &to,
+                    ComposeRecipients {
+                        to: &to,
+                        cc: content.cc(),
+                        bcc: content.bcc(),
+                    },
                     &subject,
                     &body,
                     path,
@@ -327,7 +357,18 @@ impl Connector for GmailConnector {
             (body, is_html) = apply_signature_to_forward(&body, is_html, &sig_html);
         }
 
-        let raw = compose_rfc2822_ex(to, &subject, &body, None, None, Some(is_html));
+        let raw = compose_rfc2822_ex(
+            ComposeRecipients {
+                to,
+                cc: options.cc,
+                bcc: options.bcc,
+            },
+            &subject,
+            &body,
+            None,
+            None,
+            Some(is_html),
+        );
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
 
         let resp = api.send_message(&encoded).await?;

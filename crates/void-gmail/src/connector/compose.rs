@@ -11,6 +11,45 @@ pub fn encode_rfc2047(value: &str) -> String {
     format!("=?UTF-8?B?{encoded}?=")
 }
 
+/// Addressing headers for an outgoing RFC 2822 message.
+///
+/// `cc` / `bcc` are optional comma-separated address lists. They are emitted
+/// immediately after `To` and before `Subject` / MIME headers so Gmail honors them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ComposeRecipients<'a> {
+    pub to: &'a str,
+    pub cc: Option<&'a str>,
+    pub bcc: Option<&'a str>,
+}
+
+impl<'a> ComposeRecipients<'a> {
+    pub fn to_only(to: &'a str) -> Self {
+        Self {
+            to,
+            cc: None,
+            bcc: None,
+        }
+    }
+}
+
+/// Addressing for draft create: `to` may be omitted when `--reply-to` derives recipients.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DraftRecipients<'a> {
+    pub to: Option<&'a str>,
+    pub cc: Option<&'a str>,
+    pub bcc: Option<&'a str>,
+}
+
+fn push_address_headers(headers: &mut String, recipients: ComposeRecipients<'_>) {
+    headers.push_str(&format!("To: {}\r\n", recipients.to));
+    if let Some(cc) = recipients.cc.map(str::trim).filter(|s| !s.is_empty()) {
+        headers.push_str(&format!("Cc: {cc}\r\n"));
+    }
+    if let Some(bcc) = recipients.bcc.map(str::trim).filter(|s| !s.is_empty()) {
+        headers.push_str(&format!("Bcc: {bcc}\r\n"));
+    }
+}
+
 pub fn compose_rfc2822(
     to: &str,
     subject: &str,
@@ -18,13 +57,19 @@ pub fn compose_rfc2822(
     in_reply_to: Option<&str>,
     references: Option<&str>,
 ) -> String {
-    compose_rfc2822_ex(to, subject, body, in_reply_to, references, None)
+    compose_rfc2822_ex(
+        ComposeRecipients::to_only(to),
+        subject,
+        body,
+        in_reply_to,
+        references,
+        None,
+    )
 }
 
-/// Like [`compose_rfc2822`], but `body_is_html` forces HTML handling when the body does not
-/// start with HTML tags (e.g. a forward wrapper followed by quoted HTML).
+/// Like [`compose_rfc2822`], but accepts Cc/Bcc and optional forced HTML handling.
 pub fn compose_rfc2822_ex(
-    to: &str,
+    recipients: ComposeRecipients<'_>,
     subject: &str,
     body: &str,
     in_reply_to: Option<&str>,
@@ -41,9 +86,11 @@ pub fn compose_rfc2822_ex(
     };
     let content_type = "text/html";
 
-    let mut headers = format!(
-        "To: {to}\r\nSubject: {subject}\r\nContent-Type: {content_type}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n"
-    );
+    let mut headers = String::new();
+    push_address_headers(&mut headers, recipients);
+    headers.push_str(&format!(
+        "Subject: {subject}\r\nContent-Type: {content_type}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n"
+    ));
     if let Some(irt) = in_reply_to {
         headers.push_str(&format!("In-Reply-To: {irt}\r\n"));
     }
@@ -63,7 +110,7 @@ pub fn compose_rfc2822_ex(
 }
 
 pub fn compose_rfc2822_with_attachment(
-    to: &str,
+    recipients: ComposeRecipients<'_>,
     subject: &str,
     body: &str,
     file_path: &std::path::Path,
@@ -91,9 +138,11 @@ pub fn compose_rfc2822_with_attachment(
     const BOUNDARY: &str = "void_boundary_001";
 
     let subject = encode_rfc2047(subject);
-    let mut headers = format!(
-        "To: {to}\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"{BOUNDARY}\"\r\n"
-    );
+    let mut headers = String::new();
+    push_address_headers(&mut headers, recipients);
+    headers.push_str(&format!(
+        "Subject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"{BOUNDARY}\"\r\n"
+    ));
     if let Some(irt) = in_reply_to {
         headers.push_str(&format!("In-Reply-To: {irt}\r\n"));
     }

@@ -141,6 +141,8 @@ pub fn rpc_to_message_content(content: RpcContent) -> MessageContent {
             subject: None,
             append_signature: false,
             signature_from: None,
+            cc: None,
+            bcc: None,
         },
     }
 }
@@ -251,6 +253,8 @@ mod tests {
             subject: None,
             append_signature: false,
             signature_from: None,
+            cc: None,
+            bcc: None,
         };
         match rpc_to_message_content(message_content_to_rpc(&original)) {
             MessageContent::File {
@@ -276,6 +280,8 @@ mod tests {
             subject: None,
             append_signature: false,
             signature_from: None,
+            cc: None,
+            bcc: None,
         };
         match rpc_to_message_content(message_content_to_rpc(&original)) {
             MessageContent::File {

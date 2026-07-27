@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Gmail** — `--cc` / `--bcc` on draft create/update, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward` (comma-separated). Headers are placed after `To` and before `Subject`/MIME so Gmail honors them.
 - **Gmail** — `--signature` / `--signature-from <email>` append the account HTML signature from Gmail send-as settings on all outgoing compose paths: `void gmail draft create` / `draft update`, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward`. Pass a body/comment without an existing signature (append is not idempotent). Forwards place the signature between the comment and the quoted message. Requires the `gmail.settings.basic` OAuth scope (re-auth if needed).
 - **MCP** — `void mcp` stdio server: named read/write tools (`inbox`, `conversations`, `messages`, `search`, `contacts`, `channels`, `slack_saved`, `calendar`, `health`, `send`, `reply`, `forward`, `archive`, `mute`) plus a `run` tool for full CLI parity via subprocess. See [docs/mcp.md](docs/mcp.md).
 - **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.

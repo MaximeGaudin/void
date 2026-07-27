@@ -221,7 +221,11 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
             let draft = connector
                 .create_draft(
-                    a.to.as_deref(),
+                    void_gmail::connector::DraftRecipients {
+                        to: a.to.as_deref(),
+                        cc: a.cc.as_deref(),
+                        bcc: a.bcc.as_deref(),
+                    },
                     &a.subject,
                     &a.body,
                     reply_to,
@@ -249,7 +253,11 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
             let draft = connector
                 .update_draft(
                     &a.draft_id,
-                    &a.to,
+                    void_gmail::connector::ComposeRecipients {
+                        to: &a.to,
+                        cc: a.cc.as_deref(),
+                        bcc: a.bcc.as_deref(),
+                    },
                     &a.subject,
                     &a.body,
                     file_path,
@@ -311,6 +319,8 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
                 comment: args.comment.as_deref(),
                 append_signature: args.signature,
                 signature_from: args.signature_from.as_deref(),
+                cc: args.cc.as_deref(),
+                bcc: args.bcc.as_deref(),
             },
         )
         .await?;
