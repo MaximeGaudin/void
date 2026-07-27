@@ -628,11 +628,22 @@ fn looks_like_html_plain_text_is_false() {
 }
 
 #[test]
-fn looks_like_html_detects_br_and_anchor() {
-    assert!(looks_like_html("Hi,<br><br>Thanks"));
-    assert!(looks_like_html(
+fn looks_like_html_ignores_bare_br_and_anchor() {
+    // Sync/display keeps the stricter check — bare tags stay verbatim.
+    assert!(!looks_like_html("Hi,<br><br>Thanks"));
+    assert!(!looks_like_html(
         "See <a href=\"https://example.com\">link</a>"
     ));
+}
+
+#[test]
+fn looks_like_html_for_compose_detects_br_and_anchor() {
+    assert!(looks_like_html_for_compose("Hi,<br><br>Thanks"));
+    assert!(looks_like_html_for_compose(
+        "See <a href=\"https://example.com\">link</a>"
+    ));
+    assert!(looks_like_html_for_compose("<div>Hi</div>"));
+    assert!(!looks_like_html_for_compose("plain text only"));
 }
 
 #[test]

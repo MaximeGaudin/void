@@ -33,7 +33,7 @@ pub fn compose_rfc2822_ex(
 ) -> String {
     let subject = encode_rfc2047(subject);
 
-    let is_html = body_is_html.unwrap_or_else(|| looks_like_html(body));
+    let is_html = body_is_html.unwrap_or_else(|| looks_like_html_for_compose(body));
     let final_body = if is_html {
         body.to_string()
     } else {
@@ -102,7 +102,7 @@ pub fn compose_rfc2822_with_attachment(
     }
     headers.push_str("\r\n");
 
-    let (content_type, final_body) = if looks_like_html(body) {
+    let (content_type, final_body) = if looks_like_html_for_compose(body) {
         ("text/html", body.to_string())
     } else {
         ("text/html", body.replace('\n', "<br>\n"))
@@ -164,7 +164,7 @@ pub fn build_forward_body(
     if let Some(html) = html_body.filter(|s| !s.is_empty()) {
         let mut body = String::new();
         if let Some(c) = comment {
-            if looks_like_html(c) {
+            if looks_like_html_for_compose(c) {
                 body.push_str(c);
             } else {
                 body.push_str(&format!("<div dir=\"ltr\">{}</div>", plain_text_to_html(c)));
@@ -199,12 +199,11 @@ pub fn build_forward_body(
     }
 }
 
-/// Heuristic for whether a body should be treated as HTML.
+/// Heuristic for whether a synced message body should be treated as HTML.
 ///
-/// Used when composing RFC 2822 (`Content-Type`), appending Gmail signatures
-/// (skip newline→`<br>` conversion), and choosing sync display text. Treating
-/// bare `<br>` / `<a>` as HTML therefore also affects compose and sync paths,
-/// not only signature append.
+/// Used on the sync/display path (`html_to_markdown` vs store verbatim). Keeps a
+/// stricter check than compose so bare `<br>` / `<a>` in plain-text MIME parts
+/// are not re-parsed as HTML.
 pub fn looks_like_html(text: &str) -> bool {
     let trimmed = text.trim_start();
     trimmed.starts_with("<!DOCTYPE")
@@ -214,9 +213,19 @@ pub fn looks_like_html(text: &str) -> bool {
         || (trimmed.contains("<div") && trimmed.contains("</div>"))
         || (trimmed.contains("<table") && trimmed.contains("</table>"))
         || (trimmed.contains("<body") && trimmed.contains("</body>"))
-        // Draft bodies often use <br> / anchors without a wrapping <div>/<html>.
-        // Treat those as HTML so we do not turn existing newlines into extra <br>s.
-        || trimmed.contains("<br")
+}
+
+/// Heuristic for whether an outgoing body should be treated as HTML when composing.
+///
+/// Extends [`looks_like_html`] with bare `<br>` / `<a>` detection so draft bodies
+/// and signature append skip newline→`<br>` conversion on already-HTML fragments.
+pub fn looks_like_html_for_compose(text: &str) -> bool {
+    if looks_like_html(text) {
+        return true;
+    }
+    let trimmed = text.trim_start();
+    // Draft bodies often use <br> / anchors without a wrapping <div>/<html>.
+    trimmed.contains("<br")
         || trimmed.contains("<BR")
         || (trimmed.contains("<a ") && trimmed.contains("</a>"))
         || (trimmed.contains("<a\n") && trimmed.contains("</a>"))
@@ -261,7 +270,7 @@ pub fn append_gmail_signature(body: &str, signature_html: &str) -> String {
         return body.to_string();
     }
 
-    let body_html = if looks_like_html(body) {
+    let body_html = if looks_like_html_for_compose(body) {
         body.to_string()
     } else {
         body.replace('\n', "<br>\n")
