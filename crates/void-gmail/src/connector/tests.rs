@@ -680,11 +680,22 @@ fn looks_like_html_plain_text_is_false() {
 }
 
 #[test]
-fn looks_like_html_detects_br_and_anchor() {
-    assert!(looks_like_html("Hi,<br><br>Thanks"));
-    assert!(looks_like_html(
+fn looks_like_html_ignores_bare_br_and_anchor() {
+    // Sync/display keeps the stricter check — bare tags stay verbatim.
+    assert!(!looks_like_html("Hi,<br><br>Thanks"));
+    assert!(!looks_like_html(
         "See <a href=\"https://example.com\">link</a>"
     ));
+}
+
+#[test]
+fn looks_like_html_for_compose_detects_br_and_anchor() {
+    assert!(looks_like_html_for_compose("Hi,<br><br>Thanks"));
+    assert!(looks_like_html_for_compose(
+        "See <a href=\"https://example.com\">link</a>"
+    ));
+    assert!(looks_like_html_for_compose("<div>Hi</div>"));
+    assert!(!looks_like_html_for_compose("plain text only"));
 }
 
 #[test]
@@ -735,22 +746,32 @@ fn apply_signature_to_forward_appends_when_no_quote() {
 }
 
 #[test]
-fn draft_signature_from_flags() {
+fn compose_signature_from_flags() {
     assert_eq!(
-        DraftSignature::from_flags(false, None),
-        DraftSignature::None
+        ComposeSignature::from_flags(false, None),
+        ComposeSignature::None
     );
     assert_eq!(
-        DraftSignature::from_flags(false, Some("a@example.com")),
-        DraftSignature::None
+        ComposeSignature::from_flags(false, Some("a@example.com")),
+        ComposeSignature::None
     );
     assert_eq!(
-        DraftSignature::from_flags(true, None),
-        DraftSignature::Default
+        ComposeSignature::from_flags(true, None),
+        ComposeSignature::Default
     );
     assert_eq!(
-        DraftSignature::from_flags(true, Some("a@example.com")),
-        DraftSignature::From("a@example.com")
+        ComposeSignature::from_flags(true, Some("a@example.com")),
+        ComposeSignature::From("a@example.com")
+    );
+}
+
+#[test]
+fn compose_signature_send_as_email() {
+    assert_eq!(ComposeSignature::None.send_as_email(), None);
+    assert_eq!(ComposeSignature::Default.send_as_email(), None);
+    assert_eq!(
+        ComposeSignature::From("a@example.com").send_as_email(),
+        Some("a@example.com")
     );
 }
 

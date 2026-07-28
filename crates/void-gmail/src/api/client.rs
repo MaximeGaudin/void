@@ -451,7 +451,7 @@ impl GmailApiClient {
     /// List send-as aliases (including HTML signatures) for the authenticated user.
     pub async fn list_send_as(&self) -> Result<SendAsListResponse, GmailError> {
         debug!("gmail: list_send_as");
-        let resp: SendAsListResponse = self
+        let resp = self
             .http
             .get(format!(
                 "{}/gmail/v1/users/me/settings/sendAs",
@@ -459,10 +459,8 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
             .await?;
+        let resp: SendAsListResponse = Self::json_or_scope_error(resp).await?;
         let count = resp.send_as.as_ref().map(|s| s.len()).unwrap_or(0);
         debug!(count, "gmail: list_send_as ok");
         Ok(resp)
@@ -472,7 +470,7 @@ impl GmailApiClient {
     pub async fn get_send_as(&self, send_as_email: &str) -> Result<SendAsAlias, GmailError> {
         debug!(send_as_email, "gmail: get_send_as");
         let encoded = urlencoding::encode(send_as_email);
-        let resp: SendAsAlias = self
+        let resp = self
             .http
             .get(format!(
                 "{}/gmail/v1/users/me/settings/sendAs/{encoded}",
@@ -480,12 +478,26 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
             .await?;
+        let resp: SendAsAlias = Self::json_or_scope_error(resp).await?;
         debug!(send_as_email, "gmail: get_send_as ok");
         Ok(resp)
+    }
+
+    /// Decode JSON on success; map scope-related 403s to [`GmailError::InsufficientScope`].
+    async fn json_or_scope_error<T: serde::de::DeserializeOwned>(
+        resp: reqwest::Response,
+    ) -> Result<T, GmailError> {
+        let status = resp.status();
+        if status == reqwest::StatusCode::FORBIDDEN {
+            let body = resp.text().await.unwrap_or_default();
+            if crate::error::is_insufficient_scope_body(&body) {
+                return Err(GmailError::InsufficientScope);
+            }
+            return Err(GmailError::Api(format!("forbidden ({status}): {body}")));
+        }
+        let resp = resp.error_for_status()?;
+        Ok(resp.json().await?)
     }
 
     /// Resolve the HTML signature for a send-as alias.

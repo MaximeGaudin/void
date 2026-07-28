@@ -129,7 +129,7 @@ impl GmailConnector {
     /// once to derive both the Gmail `threadId` (for API association) and the
     /// reply-all recipient list (when `to` is `None`).
     ///
-    /// When `signature` is not [`DraftSignature::None`], the HTML signature for the
+    /// When `signature` is not [`ComposeSignature::None`], the HTML signature for the
     /// chosen send-as (or account default/primary) is fetched and appended to `body`.
     /// Pass `body` without an existing signature — append is not idempotent.
     pub async fn create_draft(
@@ -139,10 +139,10 @@ impl GmailConnector {
         body: &str,
         reply_to_message_id: Option<&str>,
         file: Option<&std::path::Path>,
-        signature: super::compose::DraftSignature<'_>,
+        signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
+        let body = maybe_append_signature(self, body, signature).await?;
         let api = self.get_client().await?;
-        let body = maybe_append_signature(&api, body, signature).await?;
         create_draft_with_api(
             &api,
             &self.config_id,
@@ -155,7 +155,7 @@ impl GmailConnector {
         .await
     }
 
-    /// Replace a draft. When `signature` is not [`DraftSignature::None`], the HTML
+    /// Replace a draft. When `signature` is not [`ComposeSignature::None`], the HTML
     /// signature is appended to `body` (same non-idempotent append as
     /// [`Self::create_draft`] — pass a body without an existing signature).
     pub async fn update_draft(
@@ -165,10 +165,10 @@ impl GmailConnector {
         subject: &str,
         body: &str,
         file: Option<&std::path::Path>,
-        signature: super::compose::DraftSignature<'_>,
+        signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
+        let body = maybe_append_signature(self, body, signature).await?;
         let api = self.get_client().await?;
-        let body = maybe_append_signature(&api, body, signature).await?;
 
         let raw = if let Some(file_path) = file {
             super::compose::compose_rfc2822_with_attachment(
@@ -188,28 +188,83 @@ impl GmailConnector {
         let api = self.get_client().await?;
         api.delete_draft(draft_id).await.map_err(Into::into)
     }
+
+    /// Re-auth with `gmail.settings.basic` (plus previously granted scopes).
+    ///
+    /// Only opens a browser when stdin and stderr are TTYs. Otherwise returns a
+    /// clear error directing the user to run one interactive `--signature`
+    /// command (normal `void setup` re-auth only requests base scopes).
+    /// Preserves an existing refresh token if the incremental exchange omits one.
+    async fn ensure_settings_scope(&self) -> anyhow::Result<()> {
+        use std::io::IsTerminal;
+
+        if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
+            anyhow::bail!(
+                "Gmail signature requires the gmail.settings.basic OAuth scope. \
+                 Run one interactive command with --signature in a terminal \
+                 (e.g. `void gmail draft create --subject 'Grant' --body 'x' --signature`) \
+                 to grant it, then retry. (`void setup` re-auth does not request this scope.)"
+            );
+        }
+
+        eprintln!(
+            "Gmail signature needs the gmail.settings.basic permission; opening browser to grant it..."
+        );
+        let token_path = self.token_path();
+        let prior_refresh = auth::TokenCache::load(&token_path)
+            .ok()
+            .and_then(|c| c.refresh_token);
+        let creds = auth::load_client_credentials(self.credentials_file.as_deref())?;
+        let scopes = auth::scopes_with_settings();
+        let mut cache = auth::authorize_interactive(&creds, Some(&scopes)).await?;
+        cache.preserve_refresh_token(prior_refresh);
+        cache.save(&token_path)?;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Free helpers — pub(super) so tests.rs can reach them directly.
 // ---------------------------------------------------------------------------
 
+/// Resolve send-as signature HTML when requested.
+///
+/// On missing `gmail.settings.basic`, prompts an incremental OAuth grant when
+/// interactive and retries once. Other 403s are returned as-is.
+pub(crate) async fn resolve_signature_html(
+    connector: &GmailConnector,
+    signature: super::compose::ComposeSignature<'_>,
+) -> anyhow::Result<Option<String>> {
+    use super::compose::ComposeSignature;
+    if matches!(signature, ComposeSignature::None) {
+        return Ok(None);
+    }
+    let send_as = signature.send_as_email();
+
+    let api = connector.get_client().await?;
+    match api.resolve_signature(send_as).await {
+        Ok(html) => Ok(Some(html)),
+        Err(crate::error::GmailError::InsufficientScope) => {
+            connector.ensure_settings_scope().await?;
+            let api = connector.get_client().await?;
+            let html = api.resolve_signature(send_as).await.map_err(|e| {
+                anyhow::anyhow!("failed to fetch Gmail signature after re-auth: {e}")
+            })?;
+            Ok(Some(html))
+        }
+        Err(e) => Err(anyhow::anyhow!("failed to fetch Gmail signature: {e}")),
+    }
+}
+
 pub(crate) async fn maybe_append_signature(
-    api: &GmailApiClient,
+    connector: &GmailConnector,
     body: &str,
-    signature: super::compose::DraftSignature<'_>,
+    signature: super::compose::ComposeSignature<'_>,
 ) -> anyhow::Result<String> {
-    use super::compose::DraftSignature;
-    let send_as = match signature {
-        DraftSignature::None => return Ok(body.to_string()),
-        DraftSignature::Default => None,
-        DraftSignature::From(email) => Some(email),
-    };
-    let html = api
-        .resolve_signature(send_as)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to fetch Gmail signature: {e}"))?;
-    Ok(super::compose::append_gmail_signature(body, &html))
+    match resolve_signature_html(connector, signature).await? {
+        None => Ok(body.to_string()),
+        Some(html) => Ok(super::compose::append_gmail_signature(body, &html)),
+    }
 }
 
 /// Core draft-creation logic, decoupled from token acquisition so that tests

@@ -11,12 +11,20 @@ use tracing::{debug, error, info, warn};
 
 use crate::connector::WhatsAppConnector;
 
-use super::path::{endpoint_path, remove_stale_endpoint};
+use super::path::endpoint_path;
+#[cfg(unix)]
+use super::path::{endpoint_is_live, remove_stale_endpoint};
 use super::protocol::{RpcRequest, RpcResponse};
+
+/// How often the running server checks that its socket file is still on disk.
+#[cfg(unix)]
+const DEFAULT_WATCHDOG_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub struct Server {
     handlers: Arc<RwLock<HashMap<String, Arc<WhatsAppConnector>>>>,
     store_path: PathBuf,
+    #[cfg(unix)]
+    watchdog_interval: std::time::Duration,
 }
 
 /// RAII guard that removes the IPC endpoint when dropped, covering panics and
@@ -36,7 +44,17 @@ impl Server {
         Self {
             handlers: Arc::new(RwLock::new(HashMap::new())),
             store_path: store_path.to_path_buf(),
+            #[cfg(unix)]
+            watchdog_interval: DEFAULT_WATCHDOG_INTERVAL,
         }
+    }
+
+    /// Override how often the socket-file watchdog runs (tests only need a
+    /// short interval; the daemon is fine with the 30 s default).
+    #[cfg(unix)]
+    pub fn with_watchdog_interval(mut self, interval: std::time::Duration) -> Self {
+        self.watchdog_interval = interval;
+        self
     }
 
     pub async fn register(&self, connection_id: &str, connector: Arc<WhatsAppConnector>) {
@@ -56,7 +74,6 @@ impl Server {
         }
 
         let endpoint = endpoint_path(&self.store_path);
-        remove_stale_endpoint(&endpoint);
         info!(endpoint = %display_endpoint(&endpoint), "starting WhatsApp RPC server");
 
         let handlers = Arc::clone(&self.handlers);
@@ -64,28 +81,63 @@ impl Server {
         #[cfg(unix)]
         {
             use tokio::net::UnixListener;
-            let listener = UnixListener::bind(&endpoint)?;
+
+            // Only unlink an endpoint nobody is serving. Blindly removing it
+            // would leave a live daemon bound to an unlinked inode: its socket
+            // vanishes from disk and every `void send --via whatsapp` fails
+            // with ENOENT until the daemon is restarted.
+            if endpoint_is_live(&endpoint).await {
+                anyhow::bail!(
+                    "another WhatsApp RPC server is already listening at {}",
+                    endpoint.display()
+                );
+            }
+            remove_stale_endpoint(&endpoint);
+
+            let mut listener = UnixListener::bind(&endpoint)?;
             let _cleanup = EndpointCleanup(endpoint.clone());
+            info!(endpoint = %endpoint.display(), "WhatsApp RPC server listening");
+
             loop {
-                tokio::select! {
+                // `None` means the watchdog fired instead of a connection.
+                let accepted = tokio::select! {
                     _ = cancel.cancelled() => {
                         info!("WhatsApp RPC server shutting down");
                         break;
                     }
-                    accept = listener.accept() => {
-                        match accept {
-                            Ok((stream, _)) => {
-                                let handlers = Arc::clone(&handlers);
-                                tokio::spawn(async move {
-                                    if let Err(e) = handle_connection(stream, handlers).await {
-                                        debug!("WhatsApp RPC connection error: {e}");
-                                    }
-                                });
-                            }
-                            Err(e) => {
-                                warn!("WhatsApp RPC accept error: {e}");
+                    _ = tokio::time::sleep(self.watchdog_interval) => None,
+                    accept = listener.accept() => Some(accept),
+                };
+
+                match accepted {
+                    // The socket file can disappear under us — a stale `void
+                    // sync` cleaning up, a manual `rm`, or macOS pruning old
+                    // files from /tmp. Rebind so the daemon heals itself
+                    // instead of silently refusing writes forever.
+                    None => {
+                        if !endpoint.exists() {
+                            warn!(
+                                endpoint = %endpoint.display(),
+                                "WhatsApp RPC socket disappeared, rebinding"
+                            );
+                            match UnixListener::bind(&endpoint) {
+                                Ok(rebound) => listener = rebound,
+                                Err(e) => {
+                                    warn!("failed to rebind WhatsApp RPC socket: {e}");
+                                }
                             }
                         }
+                    }
+                    Some(Ok((stream, _))) => {
+                        let handlers = Arc::clone(&handlers);
+                        tokio::spawn(async move {
+                            if let Err(e) = handle_connection(stream, handlers).await {
+                                debug!("WhatsApp RPC connection error: {e}");
+                            }
+                        });
+                    }
+                    Some(Err(e)) => {
+                        warn!("WhatsApp RPC accept error: {e}");
                     }
                 }
             }
@@ -336,6 +388,114 @@ mod tests {
         let mut buf = String::new();
         stream.read_to_string(&mut buf).await.unwrap();
         assert!(buf.is_empty(), "expected no response, got: {buf}");
+
+        cancel.cancel();
+        task.await.unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_refuses_to_replace_a_live_endpoint() {
+        let dir = std::env::temp_dir().join(format!("void-wa-rpc-live-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let running = Server::new(&dir);
+        running
+            .register(
+                "c",
+                Arc::new(WhatsAppConnector::new(
+                    "c",
+                    dir.join("c.db").to_str().unwrap(),
+                )),
+            )
+            .await;
+        let cancel = CancellationToken::new();
+        let cancel_bg = cancel.clone();
+        let task = tokio::spawn(async move { running.run(cancel_bg).await.unwrap() });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // A second sync process must not unlink the live daemon's socket.
+        let intruder = Server::new(&dir);
+        intruder
+            .register(
+                "c",
+                Arc::new(WhatsAppConnector::new(
+                    "c",
+                    dir.join("c.db").to_str().unwrap(),
+                )),
+            )
+            .await;
+        let err = intruder
+            .run(CancellationToken::new())
+            .await
+            .expect_err("must refuse to take over a live endpoint");
+        assert!(
+            err.to_string().contains("already listening"),
+            "unexpected error: {err}"
+        );
+
+        let endpoint = endpoint_path(&dir);
+        assert!(endpoint.exists(), "live socket must survive the intruder");
+        let req = RpcRequest {
+            id: 7,
+            connection_id: "c".into(),
+            method: RpcMethod::Send {
+                to: "336".into(),
+                content: RpcContent::Text { text: "x".into() },
+            },
+        };
+        rpc_round_trip(&dir, req)
+            .await
+            .expect("running server still reachable");
+
+        cancel.cancel();
+        task.await.unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn watchdog_rebinds_a_deleted_socket() {
+        let dir = std::env::temp_dir().join(format!("void-wa-rpc-watchdog-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let server = Server::new(&dir).with_watchdog_interval(std::time::Duration::from_millis(50));
+        server
+            .register(
+                "c",
+                Arc::new(WhatsAppConnector::new(
+                    "c",
+                    dir.join("c.db").to_str().unwrap(),
+                )),
+            )
+            .await;
+        let cancel = CancellationToken::new();
+        let cancel_bg = cancel.clone();
+        let task = tokio::spawn(async move { server.run(cancel_bg).await.unwrap() });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let endpoint = endpoint_path(&dir);
+        assert!(endpoint.exists());
+        std::fs::remove_file(&endpoint).unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !endpoint.exists() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        assert!(endpoint.exists(), "watchdog must rebind the deleted socket");
+
+        let req = RpcRequest {
+            id: 8,
+            connection_id: "c".into(),
+            method: RpcMethod::Send {
+                to: "336".into(),
+                content: RpcContent::Text { text: "x".into() },
+            },
+        };
+        rpc_round_trip(&dir, req)
+            .await
+            .expect("rebound socket accepts connections");
 
         cancel.cancel();
         task.await.unwrap();

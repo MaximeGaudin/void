@@ -11,7 +11,11 @@ pub(super) fn parse_lock_pid(content: &str) -> anyhow::Result<u32> {
     Ok(pid)
 }
 
+/// Whether the lock's PID still belongs to a running void daemon.
+///
+/// Delegates to void-core so the "is this really our process?" rule lives in
+/// one place: a recycled PID must never be mistaken for a live daemon, or
+/// `void sync --stop` would signal an unrelated process.
 pub(super) fn refresh_process_exists(system: &mut System, pid: Pid) -> bool {
-    system.refresh_all();
-    system.process(pid).is_some()
+    void_core::sync::refresh_void_daemon_exists(system, pid)
 }
