@@ -298,3 +298,63 @@ fn is_daemon_running_false_when_pid_is_stale() {
     assert!(!super::is_daemon_running(&dir));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn is_void_process_name_matches_void_binaries_only() {
+    for name in ["void", "void.exe", "void-cli", "void_core-1a2b3c"] {
+        assert!(super::is_void_process_name(name), "{name} should match");
+    }
+    for name in ["", "launchd", "voidlinux-agent", "avoid", "kernel_task"] {
+        assert!(
+            !super::is_void_process_name(name),
+            "{name} should not match"
+        );
+    }
+}
+
+#[test]
+fn file_lock_ignores_lock_owned_by_a_non_void_process() {
+    let dir = std::env::temp_dir().join(format!("void-lock-recycled-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let lock_path = dir.join("LOCK");
+
+    // PID 1 is alive on every supported platform but is never the void
+    // daemon: a recycled PID must not look like a running sync instance.
+    std::fs::write(&lock_path, "pid=1").unwrap();
+
+    let _lock = FileLock::acquire(&lock_path).expect("recycled PID must be treated as stale");
+    let content = std::fs::read_to_string(&lock_path).unwrap();
+    assert_eq!(content, format!("pid={}", std::process::id()));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn is_daemon_running_false_when_pid_is_not_a_void_process() {
+    let dir = std::env::temp_dir().join(format!("void-daemon-recycled-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("LOCK"), "pid=1").unwrap();
+    assert!(!super::is_daemon_running(&dir));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test]
+async fn run_supervised_with_lock_reuses_the_caller_lock() {
+    let dir = std::env::temp_dir().join(format!("void-lock-handoff-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = Arc::new(Database::open_in_memory().unwrap());
+    let lock_path = dir.join("LOCK");
+
+    let engine = SyncEngine::new(vec![], Arc::clone(&db), &dir, None);
+    let lock = engine.acquire_lock().unwrap();
+    assert!(lock_path.exists());
+
+    // Re-acquiring inside the engine would bail; handing the lock over must not.
+    engine
+        .run_supervised_with_lock(CancellationToken::new(), lock)
+        .await
+        .unwrap();
+
+    assert!(!lock_path.exists(), "lock released when the run ends");
+    std::fs::remove_dir_all(&dir).ok();
+}

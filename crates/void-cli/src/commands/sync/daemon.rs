@@ -88,6 +88,26 @@ pub fn stop_daemon() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Stop the running daemon and guarantee the lock file is gone.
+///
+/// `--restart` promises a startable daemon, so a lock that survives the stop
+/// (unreadable PID, a daemon we are not allowed to signal) is removed instead
+/// of being left to fail the next `FileLock::acquire`.
+pub(super) fn clear_lock_for_restart(lock_path: &std::path::Path) -> anyhow::Result<()> {
+    if let Err(e) = stop_daemon() {
+        eprintln!("[warn] Could not stop the running sync daemon cleanly: {e}");
+    }
+    if lock_path.exists() {
+        eprintln!(
+            "[warn] --restart: removing leftover lock file {}",
+            lock_path.display()
+        );
+        info!(lock_file = %lock_path.display(), "removing leftover lock file for --restart");
+        std::fs::remove_file(lock_path)?;
+    }
+    Ok(())
+}
+
 /// Spawn a detached child process that runs sync in daemon mode.
 pub fn daemonize(args: &super::SyncArgs, verbose: bool) -> anyhow::Result<()> {
     use std::process::Stdio;
@@ -116,7 +136,7 @@ pub fn daemonize(args: &super::SyncArgs, verbose: bool) -> anyhow::Result<()> {
     let lock_path = store_path.join("LOCK");
     if lock_path.exists() {
         if args.restart {
-            stop_daemon().ok();
+            clear_lock_for_restart(&lock_path)?;
         } else {
             let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
             anyhow::bail!(

@@ -15,7 +15,7 @@ pub fn bulk_archive_before(
 ) -> Result<Vec<Message>, DbError> {
     let mut sql = String::from(
         "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
-         FROM messages WHERE is_archived = 0 AND timestamp < ?1",
+         FROM messages WHERE is_archived = 0 AND timestamp < ?1 AND synced_at < ?1",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(before_ts)];
 
@@ -32,7 +32,7 @@ pub fn bulk_archive_before(
         .collect::<Result<_, _>>()?;
 
     let mut update_sql = String::from(
-        "UPDATE messages SET is_archived = 1 WHERE is_archived = 0 AND timestamp < ?1",
+        "UPDATE messages SET is_archived = 1 WHERE is_archived = 0 AND timestamp < ?1 AND synced_at < ?1",
     );
     let mut update_params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(before_ts)];
 

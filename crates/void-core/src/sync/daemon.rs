@@ -2,7 +2,10 @@ use std::path::Path;
 
 use sysinfo::{Pid, System};
 
-/// Returns true when a sync daemon lock file exists and its PID is alive.
+use super::lock::refresh_void_daemon_exists;
+
+/// Returns true when a sync daemon lock file exists and its PID is a live
+/// void process.
 pub fn is_daemon_running(store_path: &Path) -> bool {
     let lock_path = store_path.join("LOCK");
     if !lock_path.exists() {
@@ -21,6 +24,5 @@ pub fn is_daemon_running(store_path: &Path) -> bool {
         Err(_) => return false,
     };
     let mut system = System::new_all();
-    system.refresh_all();
-    system.process(Pid::from_u32(pid)).is_some()
+    refresh_void_daemon_exists(&mut system, Pid::from_u32(pid))
 }

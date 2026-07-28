@@ -33,12 +33,17 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     let store_path = crate::context::store_path();
     std::fs::create_dir_all(&store_path)?;
 
-    if args.restart {
-        let lock_path = store_path.join("LOCK");
-        if lock_path.exists() {
-            super::daemon::stop_daemon().ok();
-        }
+    let lock_path = store_path.join("LOCK");
+    if args.restart && lock_path.exists() {
+        super::daemon::clear_lock_for_restart(&lock_path)?;
     }
+
+    // Claim single-instance ownership before touching anything the running
+    // daemon owns: the database (--clear) and, above all, the WhatsApp RPC
+    // endpoint. A second `void sync` used to unlink the live daemon's socket
+    // on its way to failing this very check, leaving the daemon listening on
+    // an unlinked inode and `void send --via whatsapp` broken until restart.
+    let lock = void_core::sync::FileLock::acquire(&lock_path)?;
 
     if args.clear {
         let db_path = crate::context::store_path().join("void.db");
@@ -217,7 +222,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
     });
 
     let engine = SyncEngine::new(connectors, db, &store_path, hook_runner);
-    engine.run_supervised(cancel).await
+    engine.run_supervised_with_lock(cancel, lock).await
 }
 
 async fn supervise_rpc(server: &WhatsAppRpcServer, cancel: CancellationToken) {
