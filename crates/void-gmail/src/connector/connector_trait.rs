@@ -140,7 +140,8 @@ impl Connector for GmailConnector {
         let raw = match &content {
             MessageContent::Text { body, subject, .. } => {
                 let subject = subject.as_deref().unwrap_or("(no subject)");
-                let body = super::api_methods::maybe_append_signature(self, body, signature).await?;
+                let body =
+                    super::api_methods::maybe_append_signature(self, body, signature).await?;
                 info!(recipient = %to, subject = %subject, "sending Gmail message");
                 compose_rfc2822(to, subject, &body, None, None)
             }
@@ -314,9 +315,7 @@ impl Connector for GmailConnector {
 
         let signature =
             ComposeSignature::from_flags(options.append_signature, options.signature_from);
-        if let Some(sig_html) =
-            super::api_methods::resolve_signature_html(self, signature).await?
-        {
+        if let Some(sig_html) = super::api_methods::resolve_signature_html(self, signature).await? {
             (body, is_html) = apply_signature_to_forward(&body, is_html, &sig_html);
         }
 
