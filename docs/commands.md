@@ -84,7 +84,7 @@ Times are ISO 8601: `2026-03-31T17:00:00`, `2026-03-31 17:00`, or `2026-03-31` (
 
 All Gmail subcommands accept `--connection <id>` to target a specific account.
 
-Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) accepts `--signature` to append the account HTML signature from Gmail send-as settings, and `--signature-from <email>` to pick a specific send-as alias. Pass a body/comment without an existing signature (append is not idempotent). First `--signature` use may open a browser to grant `gmail.settings.basic` (not requested during normal setup).
+Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) accepts `--signature` to append the account HTML signature from Gmail send-as settings, and `--signature-from <email>` to pick a specific send-as alias. Pass a body/comment without an existing signature (append is not idempotent). First interactive `--signature` use may open a browser to grant `gmail.settings.basic` (not requested during normal setup); non-interactive / MCP callers should re-auth via `void setup` first.
 
 | Command | Description |
 |---------|-------------|

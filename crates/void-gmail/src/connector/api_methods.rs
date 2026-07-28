@@ -191,8 +191,20 @@ impl GmailConnector {
 
     /// Re-auth with `gmail.settings.basic` (plus previously granted scopes).
     ///
-    /// Preserves an existing refresh token if the incremental exchange omits one.
+    /// Only opens a browser when stdin and stderr are TTYs. Otherwise returns a
+    /// clear error directing the user to `void setup`. Preserves an existing
+    /// refresh token if the incremental exchange omits one.
     async fn ensure_settings_scope(&self) -> anyhow::Result<()> {
+        use std::io::IsTerminal;
+
+        if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
+            anyhow::bail!(
+                "Gmail signature requires the gmail.settings.basic OAuth scope. \
+                 Re-authenticate this connection interactively (`void setup` → Re-authenticate), \
+                 then retry."
+            );
+        }
+
         eprintln!(
             "Gmail signature needs the gmail.settings.basic permission; opening browser to grant it..."
         );
