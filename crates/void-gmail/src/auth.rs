@@ -90,6 +90,13 @@ impl TokenCache {
         void_core::config::write_secure(path, content)?;
         Ok(())
     }
+
+    /// Keep `prior` when an incremental code exchange omitted `refresh_token`.
+    pub fn preserve_refresh_token(&mut self, prior: Option<String>) {
+        if self.refresh_token.is_none() {
+            self.refresh_token = prior;
+        }
+    }
 }
 
 pub fn token_cache_path(store_path: &Path, connection_id: &str) -> PathBuf {
@@ -305,6 +312,28 @@ mod tests {
         let s = scopes_with_settings();
         assert!(s.contains("gmail.settings.basic"));
         assert!(s.contains("gmail.readonly"));
+    }
+
+    #[test]
+    fn preserve_refresh_token_keeps_prior_when_absent() {
+        let mut cache = TokenCache {
+            access_token: "ya29.new".into(),
+            refresh_token: None,
+            expires_at: Some(1),
+        };
+        cache.preserve_refresh_token(Some("1//old".into()));
+        assert_eq!(cache.refresh_token.as_deref(), Some("1//old"));
+    }
+
+    #[test]
+    fn preserve_refresh_token_keeps_new_when_present() {
+        let mut cache = TokenCache {
+            access_token: "ya29.new".into(),
+            refresh_token: Some("1//new".into()),
+            expires_at: Some(1),
+        };
+        cache.preserve_refresh_token(Some("1//old".into()));
+        assert_eq!(cache.refresh_token.as_deref(), Some("1//new"));
     }
 
     #[test]

@@ -190,14 +190,21 @@ impl GmailConnector {
     }
 
     /// Re-auth with `gmail.settings.basic` (plus previously granted scopes).
+    ///
+    /// Preserves an existing refresh token if the incremental exchange omits one.
     async fn ensure_settings_scope(&self) -> anyhow::Result<()> {
         eprintln!(
             "Gmail signature needs the gmail.settings.basic permission; opening browser to grant it..."
         );
+        let token_path = self.token_path();
+        let prior_refresh = auth::TokenCache::load(&token_path)
+            .ok()
+            .and_then(|c| c.refresh_token);
         let creds = auth::load_client_credentials(self.credentials_file.as_deref())?;
         let scopes = auth::scopes_with_settings();
-        let cache = auth::authorize_interactive(&creds, Some(&scopes)).await?;
-        cache.save(&self.token_path())?;
+        let mut cache = auth::authorize_interactive(&creds, Some(&scopes)).await?;
+        cache.preserve_refresh_token(prior_refresh);
+        cache.save(&token_path)?;
         Ok(())
     }
 }
