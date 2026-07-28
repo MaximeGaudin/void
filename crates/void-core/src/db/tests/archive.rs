@@ -93,7 +93,10 @@ fn bulk_archive_before_skips_already_archived() {
     let conv = make_conversation("c1", "test-slack", "C123");
     db.upsert_conversation(&conv).unwrap();
 
-    let mut m1 = with_synced_at(make_message("m1", "c1", "test-slack", "already", 1_000), 1_000);
+    let mut m1 = with_synced_at(
+        make_message("m1", "c1", "test-slack", "already", 1_000),
+        1_000,
+    );
     m1.is_archived = true;
     db.upsert_message(&m1).unwrap();
     db.upsert_message(&with_synced_at(
