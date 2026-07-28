@@ -340,14 +340,38 @@ async fn resolve_signature_missing_scope_is_forbidden() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/settings/sendAs"))
-        .respond_with(ResponseTemplate::new(403).set_body_string("insufficient permissions"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(
+            r#"{"error":{"message":"Request had insufficient authentication scopes.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api.resolve_signature(None).await.expect_err("expected 403");
+    assert!(
+        matches!(err, GmailError::InsufficientScope),
+        "expected InsufficientScope, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn resolve_signature_other_forbidden_is_not_insufficient_scope() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(
+            r#"{"error":{"message":"Admin has disabled this API for the domain.","status":"PERMISSION_DENIED"}}"#,
+        ))
         .mount(&server)
         .await;
 
     let api = GmailApiClient::with_base_url("test-token", &server.uri());
     let err = api.resolve_signature(None).await.expect_err("expected 403");
     match err {
-        GmailError::Http(e) => assert_eq!(e.status(), Some(reqwest::StatusCode::FORBIDDEN)),
-        other => panic!("expected Http error, got {other:?}"),
+        GmailError::Api(msg) => assert!(
+            msg.contains("disabled") || msg.contains("forbidden"),
+            "unexpected message: {msg}"
+        ),
+        other => panic!("expected Api error, got {other:?}"),
     }
 }

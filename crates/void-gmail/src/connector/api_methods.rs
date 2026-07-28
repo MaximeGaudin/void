@@ -225,17 +225,10 @@ impl GmailConnector {
 // Free helpers — pub(super) so tests.rs can reach them directly.
 // ---------------------------------------------------------------------------
 
-fn is_forbidden(err: &crate::error::GmailError) -> bool {
-    matches!(
-        err,
-        crate::error::GmailError::Http(e) if e.status() == Some(reqwest::StatusCode::FORBIDDEN)
-    )
-}
-
 /// Resolve send-as signature HTML when requested.
 ///
-/// On 403 (missing `gmail.settings.basic`), prompts an incremental OAuth grant
-/// and retries once.
+/// On missing `gmail.settings.basic`, prompts an incremental OAuth grant when
+/// interactive and retries once. Other 403s are returned as-is.
 pub(crate) async fn resolve_signature_html(
     connector: &GmailConnector,
     signature: super::compose::ComposeSignature<'_>,
@@ -249,7 +242,7 @@ pub(crate) async fn resolve_signature_html(
     let api = connector.get_client().await?;
     match api.resolve_signature(send_as).await {
         Ok(html) => Ok(Some(html)),
-        Err(e) if is_forbidden(&e) => {
+        Err(crate::error::GmailError::InsufficientScope) => {
             connector.ensure_settings_scope().await?;
             let api = connector.get_client().await?;
             let html = api.resolve_signature(send_as).await.map_err(|e| {
