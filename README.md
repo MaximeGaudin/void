@@ -88,7 +88,9 @@ Docs: [commands](docs/commands.md#gmail) · [setup](docs/connectors.md#gmail--go
 void gmail search "from:boss newer_than:7d"
 void gmail thread <id>
 
-# Drafts only — void never sends email directly
+# Send, reply, or draft (optional --cc / --bcc / --signature)
+void send --via gmail --to alice@x.com --subject "Q3" --message "LGTM."
+void reply <id> --message "Agreed — shipping Friday."
 void gmail draft create --reply-to <id> --subject "Re: Q3" --body "LGTM, approved."
 
 # Archive in Gmail by removing the INBOX label, in bulk
