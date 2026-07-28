@@ -42,18 +42,40 @@ impl SyncEngine {
     /// Connectors that fail are **not** restarted — use [`run_supervised`] for
     /// automatic restart with backoff.
     pub async fn run(&self, cancel: CancellationToken) -> anyhow::Result<()> {
-        self.run_inner(cancel, false).await
+        self.run_inner(cancel, false, None).await
     }
 
     /// Like [`run`], but each connector is automatically restarted on failure
     /// with exponential backoff (5 s → 300 s, reset after 60 s of stable
     /// uptime, give up after 10 consecutive failures).
     pub async fn run_supervised(&self, cancel: CancellationToken) -> anyhow::Result<()> {
-        self.run_inner(cancel, true).await
+        self.run_inner(cancel, true, None).await
     }
 
-    async fn run_inner(&self, cancel: CancellationToken, supervised: bool) -> anyhow::Result<()> {
-        let _lock = self.acquire_lock()?;
+    /// Like [`run_supervised`], but reusing a lock the caller already holds.
+    ///
+    /// Callers that set up process-wide resources before syncing (the WhatsApp
+    /// RPC endpoint, database wipes) must take the lock with [`acquire_lock`]
+    /// *first*, so a second `void sync` bails out before touching anything the
+    /// running daemon owns.
+    pub async fn run_supervised_with_lock(
+        &self,
+        cancel: CancellationToken,
+        lock: FileLock,
+    ) -> anyhow::Result<()> {
+        self.run_inner(cancel, true, Some(lock)).await
+    }
+
+    async fn run_inner(
+        &self,
+        cancel: CancellationToken,
+        supervised: bool,
+        lock: Option<FileLock>,
+    ) -> anyhow::Result<()> {
+        let _lock = match lock {
+            Some(lock) => lock,
+            None => self.acquire_lock()?,
+        };
 
         if self.connectors.is_empty() {
             warn!("no connectors configured, nothing to sync");
@@ -129,7 +151,8 @@ impl SyncEngine {
         Ok(())
     }
 
-    fn acquire_lock(&self) -> anyhow::Result<FileLock> {
+    /// Take the single-instance lock without starting any sync.
+    pub fn acquire_lock(&self) -> anyhow::Result<FileLock> {
         FileLock::acquire(&self.lock_path)
     }
 }
