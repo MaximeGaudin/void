@@ -504,6 +504,35 @@ fn compose_rfc2822_with_attachment_creates_multipart() {
 }
 
 #[test]
+fn compose_rfc2822_with_attachment_includes_cc_and_bcc_before_subject() {
+    let dir = std::env::temp_dir();
+    let name = format!("void_gmail_test_{}.txt", uuid::Uuid::new_v4());
+    let path = dir.join(&name);
+    std::fs::write(&path, "attach").unwrap();
+    let result = compose_rfc2822_with_attachment(
+        ComposeRecipients {
+            to: "alice@example.com",
+            cc: Some("billing@example.com"),
+            bcc: Some("audit@example.com"),
+        },
+        "Subj",
+        "body",
+        &path,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    std::fs::remove_file(&path).ok();
+    let to_pos = result.find("To: alice@example.com\r\n").expect("To");
+    let cc_pos = result.find("Cc: billing@example.com\r\n").expect("Cc");
+    let bcc_pos = result.find("Bcc: audit@example.com\r\n").expect("Bcc");
+    let subject_pos = result.find("Subject: Subj\r\n").expect("Subject");
+    assert!(to_pos < cc_pos && cc_pos < bcc_pos && bcc_pos < subject_pos);
+    assert!(result.contains("Content-Type: multipart/mixed"));
+}
+
+#[test]
 fn compose_rfc2822_with_attachment_uses_provided_mime_type() {
     let dir = std::env::temp_dir();
     let name = format!("void_gmail_test_{}.pdf", uuid::Uuid::new_v4());
