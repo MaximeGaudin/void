@@ -31,7 +31,6 @@ pub fn upsert_row(conn: &Connection, msg: &Message) -> Result<bool, DbError> {
             connector = excluded.connector,
             sender_name = excluded.sender_name,
             sender_avatar_url = COALESCE(excluded.sender_avatar_url, sender_avatar_url),
-            is_archived = excluded.is_archived,
             media_type = excluded.media_type,
             metadata = excluded.metadata,
             context_id = COALESCE(excluded.context_id, context_id)",

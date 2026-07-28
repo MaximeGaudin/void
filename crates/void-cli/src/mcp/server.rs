@@ -4,7 +4,7 @@ use serde::Deserialize;
 use rmcp::transport::stdio;
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content, ServerInfo},
+    model::{CallToolResult, ContentBlock, ServerInfo},
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
 };
 
@@ -266,7 +266,7 @@ fn json_result(value: serde_json::Value) -> CallToolResult {
     let text = serde_json::to_string_pretty(&value).unwrap_or_else(|e| {
         format!("{{\"data\": null, \"error\": \"failed to serialize response: {e}\"}}")
     });
-    CallToolResult::success(vec![Content::text(text)])
+    CallToolResult::success(vec![ContentBlock::text(text)])
 }
 
 fn tool_ok<T: serde::Serialize>(data: T) -> CallToolResult {
