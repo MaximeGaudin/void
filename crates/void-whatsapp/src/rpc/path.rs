@@ -51,9 +51,6 @@ pub async fn endpoint_is_live(path: &Path) -> bool {
     path.exists() && tokio::net::UnixStream::connect(path).await.is_ok()
 }
 
-#[cfg(windows)]
-pub fn remove_stale_endpoint(_path: &str) {}
-
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
