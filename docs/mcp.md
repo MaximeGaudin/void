@@ -124,11 +124,13 @@ These call the shared service layer in-process (faster, typed schemas). Prefer *
 
 | Tool | CLI equivalent | Description |
 |------|----------------|-------------|
-| `send` | `void send` | Send a message |
-| `reply` | `void reply` | Reply to a message |
-| `forward` | `void forward` | Forward a message |
+| `send` | `void send` | Send a message. Optional `signature` / `signature_from` (Gmail only) append the account HTML send-as signature |
+| `reply` | `void reply` | Reply to a message. Same optional Gmail `signature` / `signature_from` |
+| `forward` | `void forward` | Forward a message. Same optional Gmail `signature` / `signature_from` (signature sits between comment and quote) |
 | `archive` | `void archive` | Archive by IDs or bulk `--before` |
 | `mute` | `void mute` | Mute/unmute conversations |
+
+`signature` / `signature_from` on `send` / `reply` / `forward` match the CLI `--signature` / `--signature-from` flags. They require a prior interactive grant of `gmail.settings.basic` (run one terminal command with `--signature`); the MCP server will not open a browser. Pass a body/comment without an existing signature — append is not idempotent.
 
 In-process write tools (`send`, `reply`, `forward`, `archive`) require **local store mode**. Use **`run`** instead when on a remote client — it follows the same SSH proxy path as the CLI.
 
