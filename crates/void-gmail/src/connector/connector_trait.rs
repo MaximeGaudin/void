@@ -154,7 +154,7 @@ impl Connector for GmailConnector {
                     None,
                     None,
                     None,
-                )
+                )?
             }
             MessageContent::File {
                 path,
@@ -257,7 +257,7 @@ impl Connector for GmailConnector {
                     in_reply_to.as_deref(),
                     references,
                     None,
-                )
+                )?
             }
             MessageContent::File {
                 path,
@@ -360,7 +360,7 @@ impl Connector for GmailConnector {
             None,
             None,
             Some(is_html),
-        );
+        )?;
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
 
         // Fresh client in case signature resolve triggered settings-scope re-auth.

@@ -40,14 +40,31 @@ pub struct DraftRecipients<'a> {
     pub bcc: Option<&'a str>,
 }
 
-fn push_address_headers(headers: &mut String, recipients: ComposeRecipients<'_>) {
+/// Reject CR/LF and other ASCII controls so address fields cannot inject headers.
+fn reject_header_injection(field: &str, value: &str) -> anyhow::Result<()> {
+    if value.bytes().any(|b| b.is_ascii_control()) {
+        anyhow::bail!(
+            "invalid {field}: address fields must not contain control characters (e.g. CR/LF)"
+        );
+    }
+    Ok(())
+}
+
+fn push_address_headers(
+    headers: &mut String,
+    recipients: ComposeRecipients<'_>,
+) -> anyhow::Result<()> {
+    reject_header_injection("To", recipients.to)?;
     headers.push_str(&format!("To: {}\r\n", recipients.to));
     if let Some(cc) = recipients.cc.map(str::trim).filter(|s| !s.is_empty()) {
+        reject_header_injection("Cc", cc)?;
         headers.push_str(&format!("Cc: {cc}\r\n"));
     }
     if let Some(bcc) = recipients.bcc.map(str::trim).filter(|s| !s.is_empty()) {
+        reject_header_injection("Bcc", bcc)?;
         headers.push_str(&format!("Bcc: {bcc}\r\n"));
     }
+    Ok(())
 }
 
 pub fn compose_rfc2822(
@@ -56,7 +73,7 @@ pub fn compose_rfc2822(
     body: &str,
     in_reply_to: Option<&str>,
     references: Option<&str>,
-) -> String {
+) -> anyhow::Result<String> {
     compose_rfc2822_ex(
         ComposeRecipients::to_only(to),
         subject,
@@ -75,7 +92,7 @@ pub fn compose_rfc2822_ex(
     in_reply_to: Option<&str>,
     references: Option<&str>,
     body_is_html: Option<bool>,
-) -> String {
+) -> anyhow::Result<String> {
     let subject = encode_rfc2047(subject);
 
     let is_html = body_is_html.unwrap_or_else(|| looks_like_html_for_compose(body));
@@ -87,7 +104,7 @@ pub fn compose_rfc2822_ex(
     let content_type = "text/html";
 
     let mut headers = String::new();
-    push_address_headers(&mut headers, recipients);
+    push_address_headers(&mut headers, recipients)?;
     headers.push_str(&format!(
         "Subject: {subject}\r\nContent-Type: {content_type}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n"
     ));
@@ -106,7 +123,7 @@ pub fn compose_rfc2822_ex(
         .join("\r\n");
 
     headers.push_str(&format!("\r\n{body_wrapped}"));
-    headers
+    Ok(headers)
 }
 
 pub fn compose_rfc2822_with_attachment(
@@ -139,7 +156,7 @@ pub fn compose_rfc2822_with_attachment(
 
     let subject = encode_rfc2047(subject);
     let mut headers = String::new();
-    push_address_headers(&mut headers, recipients);
+    push_address_headers(&mut headers, recipients)?;
     headers.push_str(&format!(
         "Subject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"{BOUNDARY}\"\r\n"
     ));

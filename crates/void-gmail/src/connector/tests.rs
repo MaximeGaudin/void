@@ -431,7 +431,8 @@ fn compose_rfc2822_basic() {
         "Hello, Alice!",
         None,
         None,
-    );
+    )
+    .unwrap();
     assert!(raw.contains("To: alice@example.com"));
     assert!(raw.contains("Subject: Test Subject"));
     // "Hello, Alice!" in Base64
@@ -451,7 +452,8 @@ fn compose_rfc2822_includes_cc_and_bcc_before_subject() {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let to_pos = raw.find("To: alice@example.com\r\n").expect("To");
     let cc_pos = raw
         .find("Cc: billing@example.com, legal@example.com\r\n")
@@ -471,9 +473,67 @@ fn compose_rfc2822_includes_cc_and_bcc_before_subject() {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     assert!(!raw2.contains("Cc:"));
     assert!(!raw2.contains("Bcc:"));
+}
+
+#[test]
+fn compose_rfc2822_rejects_header_injection_in_address_fields() {
+    let err = compose_rfc2822_ex(
+        ComposeRecipients {
+            to: "alice@example.com\r\nBcc: evil@evil.com",
+            cc: None,
+            bcc: None,
+        },
+        "S",
+        "B",
+        None,
+        None,
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("invalid To"),
+        "unexpected error: {err}"
+    );
+
+    let err = compose_rfc2822_ex(
+        ComposeRecipients {
+            to: "alice@example.com",
+            cc: Some("billing@example.com\nBcc: evil@evil.com"),
+            bcc: None,
+        },
+        "S",
+        "B",
+        None,
+        None,
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("invalid Cc"),
+        "unexpected error: {err}"
+    );
+
+    let err = compose_rfc2822_ex(
+        ComposeRecipients {
+            to: "alice@example.com",
+            cc: None,
+            bcc: Some("audit@example.com\rX-Injected: yes"),
+        },
+        "S",
+        "B",
+        None,
+        None,
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("invalid Bcc"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -533,6 +593,33 @@ fn compose_rfc2822_with_attachment_includes_cc_and_bcc_before_subject() {
 }
 
 #[test]
+fn compose_rfc2822_with_attachment_rejects_header_injection() {
+    let dir = std::env::temp_dir();
+    let name = format!("void_gmail_test_{}.txt", uuid::Uuid::new_v4());
+    let path = dir.join(&name);
+    std::fs::write(&path, "attach").unwrap();
+    let err = compose_rfc2822_with_attachment(
+        ComposeRecipients {
+            to: "alice@example.com",
+            cc: Some("ok@example.com\r\nBcc: evil@evil.com"),
+            bcc: None,
+        },
+        "Subj",
+        "body",
+        &path,
+        None,
+        None,
+        None,
+    )
+    .unwrap_err();
+    std::fs::remove_file(&path).ok();
+    assert!(
+        err.to_string().contains("invalid Cc"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn compose_rfc2822_with_attachment_uses_provided_mime_type() {
     let dir = std::env::temp_dir();
     let name = format!("void_gmail_test_{}.pdf", uuid::Uuid::new_v4());
@@ -554,14 +641,14 @@ fn compose_rfc2822_with_attachment_uses_provided_mime_type() {
 
 #[test]
 fn compose_rfc2822_encodes_non_ascii_subject() {
-    let raw = compose_rfc2822("a@b.com", "Séjour — Réservation", "body", None, None);
+    let raw = compose_rfc2822("a@b.com", "Séjour — Réservation", "body", None, None).unwrap();
     assert!(raw.contains("Subject: =?UTF-8?B?"));
     assert!(!raw.contains("Séjour"));
 }
 
 #[test]
 fn compose_rfc2822_ascii_subject_unchanged() {
-    let raw = compose_rfc2822("a@b.com", "Hello World", "body", None, None);
+    let raw = compose_rfc2822("a@b.com", "Hello World", "body", None, None).unwrap();
     assert!(raw.contains("Subject: Hello World"));
 }
 
@@ -603,7 +690,8 @@ fn compose_rfc2822_ex_preserves_html_after_plain_forward_header() {
         None,
         None,
         Some(is_html),
-    );
+    )
+    .unwrap();
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(
             raw.split("\r\n\r\n")

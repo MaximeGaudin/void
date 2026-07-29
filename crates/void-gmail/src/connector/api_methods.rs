@@ -175,7 +175,7 @@ impl GmailConnector {
                 recipients, subject, &body, file_path, None, None, None,
             )?
         } else {
-            super::compose::compose_rfc2822_ex(recipients, subject, &body, None, None, None)
+            super::compose::compose_rfc2822_ex(recipients, subject, &body, None, None, None)?
         };
 
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
@@ -337,7 +337,7 @@ pub(super) async fn create_draft_with_api(
             reply_to_message_id,
             reply_to_message_id,
             None,
-        )
+        )?
     };
 
     let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
