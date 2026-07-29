@@ -43,6 +43,9 @@ struct SendToolParams {
     conversation: Option<String>,
     message: String,
     subject: Option<String>,
+    #[serde(default)]
+    signature: bool,
+    signature_from: Option<String>,
     file: Option<String>,
     at: Option<String>,
 }
@@ -54,6 +57,9 @@ struct ReplyToolParams {
     file: Option<String>,
     #[serde(default)]
     in_thread: bool,
+    #[serde(default)]
+    signature: bool,
+    signature_from: Option<String>,
     at: Option<String>,
 }
 
@@ -62,6 +68,9 @@ struct ForwardToolParams {
     message_id: String,
     to: String,
     comment: Option<String>,
+    #[serde(default)]
+    signature: bool,
+    signature_from: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -523,6 +532,8 @@ impl VoidMcpServer {
                 conversation: p.conversation.as_deref(),
                 message: &p.message,
                 subject: p.subject.as_deref(),
+                signature: p.signature,
+                signature_from: p.signature_from.as_deref(),
                 file: p.file.as_deref(),
                 at: p.at.as_deref(),
             },
@@ -561,6 +572,8 @@ impl VoidMcpServer {
                 message: &p.message,
                 file: p.file.as_deref(),
                 in_thread: p.in_thread,
+                signature: p.signature,
+                signature_from: p.signature_from.as_deref(),
                 at: p.at.as_deref(),
             },
         )
@@ -600,6 +613,8 @@ impl VoidMcpServer {
                 message_id: &p.message_id,
                 to: &p.to,
                 comment: p.comment.as_deref(),
+                signature: p.signature,
+                signature_from: p.signature_from.as_deref(),
             },
         )
         .await

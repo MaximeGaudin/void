@@ -9,6 +9,10 @@ pub enum MessageContent {
         body: String,
         /// Email subject (Gmail only).
         subject: Option<String>,
+        /// Append the account Gmail HTML signature (Gmail only).
+        append_signature: bool,
+        /// Send-as alias whose signature to use (Gmail only; requires `append_signature`).
+        signature_from: Option<String>,
     },
     File {
         path: std::path::PathBuf,
@@ -16,6 +20,10 @@ pub enum MessageContent {
         mime_type: Option<String>,
         /// Email subject (Gmail only). When absent, attachment sends use the filename.
         subject: Option<String>,
+        /// Append the account Gmail HTML signature (Gmail only).
+        append_signature: bool,
+        /// Send-as alias whose signature to use (Gmail only; requires `append_signature`).
+        signature_from: Option<String>,
     },
 }
 
@@ -24,6 +32,8 @@ impl MessageContent {
         Self::Text {
             body: body.into(),
             subject: None,
+            append_signature: false,
+            signature_from: None,
         }
     }
 
@@ -42,6 +52,26 @@ impl MessageContent {
             MessageContent::Text { subject, .. } | MessageContent::File { subject, .. } => {
                 subject.as_deref()
             }
+        }
+    }
+
+    /// Whether to append a Gmail HTML signature (ignored by other connectors).
+    pub fn append_signature(&self) -> bool {
+        match self {
+            MessageContent::Text {
+                append_signature, ..
+            }
+            | MessageContent::File {
+                append_signature, ..
+            } => *append_signature,
+        }
+    }
+
+    /// Optional send-as alias for the Gmail signature (ignored by other connectors).
+    pub fn signature_from(&self) -> Option<&str> {
+        match self {
+            MessageContent::Text { signature_from, .. }
+            | MessageContent::File { signature_from, .. } => signature_from.as_deref(),
         }
     }
 }

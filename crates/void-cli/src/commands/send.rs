@@ -19,6 +19,13 @@ pub struct SendArgs {
     /// Email subject (gmail only)
     #[arg(long)]
     pub subject: Option<String>,
+    /// Append the account's Gmail signature (gmail only).
+    /// Pass a body without an existing signature — re-appending doubles it.
+    #[arg(long)]
+    pub signature: bool,
+    /// Send-as alias whose signature to use (requires --signature; gmail only).
+    #[arg(long, requires = "signature")]
+    pub signature_from: Option<String>,
     /// File to attach
     #[arg(long)]
     pub file: Option<String>,
@@ -56,6 +63,8 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         connection: args.connection.as_deref(),
         message: &args.message,
         subject: args.subject.as_deref(),
+        signature: args.signature,
+        signature_from: args.signature_from.as_deref(),
         file: args.file.as_deref(),
         at: args.at.as_deref(),
     };

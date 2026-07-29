@@ -755,6 +755,8 @@ fn build_wa_message_file_content_is_error() {
         caption: Some("cap".into()),
         mime_type: Some("image/png".into()),
         subject: None,
+        append_signature: false,
+        signature_from: None,
     };
     assert!(build_wa_message(&content, None).is_err());
 }

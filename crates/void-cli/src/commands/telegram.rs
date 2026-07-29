@@ -122,7 +122,7 @@ async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
             &msg.external_id,
             &conv.external_id,
             &args.to,
-            args.comment.as_deref(),
+            void_core::connector::ForwardOptions::with_comment(args.comment.as_deref()),
         )
         .await?;
 

@@ -6,6 +6,26 @@ use tokio_util::sync::CancellationToken;
 use crate::db::Database;
 use crate::models::{ConnectorType, HealthStatus, MessageContent};
 
+/// Options for [`Connector::forward`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ForwardOptions<'a> {
+    /// Optional comment/note above the forwarded content.
+    pub comment: Option<&'a str>,
+    /// Append the account Gmail HTML signature (Gmail only).
+    pub append_signature: bool,
+    /// Send-as alias whose signature to use (Gmail only; requires `append_signature`).
+    pub signature_from: Option<&'a str>,
+}
+
+impl<'a> ForwardOptions<'a> {
+    pub fn with_comment(comment: Option<&'a str>) -> Self {
+        Self {
+            comment,
+            ..Default::default()
+        }
+    }
+}
+
 #[async_trait]
 pub trait Connector: Send + Sync {
     fn connector_type(&self) -> ConnectorType;
@@ -63,7 +83,7 @@ pub trait Connector: Send + Sync {
         _external_id: &str,
         _conversation_external_id: &str,
         _to: &str,
-        _comment: Option<&str>,
+        _options: ForwardOptions<'_>,
     ) -> anyhow::Result<String> {
         anyhow::bail!("Forward is not supported for {}", self.connector_type())
     }

@@ -139,6 +139,8 @@ pub fn rpc_to_message_content(content: RpcContent) -> MessageContent {
             caption,
             mime_type,
             subject: None,
+            append_signature: false,
+            signature_from: None,
         },
     }
 }
@@ -247,6 +249,8 @@ mod tests {
             caption: Some("look".into()),
             mime_type: Some("image/jpeg".into()),
             subject: None,
+            append_signature: false,
+            signature_from: None,
         };
         match rpc_to_message_content(message_content_to_rpc(&original)) {
             MessageContent::File {
@@ -270,6 +274,8 @@ mod tests {
             caption: None,
             mime_type: None,
             subject: None,
+            append_signature: false,
+            signature_from: None,
         };
         match rpc_to_message_content(message_content_to_rpc(&original)) {
             MessageContent::File {

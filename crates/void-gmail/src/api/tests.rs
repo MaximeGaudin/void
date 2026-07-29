@@ -262,3 +262,116 @@ async fn list_messages_malformed_json_is_clean_err() {
         .expect_err("expected decode error for missing id");
     assert!(matches!(err, GmailError::Http(_)), "got {err:?}");
 }
+
+#[tokio::test]
+async fn resolve_signature_uses_named_send_as() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs/you%40example.com"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sendAsEmail": "you@example.com",
+            "signature": "<div>Named sig</div>",
+            "isPrimary": true
+        })))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let sig = api
+        .resolve_signature(Some("you@example.com"))
+        .await
+        .unwrap();
+    assert_eq!(sig, "<div>Named sig</div>");
+}
+
+#[tokio::test]
+async fn resolve_signature_prefers_default_alias() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sendAs": [
+                {
+                    "sendAsEmail": "a@example.com",
+                    "signature": "<div>Primary</div>",
+                    "isPrimary": true,
+                    "isDefault": false
+                },
+                {
+                    "sendAsEmail": "b@example.com",
+                    "signature": "<div>Default</div>",
+                    "isPrimary": false,
+                    "isDefault": true
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let sig = api.resolve_signature(None).await.unwrap();
+    assert_eq!(sig, "<div>Default</div>");
+}
+
+#[tokio::test]
+async fn resolve_signature_unknown_send_as_is_not_found() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/settings/sendAs/missing%40example.com",
+        ))
+        .respond_with(ResponseTemplate::new(404).set_body_string("not found"))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api
+        .resolve_signature(Some("missing@example.com"))
+        .await
+        .expect_err("expected 404");
+    match err {
+        GmailError::Http(e) => assert_eq!(e.status(), Some(reqwest::StatusCode::NOT_FOUND)),
+        other => panic!("expected Http error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn resolve_signature_missing_scope_is_forbidden() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(
+            r#"{"error":{"message":"Request had insufficient authentication scopes.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api.resolve_signature(None).await.expect_err("expected 403");
+    assert!(
+        matches!(err, GmailError::InsufficientScope),
+        "expected InsufficientScope, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn resolve_signature_other_forbidden_is_not_insufficient_scope() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(
+            r#"{"error":{"message":"Admin has disabled this API for the domain.","status":"PERMISSION_DENIED"}}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api.resolve_signature(None).await.expect_err("expected 403");
+    match err {
+        GmailError::Api(msg) => assert!(
+            msg.contains("disabled") || msg.contains("forbidden"),
+            "unexpected message: {msg}"
+        ),
+        other => panic!("expected Api error, got {other:?}"),
+    }
+}
