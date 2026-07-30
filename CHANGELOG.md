@@ -7,32 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-30
+
+### Added
+
+- **GitHub** — New read-only connector that syncs open PRs requesting your review, comments on your authored PRs, and @mentions via GitHub notifications. Each repository maps to a conversation so `void mute owner/repo` works at repo level. Configure via `void setup`.
+- **Reddit** — New connector that polls watched subreddits and surfaces posts matching your keywords and minimum score (one channel conversation per subreddit). Read-only mode uses application-only OAuth (`client_id` + `client_secret`); enabling commenting during `void setup` runs a browser OAuth flow, stores a `refresh_token`, syncs matching posts as comment threads, and lets you reply via `void reply` / `void send --via reddit`. Tune filters at runtime with `void reddit subreddits|keywords|min-score|config`.
+- **Google News** — New read-only connector that watches the public Google News RSS feed. Each configured keyword triggers its own search; matching articles land in your inbox, filtered by a recency window. Configure with `void gn keywords`, `void gn when`, `void gn language`, and `void gn country` (or interactively via `void setup`). Language/country default to `fr`/`FR`; add one connection per edition to follow several.
+- **MCP** — `void mcp` stdio server: named read/write tools (`inbox`, `conversations`, `messages`, `search`, `contacts`, `channels`, `slack_saved`, `calendar`, `health`, `send`, `reply`, `forward`, `archive`, `mute`) plus a `run` tool for full CLI parity via subprocess. See [docs/mcp.md](docs/mcp.md).
+- **Gmail** — `--cc` / `--bcc` on draft create/update, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward` (comma-separated). Headers are placed after `To` and before `Subject`/MIME so Gmail honors them.
+- **Gmail** — `--signature` / `--signature-from <email>` append the account HTML signature from Gmail send-as settings on all outgoing compose paths: `void gmail draft create` / `draft update`, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward`. Pass a body/comment without an existing signature (append is not idempotent). Forwards place the signature between the comment and the quoted message. First interactive use may open a browser to grant `gmail.settings.basic` (not requested at normal setup); non-interactive / MCP callers must grant that scope once via an interactive `--signature` command (`void setup` re-auth does not).
+- **Slack** — Sync "Saved for Later" items from the Later view during background sync; view with `void slack saved`. Setup wizard documents the required `search:read` scope.
+- **Sync** — Supervised mode auto-restarts connectors and the WhatsApp RPC server on failure with exponential backoff (5 s → 5 min, reset after 60 s stable, give up after 10 consecutive failures).
+
 ### Changed
 
-- **Docs** — Add a copy-adaptable Inbox Zero system-prompt example to [docs/mcp.md](docs/mcp.md) (workflows stay in user config, not the MCP binary); note that the `health` MCP tool performs live network I/O.
-- **MCP** — `run` resolves the first non-flag token as the subcommand, rejects global CLI flags inside args, and omits informational stderr on successful JSON/`stdout`-empty results.
-- **Internal** — Split `ConversationsQuery` from `InboxQuery`; shared `open_db` helper in the MCP server; `archive_bulk_before` is sync; `send`/`reply` return `OutboundResult` (no CLI re-parse of `--at`).
-
+- **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the MCP server.
 - **Internal** — Connector wiring uses a compile-time plugin registry (`inventory`). `ConnectorType` is a string newtype; connection settings are a generic TOML table. Adding a connector no longer edits ~13 central files. Connection settings are validated at setup reload, sync start, and `void doctor`. Poll intervals are read from `[sync]` via the generic `{id}_poll_interval_secs` keys. No user-facing CLI behavior change.
-- **Internal** — Expanded connector registry tests (validation, build, badges, aliases, debug redaction, poll defaults).
+- **MCP** — `run` resolves the first non-flag token as the subcommand, rejects global CLI flags inside args, and omits informational stderr on successful JSON/`stdout`-empty results.
 - **Build** — Bump minimum supported Rust version to 1.95 (required by sysinfo 0.39).
 
 ### Fixed
 
 - **Gmail** — Reject CR/LF and other ASCII control characters in `To` / `Cc` / `Bcc` so address fields cannot inject extra RFC 2822 headers (CLI and MCP compose paths).
 - **WhatsApp** — The daemon's RPC socket no longer disappears from disk, which broke every `void send --via whatsapp` with `No such file or directory`. A second `void sync` used to unlink the running daemon's socket before discovering it could not take the lock; the sync lock is now acquired before the RPC endpoint is touched, a live endpoint is never replaced, and a watchdog rebinds the socket if it vanishes anyway (manual `rm`, `/tmp` pruning).
+- **WhatsApp** — File attachments now work in notes-to-self sends.
 - **Sync** — A lock file whose PID has been recycled by an unrelated process is now treated as stale instead of "another sync instance is running", so `void sync --restart` starts cleanly and `void sync --stop` can no longer signal a stranger. `--restart` also clears a lock that survives the stop.
+- **Slack** — Inaccessible saved items (left channels, deleted messages) are skipped instead of aborting the entire saved-sync pass.
+- **Inbox** — Bulk archive (`archive --before`) no longer archives backfilled messages before they appear in the inbox, and upsert no longer overwrites user archive decisions on re-sync.
 - **Messages** — Restore UTC midnight semantics for `void messages --since/--until` date filters during service-layer extraction (calendar date ranges remain local midnight).
-
-### Added
-
-- **Gmail** — `--cc` / `--bcc` on draft create/update, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward` (comma-separated). Headers are placed after `To` and before `Subject`/MIME so Gmail honors them.
-- **Gmail** — `--signature` / `--signature-from <email>` append the account HTML signature from Gmail send-as settings on all outgoing compose paths: `void gmail draft create` / `draft update`, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward`. Pass a body/comment without an existing signature (append is not idempotent). Forwards place the signature between the comment and the quoted message. First interactive use may open a browser to grant `gmail.settings.basic` (not requested at normal setup); non-interactive / MCP callers must grant that scope once via an interactive `--signature` command (`void setup` re-auth does not).
-- **MCP** — `void mcp` stdio server: named read/write tools (`inbox`, `conversations`, `messages`, `search`, `contacts`, `channels`, `slack_saved`, `calendar`, `health`, `send`, `reply`, `forward`, `archive`, `mute`) plus a `run` tool for full CLI parity via subprocess. See [docs/mcp.md](docs/mcp.md).
-- **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.
-- **Reddit** — New connector that polls watched subreddits and surfaces posts matching your keywords and minimum score (one channel conversation per subreddit). Read-only mode uses application-only OAuth (`client_id` + `client_secret`); enabling commenting during `void setup` runs a browser OAuth flow, stores a `refresh_token`, syncs matching posts as comment threads, and lets you reply via `void reply` / `void send --via reddit`. Tune filters at runtime with `void reddit subreddits|keywords|min-score|config`.
-- **Slack** — Sync "Saved for Later" items from the Later view during background sync; view with `void slack saved`. Setup wizard documents the required `search:read` scope.
-- **Google News** — New read-only connector that watches the public Google News RSS feed. Each configured keyword triggers its own search; matching articles land in your inbox, filtered by a recency window. Configure with `void gn keywords`, `void gn when`, `void gn language`, and `void gn country` (or interactively via `void setup`). Language/country default to `fr`/`FR`; add one connection per edition to follow several.
 
 ### Removed
 

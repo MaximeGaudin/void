@@ -61,16 +61,22 @@ gh api "repos/{owner}/{repo}/contents/{directory}?ref={headRefName}" --jq '.[].p
 
 A PR's diff is only meaningful relative to a current `main`. Branches are often cut from an old `main`, which inflates and confuses the diff. Before reviewing, establish what is genuinely new:
 
+**Stacked PRs** ("Depends on #N"): most of `main...HEAD` is the dependency. Isolate the novel tip with `git fetch` of the fork branches and `git diff dep_tip...pr_tip` (and commit-oid overlap via `gh pr view $dep/$PR --json commits`). Review the novel delta for this PR; treat the dependency as already under review on its own PR (still spot-check security-sensitive pieces that land together).
+
 **🏠 Local mode:**
 
 ```bash
-git fetch origin main "$headRefName"
+git fetch origin main
+# Fork heads often aren't on origin — fetch explicitly:
+#   git fetch https://github.com/<author>/void.git "$headRefName":refs/remotes/<author>/"$headRefName"
 gh pr view "$PR" --json mergeable,mergeStateStatus,commits
 # Are any of the PR's commits already on main (merged independently)?
 gh pr view "$PR" --json commits --jq '.commits[].messageHeadline' \
   | while read -r h; do git log origin/main --oneline | rg -qF "$h" && echo "ALREADY ON MAIN: $h"; done
-# Or per touched file:
-gh pr diff "$PR" --name-only | while read -r f; do echo "== $f =="; git log origin/main --oneline -1 -- "$f"; done
+# Prefer an isolated worktree over `gh pr checkout` on a shared clone:
+#   git worktree add --detach /tmp/void-pr$PR <author>/"$headRefName"
+#   …review / ./scripts/check.sh…
+#   git worktree remove /tmp/void-pr$PR --force
 ```
 
 **Remote mode alternative:** Use `gh` API to compare commits without a local clone:
@@ -138,10 +144,10 @@ Inspect every change to `Cargo.toml`, `Cargo.lock`, and `deny.toml`, and enumera
 **🏠 Local mode:**
 
 ```bash
-gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml'
+gh pr diff "$PR" --name-only | rg 'Cargo\.(toml|lock)|deny\.toml'
 # Every crate newly added to the lockfile (catches transitive deps the PR didn't name):
 git diff "main...HEAD" -- Cargo.lock | rg '^\+name = ' | sort -u
-gh pr checkout "$PR"
+gh pr checkout "$PR"  # or: git worktree add --detach /tmp/void-pr$PR <tip>
 cargo audit                          # RUSTSEC advisories
 cargo deny check advisories licenses bans sources
 cargo tree -i <new-crate>            # who pulls it in, and why?
@@ -151,10 +157,9 @@ git checkout "$baseRefName" 2>/dev/null || git checkout main
 **Remote mode alternative:**
 
 ```bash
-# Extract dep changes from the diff (no checkout needed)
-gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml'
-# Parse newly added crates from the lockfile diff
-gh pr diff "$PR" -- 'Cargo.lock' | rg '^\+name = ' | sort -u
+# Extract dep changes from the diff (no checkout needed; no pathspecs on gh pr diff)
+gh pr diff "$PR" --name-only | rg 'Cargo\.(toml|lock)|deny\.toml'
+gh pr diff "$PR" | rg '^\+name = ' | sort -u   # or fetch tip and git diff … -- Cargo.lock
 # For each new crate, check crates.io metadata (publisher, downloads, repo link)
 curl -s "https://crates.io/api/v1/crates/<crate-name>" | jq '{name: .crate.name, downloads: .crate.downloads, repository: .crate.repository, newest_version: .crate.newest_version, updated_at: .crate.updated_at}'
 # Check for RUSTSEC advisories via the public API
@@ -223,7 +228,7 @@ git diff "main...HEAD" -- '.github/'
 
 # Remote mode: Same sweeps on the PR diff
 gh pr diff "$PR" | rg -n 'Command::new|process::Command|unsafe|transmute|reqwest|ureq|TcpStream|env::var|include_bytes!|build\.rs|base64|from_str_radix'
-gh pr diff "$PR" -- '.github/'
+gh pr diff "$PR" | rg -n '^\+\+\+ .*\.github/'
 ```
 
 #### 2c. Data-handling review
@@ -312,7 +317,7 @@ Read `docs/testing.md` before judging tests. Green CI alone is not enough — ev
 ```bash
 gh pr diff "$PR" --name-only | rg '\.rs$' | rg -v '/tests\.rs$|/tests/'
 # For each changed source file, find its #[cfg(test)] mod or sibling tests.rs
-gh pr diff "$PR" -- '**/tests/**' '**/tests.rs' '**/*_test.rs'
+gh pr diff "$PR" --name-only | rg '/tests\.rs$|/tests/|_test\.rs$'
 ```
 
 2. **Compare to area conventions** (from `docs/testing.md`):
@@ -452,9 +457,10 @@ gh pr view "$PR" --json title,body,author,additions,deletions,changedFiles,url
 gh pr diff "$PR"
 gh pr checks "$PR"
 
-# Security sweeps (diff-based, works everywhere)
-gh pr diff "$PR" -- '**/Cargo.toml' 'Cargo.lock' 'deny.toml' '.github/'
-gh pr diff "$PR" -- 'Cargo.lock' | rg '^\+name = ' | sort -u   # new crates from diff
+# Security sweeps (diff-based). `gh pr diff` has NO pathspec filter — only
+# --name-only / --patch. Filter with rg, or use git diff after fetching the tip.
+gh pr diff "$PR" --name-only | rg 'Cargo\.(toml|lock)|deny\.toml|^\.github/'
+gh pr diff "$PR" | rg '^\+name = ' | sort -u   # crude; prefer git diff … -- Cargo.lock
 gh pr diff "$PR" | rg -n 'Command::new|unsafe|transmute|reqwest|ureq|env::var|build\.rs|base64'
 ```
 
@@ -478,7 +484,7 @@ git checkout main
 
 ```bash
 # Dep vetting without cargo
-gh pr diff "$PR" -- 'Cargo.lock' | rg '^\+name = ' | sed 's/+name = "//;s/"//' | while read -r crate; do
+gh pr diff "$PR" | rg '^\+name = ' | sed 's/+name = "//;s/"//' | sort -u | while read -r crate; do
   echo "== $crate =="
   curl -s "https://crates.io/api/v1/crates/$crate" | jq '{downloads: .crate.downloads, repo: .crate.repository, updated: .crate.updated_at}'
 done
@@ -492,6 +498,10 @@ gh pr checks "$PR" --json name,state,conclusion --jq '.[] | "\(.name): \(.conclu
 
 Append new, durable review insights here (newest first), per Step 5.
 
+- **Stacked PRs need a tip-vs-dependency diff.** When the body says "Depends on #N" / "stacked on …", most of `main...HEAD` is the dependency. Fetch both fork refs and review `git diff dep_tip...pr_tip` (plus commit-oid overlap). Don't re-litigate the whole stack as if it were new; still spot-check OAuth/deps that ship together, and block merge until the dependency is on `main` (or explicitly accept a combined merge).
+- **`gh pr diff` accepts no pathspecs.** Only `--name-only` / `--patch`. Path filters like `gh pr diff N -- Cargo.lock` error with "accepts at most 1 arg". Pipe the full diff through `rg`, or `git fetch` the tip and use `git diff`.
+- **Prefer `git worktree add --detach` for local PR builds.** Safer than `gh pr checkout` on a shared clone (avoids branch-stealing races). Remove with `git worktree remove … --force` when done; main clone stays on `main`.
+- **Post-approval commits invalidate the review.** When commits land after a GitHub approval, compare `gh api repos/{owner}/{repo}/pulls/{PR}/reviews --jq '.[] | "\(.submitted_at) \(.state)"'` against the commit timestamps in the PR metadata. If substantive (especially security-relevant) commits appeared after the last approval, flag the approval as stale and treat the PR as not yet approved. This is distinct from "commits already on main" — these are *new* commits the reviewer never saw.
 - **Shared worktrees break local-mode reviews.** When multiple agents share the same clone, `gh pr checkout` / `git checkout` races cause reads of wrong-branch files and build failures. Detect early: after checkout, verify `git rev-parse HEAD` matches the PR's expected commit, and confirm `git branch --show-current`. If the branch keeps switching, fall back to remote-mode techniques (diff-based review, `gh pr diff`, `gh api` file reads) — the diff from `gh pr diff` is stable regardless of local branch state. Run `./scripts/check.sh` immediately after checkout before the branch can be stolen.
 - **`include_granted_scopes=true` is essential for incremental OAuth consent.** When a PR adds a lazy/optional scope (e.g. `gmail.settings.basic` only on `--signature`), the re-auth flow must include `include_granted_scopes=true` in the OAuth URL. Without it, `prompt=consent` causes Google to grant ONLY the new scopes, revoking previously granted ones. Check for this whenever a PR introduces incremental scope requests.
 - **Gmail-specific fields in shared `MessageContent` follow the `subject: Option<String>` precedent.** Adding connector-specific boolean/option fields to both `Text` and `File` variants is the established pattern, not a code smell. It does require updating every construction site across all connectors — verify all are updated (search for `MessageContent::File {` and `MessageContent::Text {` across the workspace).
@@ -506,3 +516,4 @@ Append new, durable review insights here (newest first), per Step 5.
 - **Read the MSRV from `Cargo.toml` (`rust-version`)** rather than hardcoding a toolchain — it moves (1.89 → 1.95 → …).
 - **New `messages` flag columns must not be clobbered by upsert.** When a PR adds a boolean column (e.g. `is_archived`, `is_saved`) that is maintained by a separate reconcile pass, verify `upsert_row`'s `ON CONFLICT(connection_id, external_id) DO UPDATE SET` *omits* that column (so a normal re-sync of an existing row preserves the flag). The column should appear in the INSERT list but NOT in the DO UPDATE SET. Also confirm the SELECT column order in every `messages` query matches `row::row_to_message`'s positional `row.get(idx)` (the new column is appended last in SELECTs, even if inserted mid-list).
 - **Fetch-on-miss / per-item ingestion loops should degrade gracefully.** When a sync iterates external items and fetches each missing one (e.g. `conversations.info` + `get_single_message` per saved item), check whether a single failing item `?`-propagates and aborts the whole batch (and thus skips the trailing `reconcile_*`). A single inaccessible item (left channel, deleted message) then permanently blocks the feature each cycle. Prefer per-item warn+continue. Flag as Should-fix when the call site already wraps the whole sync as "non-fatal".
+- **Enum variant field additions propagate via the compiler.** When `MessageContent::Text`/`File` gains new `Option` fields (like `cc`/`bcc`), Rust enforces exhaustive construction — CI passing proves all sites are updated. Non-Gmail connectors that destructure with `..` are safe without code changes. Verify this pattern (grep for `MessageContent::Text {` and check whether match arms use `..`) rather than manually auditing every connector; reserve scrutiny for the *construction* sites in `writes.rs` and the originating connector's trait impl.
