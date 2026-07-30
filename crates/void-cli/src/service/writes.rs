@@ -27,6 +27,8 @@ pub struct SendParams<'a> {
     pub subject: Option<&'a str>,
     pub signature: bool,
     pub signature_from: Option<&'a str>,
+    pub cc: Option<&'a str>,
+    pub bcc: Option<&'a str>,
     pub file: Option<&'a str>,
     pub at: Option<&'a str>,
 }
@@ -38,6 +40,8 @@ pub struct ReplyParams<'a> {
     pub in_thread: bool,
     pub signature: bool,
     pub signature_from: Option<&'a str>,
+    pub cc: Option<&'a str>,
+    pub bcc: Option<&'a str>,
     pub at: Option<&'a str>,
 }
 
@@ -47,6 +51,8 @@ pub struct ForwardParams<'a> {
     pub comment: Option<&'a str>,
     pub signature: bool,
     pub signature_from: Option<&'a str>,
+    pub cc: Option<&'a str>,
+    pub bcc: Option<&'a str>,
 }
 
 pub struct ArchiveParams<'a> {
@@ -136,6 +142,8 @@ pub async fn send(
             subject: params.subject.map(str::to_string),
             append_signature: params.signature,
             signature_from: params.signature_from.map(str::to_string),
+            cc: params.cc.map(str::to_string),
+            bcc: params.bcc.map(str::to_string),
         }
     } else {
         MessageContent::Text {
@@ -143,6 +151,8 @@ pub async fn send(
             subject: params.subject.map(str::to_string),
             append_signature: params.signature,
             signature_from: params.signature_from.map(str::to_string),
+            cc: params.cc.map(str::to_string),
+            bcc: params.bcc.map(str::to_string),
         }
     };
 
@@ -208,6 +218,8 @@ pub async fn reply(
             subject: None,
             append_signature: params.signature,
             signature_from: params.signature_from.map(str::to_string),
+            cc: params.cc.map(str::to_string),
+            bcc: params.bcc.map(str::to_string),
         }
     } else {
         MessageContent::Text {
@@ -215,6 +227,8 @@ pub async fn reply(
             subject: None,
             append_signature: params.signature,
             signature_from: params.signature_from.map(str::to_string),
+            cc: params.cc.map(str::to_string),
+            bcc: params.bcc.map(str::to_string),
         }
     };
 
@@ -268,6 +282,8 @@ pub async fn forward(
                 comment: params.comment,
                 append_signature: params.signature,
                 signature_from: params.signature_from,
+                cc: params.cc,
+                bcc: params.bcc,
             },
         )
         .await?;

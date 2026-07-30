@@ -23,6 +23,12 @@ pub struct ReplyArgs {
     /// Send-as alias whose signature to use (requires --signature; gmail only).
     #[arg(long, requires = "signature")]
     pub signature_from: Option<String>,
+    /// Cc recipient(s), comma-separated (gmail only)
+    #[arg(long)]
+    pub cc: Option<String>,
+    /// Bcc recipient(s), comma-separated (gmail only)
+    #[arg(long)]
+    pub bcc: Option<String>,
     /// Schedule for later — "HH:MM", "YYYY-MM-DD HH:MM", or Unix timestamp (Slack only)
     #[arg(long)]
     pub at: Option<String>,
@@ -41,6 +47,8 @@ pub async fn run(args: &ReplyArgs) -> anyhow::Result<()> {
         in_thread: args.in_thread,
         signature: args.signature,
         signature_from: args.signature_from.as_deref(),
+        cc: args.cc.as_deref(),
+        bcc: args.bcc.as_deref(),
         at: args.at.as_deref(),
     };
 

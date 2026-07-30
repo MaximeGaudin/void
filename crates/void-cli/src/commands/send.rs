@@ -26,6 +26,12 @@ pub struct SendArgs {
     /// Send-as alias whose signature to use (requires --signature; gmail only).
     #[arg(long, requires = "signature")]
     pub signature_from: Option<String>,
+    /// Cc recipient(s), comma-separated (gmail only)
+    #[arg(long)]
+    pub cc: Option<String>,
+    /// Bcc recipient(s), comma-separated (gmail only)
+    #[arg(long)]
+    pub bcc: Option<String>,
     /// File to attach
     #[arg(long)]
     pub file: Option<String>,
@@ -65,6 +71,8 @@ pub async fn run(args: &SendArgs) -> anyhow::Result<()> {
         subject: args.subject.as_deref(),
         signature: args.signature,
         signature_from: args.signature_from.as_deref(),
+        cc: args.cc.as_deref(),
+        bcc: args.bcc.as_deref(),
         file: args.file.as_deref(),
         at: args.at.as_deref(),
     };

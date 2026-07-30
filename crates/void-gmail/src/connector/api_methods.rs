@@ -134,7 +134,7 @@ impl GmailConnector {
     /// Pass `body` without an existing signature — append is not idempotent.
     pub async fn create_draft(
         &self,
-        to: Option<&str>,
+        recipients: super::compose::DraftRecipients<'_>,
         subject: &str,
         body: &str,
         reply_to_message_id: Option<&str>,
@@ -146,7 +146,7 @@ impl GmailConnector {
         create_draft_with_api(
             &api,
             &self.config_id,
-            to,
+            recipients,
             subject,
             &body,
             reply_to_message_id,
@@ -161,7 +161,7 @@ impl GmailConnector {
     pub async fn update_draft(
         &self,
         draft_id: &str,
-        to: &str,
+        recipients: super::compose::ComposeRecipients<'_>,
         subject: &str,
         body: &str,
         file: Option<&std::path::Path>,
@@ -172,10 +172,10 @@ impl GmailConnector {
 
         let raw = if let Some(file_path) = file {
             super::compose::compose_rfc2822_with_attachment(
-                to, subject, &body, file_path, None, None, None,
+                recipients, subject, &body, file_path, None, None, None,
             )?
         } else {
-            super::compose::compose_rfc2822(to, subject, &body, None, None)
+            super::compose::compose_rfc2822_ex(recipients, subject, &body, None, None, None)?
         };
 
         let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
@@ -272,7 +272,7 @@ pub(crate) async fn maybe_append_signature(
 pub(super) async fn create_draft_with_api(
     api: &GmailApiClient,
     own_email: &str,
-    to: Option<&str>,
+    recipients: super::compose::DraftRecipients<'_>,
     subject: &str,
     body: &str,
     reply_to_message_id: Option<&str>,
@@ -287,7 +287,7 @@ pub(super) async fn create_draft_with_api(
             .await
             .map_err(|e| anyhow::anyhow!("failed to fetch reply-to message: {e}"))?;
 
-        let recipients = if to.is_none() {
+        let derived = if recipients.to.is_none() {
             let r = build_reply_all_recipients(&msg, own_email);
             if r.is_empty() {
                 anyhow::bail!(
@@ -300,12 +300,12 @@ pub(super) async fn create_draft_with_api(
             None
         };
 
-        (recipients, msg.thread_id.clone())
+        (derived, msg.thread_id.clone())
     } else {
         (None, None)
     };
 
-    let to_str: &str = if let Some(t) = to {
+    let to_str: &str = if let Some(t) = recipients.to {
         t
     } else if let Some(ref r) = reply_all_recipients {
         r.as_str()
@@ -313,9 +313,15 @@ pub(super) async fn create_draft_with_api(
         anyhow::bail!("--to is required when --reply-to is not set");
     };
 
+    let recipients = super::compose::ComposeRecipients {
+        to: to_str,
+        cc: recipients.cc,
+        bcc: recipients.bcc,
+    };
+
     let raw = if let Some(file_path) = file {
         super::compose::compose_rfc2822_with_attachment(
-            to_str,
+            recipients,
             subject,
             body,
             file_path,
@@ -324,13 +330,14 @@ pub(super) async fn create_draft_with_api(
             reply_to_message_id,
         )?
     } else {
-        super::compose::compose_rfc2822(
-            to_str,
+        super::compose::compose_rfc2822_ex(
+            recipients,
             subject,
             body,
             reply_to_message_id,
             reply_to_message_id,
-        )
+            None,
+        )?
     };
 
     let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());

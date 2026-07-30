@@ -125,6 +125,12 @@ pub struct DraftCreateArgs {
     /// Recipient email(s), comma-separated. Optional when --reply-to is set (defaults to reply-all).
     #[arg(long)]
     pub to: Option<String>,
+    /// Cc recipient(s), comma-separated
+    #[arg(long)]
+    pub cc: Option<String>,
+    /// Bcc recipient(s), comma-separated
+    #[arg(long)]
+    pub bcc: Option<String>,
     /// Email subject
     #[arg(long)]
     pub subject: String,
@@ -156,6 +162,12 @@ pub struct DraftUpdateArgs {
     /// Recipient email(s), comma-separated
     #[arg(long)]
     pub to: String,
+    /// Cc recipient(s), comma-separated
+    #[arg(long)]
+    pub cc: Option<String>,
+    /// Bcc recipient(s), comma-separated
+    #[arg(long)]
+    pub bcc: Option<String>,
     /// Email subject
     #[arg(long)]
     pub subject: String,
@@ -203,6 +215,12 @@ pub struct ForwardArgs {
     /// Send-as alias whose signature to use (requires --signature). Defaults to the account default/primary.
     #[arg(long, requires = "signature")]
     pub signature_from: Option<String>,
+    /// Cc recipient(s), comma-separated
+    #[arg(long)]
+    pub cc: Option<String>,
+    /// Bcc recipient(s), comma-separated
+    #[arg(long)]
+    pub bcc: Option<String>,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,

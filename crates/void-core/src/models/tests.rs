@@ -218,6 +218,8 @@ fn message_content_subject_returns_email_subject() {
         subject: Some("Re: test".into()),
         append_signature: false,
         signature_from: None,
+        cc: None,
+        bcc: None,
     };
     assert_eq!(with_subject.subject(), Some("Re: test"));
 
@@ -240,6 +242,8 @@ fn message_content_text_returns_caption_for_file() {
         subject: None,
         append_signature: false,
         signature_from: None,
+        cc: None,
+        bcc: None,
     };
     assert_eq!(with_caption.text(), "a photo");
 
@@ -250,6 +254,8 @@ fn message_content_text_returns_caption_for_file() {
         subject: None,
         append_signature: false,
         signature_from: None,
+        cc: None,
+        bcc: None,
     };
     assert_eq!(no_caption.text(), "");
 }

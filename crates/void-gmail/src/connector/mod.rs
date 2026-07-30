@@ -12,7 +12,7 @@ pub use compose::{
     append_gmail_signature, apply_signature_to_forward, build_forward_body, compose_rfc2822,
     compose_rfc2822_ex, compose_rfc2822_with_attachment, encode_rfc2047, html_to_markdown,
     looks_like_html, looks_like_html_for_compose, parse_email_address, parse_email_name,
-    ComposeSignature,
+    ComposeRecipients, ComposeSignature, DraftRecipients,
 };
 
 pub struct GmailConnector {

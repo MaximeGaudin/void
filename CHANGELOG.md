@@ -19,12 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gmail** — Reject CR/LF and other ASCII control characters in `To` / `Cc` / `Bcc` so address fields cannot inject extra RFC 2822 headers (CLI and MCP compose paths).
 - **WhatsApp** — The daemon's RPC socket no longer disappears from disk, which broke every `void send --via whatsapp` with `No such file or directory`. A second `void sync` used to unlink the running daemon's socket before discovering it could not take the lock; the sync lock is now acquired before the RPC endpoint is touched, a live endpoint is never replaced, and a watchdog rebinds the socket if it vanishes anyway (manual `rm`, `/tmp` pruning).
 - **Sync** — A lock file whose PID has been recycled by an unrelated process is now treated as stale instead of "another sync instance is running", so `void sync --restart` starts cleanly and `void sync --stop` can no longer signal a stranger. `--restart` also clears a lock that survives the stop.
 - **Messages** — Restore UTC midnight semantics for `void messages --since/--until` date filters during service-layer extraction (calendar date ranges remain local midnight).
 
 ### Added
 
+- **Gmail** — `--cc` / `--bcc` on draft create/update, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward` (comma-separated). Headers are placed after `To` and before `Subject`/MIME so Gmail honors them.
 - **Gmail** — `--signature` / `--signature-from <email>` append the account HTML signature from Gmail send-as settings on all outgoing compose paths: `void gmail draft create` / `draft update`, `void send --via gmail`, `void reply`, `void forward`, and `void gmail forward`. Pass a body/comment without an existing signature (append is not idempotent). Forwards place the signature between the comment and the quoted message. First interactive use may open a browser to grant `gmail.settings.basic` (not requested at normal setup); non-interactive / MCP callers must grant that scope once via an interactive `--signature` command (`void setup` re-auth does not).
 - **MCP** — `void mcp` stdio server: named read/write tools (`inbox`, `conversations`, `messages`, `search`, `contacts`, `channels`, `slack_saved`, `calendar`, `health`, `send`, `reply`, `forward`, `archive`, `mute`) plus a `run` tool for full CLI parity via subprocess. See [docs/mcp.md](docs/mcp.md).
 - **Internal** — Service layer (`crates/void-cli/src/service/`) extracting read/write business logic shared by CLI commands and the upcoming MCP server.

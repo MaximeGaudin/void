@@ -757,6 +757,8 @@ fn build_wa_message_file_content_is_error() {
         subject: None,
         append_signature: false,
         signature_from: None,
+        cc: None,
+        bcc: None,
     };
     assert!(build_wa_message(&content, None).is_err());
 }

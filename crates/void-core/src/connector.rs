@@ -15,6 +15,10 @@ pub struct ForwardOptions<'a> {
     pub append_signature: bool,
     /// Send-as alias whose signature to use (Gmail only; requires `append_signature`).
     pub signature_from: Option<&'a str>,
+    /// Cc recipient(s), comma-separated (Gmail only).
+    pub cc: Option<&'a str>,
+    /// Bcc recipient(s), comma-separated (Gmail only).
+    pub bcc: Option<&'a str>,
 }
 
 impl<'a> ForwardOptions<'a> {

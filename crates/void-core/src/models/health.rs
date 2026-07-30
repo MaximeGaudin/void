@@ -13,6 +13,10 @@ pub enum MessageContent {
         append_signature: bool,
         /// Send-as alias whose signature to use (Gmail only; requires `append_signature`).
         signature_from: Option<String>,
+        /// Cc recipient(s), comma-separated (Gmail only).
+        cc: Option<String>,
+        /// Bcc recipient(s), comma-separated (Gmail only).
+        bcc: Option<String>,
     },
     File {
         path: std::path::PathBuf,
@@ -24,6 +28,10 @@ pub enum MessageContent {
         append_signature: bool,
         /// Send-as alias whose signature to use (Gmail only; requires `append_signature`).
         signature_from: Option<String>,
+        /// Cc recipient(s), comma-separated (Gmail only).
+        cc: Option<String>,
+        /// Bcc recipient(s), comma-separated (Gmail only).
+        bcc: Option<String>,
     },
 }
 
@@ -34,6 +42,8 @@ impl MessageContent {
             subject: None,
             append_signature: false,
             signature_from: None,
+            cc: None,
+            bcc: None,
         }
     }
 
@@ -72,6 +82,20 @@ impl MessageContent {
         match self {
             MessageContent::Text { signature_from, .. }
             | MessageContent::File { signature_from, .. } => signature_from.as_deref(),
+        }
+    }
+
+    /// Optional Cc recipients for Gmail (ignored by other connectors).
+    pub fn cc(&self) -> Option<&str> {
+        match self {
+            MessageContent::Text { cc, .. } | MessageContent::File { cc, .. } => cc.as_deref(),
+        }
+    }
+
+    /// Optional Bcc recipients for Gmail (ignored by other connectors).
+    pub fn bcc(&self) -> Option<&str> {
+        match self {
+            MessageContent::Text { bcc, .. } | MessageContent::File { bcc, .. } => bcc.as_deref(),
         }
     }
 }

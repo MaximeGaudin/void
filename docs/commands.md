@@ -56,9 +56,9 @@ Most read commands accept:
 
 | Command | Description |
 |---------|-------------|
-| `void send --via <connector> --to <recipient> --message <text>` | Send a new message. Use `--conversation <id>` instead of `--to` to target an existing void conversation (e.g. WhatsApp notes-to-self / "Message yourself"). `--connection <id>` to pick an account, `--subject` (email), `--file <path>` to attach, `--at <time>` to schedule delivery (Slack only), `--signature` / `--signature-from <email>` to append a Gmail send-as signature (Gmail only; not idempotent) |
-| `void reply <id> --message <text>` | Reply to a message. `--in-thread` for threaded replies, `--file` to attach, `--at` to schedule (Slack only), `--signature` / `--signature-from <email>` (Gmail only) |
-| `void forward <id> --to <recipient>` | Forward a message. `--comment <text>` to add a note, `--signature` / `--signature-from <email>` (Gmail only; signature sits between comment and quote) |
+| `void send --via <connector> --to <recipient> --message <text>` | Send a new message. Use `--conversation <id>` instead of `--to` to target an existing void conversation (e.g. WhatsApp notes-to-self / "Message yourself"). `--connection <id>` to pick an account, `--subject` (email), `--cc` / `--bcc` (Gmail only, comma-separated), `--file <path>` to attach, `--at <time>` to schedule delivery (Slack only), `--signature` / `--signature-from <email>` to append a Gmail send-as signature (Gmail only; not idempotent) |
+| `void reply <id> --message <text>` | Reply to a message. `--in-thread` for threaded replies, `--file` to attach, `--at` to schedule (Slack only), `--cc` / `--bcc` / `--signature` / `--signature-from <email>` (Gmail only) |
+| `void forward <id> --to <recipient>` | Forward a message. `--comment <text>` to add a note, `--cc` / `--bcc` / `--signature` / `--signature-from <email>` (Gmail only; signature sits between comment and quote) |
 | `void archive <ids...>` | Archive one or more messages (mark as processed). `--before <date>` and `--connector <type>` for bulk archiving |
 | `void mute <targets...>` | Mute conversations/channels (hidden from inbox). `--unmute` to reverse, `--list` to show muted, `--connection`/`--connector` to scope |
 
@@ -84,7 +84,7 @@ Times are ISO 8601: `2026-03-31T17:00:00`, `2026-03-31 17:00`, or `2026-03-31` (
 
 All Gmail subcommands accept `--connection <id>` to target a specific account.
 
-Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) accepts `--signature` to append the account HTML signature from Gmail send-as settings, and `--signature-from <email>` to pick a specific send-as alias. Pass a body/comment without an existing signature (append is not idempotent). First interactive `--signature` use may open a browser to grant `gmail.settings.basic` (not requested during normal setup). Non-interactive / MCP callers need that grant first — run one interactive command with `--signature` in a terminal; `void setup` re-auth alone does not request this scope.
+Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) accepts `--cc` / `--bcc` (comma-separated) and `--signature` to append the account HTML signature from Gmail send-as settings, and `--signature-from <email>` to pick a specific send-as alias. Pass a body/comment without an existing signature (append is not idempotent). First interactive `--signature` use may open a browser to grant `gmail.settings.basic` (not requested during normal setup). Non-interactive / MCP callers need that grant first — run one interactive command with `--signature` in a terminal; `void setup` re-auth alone does not request this scope.
 
 | Command | Description |
 |---------|-------------|
@@ -95,13 +95,13 @@ Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) acc
 | `void gmail label <id> --add <labels> --remove <labels>` | Modify labels on a thread |
 | `void gmail batch-modify <ids...> --add <labels> --remove <labels>` | Batch-modify labels on multiple messages |
 | `void gmail drafts` | List drafts. `--max <N>` |
-| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--file` to attach, `--reply-to <id>` to draft a reply, `--signature` / `--signature-from <email>` |
-| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--signature` / `--signature-from` flags as create |
+| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--cc`, `--bcc`, `--file` to attach, `--reply-to <id>` to draft a reply (folds original From/To/Cc into `To` when `--to` is omitted; `--cc` / `--bcc` are additive), `--signature` / `--signature-from <email>` |
+| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--cc` / `--bcc` / `--signature` / `--signature-from` flags as create |
 | `void gmail draft delete <id>` | Delete a draft |
 | `void gmail attachment <id> <attachment-id> --out <path>` | Download an attachment |
-| `void gmail forward <id> --to <recipient>` | Forward a message. `--comment`, `--signature` / `--signature-from <email>` (signature between comment and quote) |
-| `void send --via gmail --to <email> --message <text>` | Send a new email. `--subject`, `--file`, `--signature` / `--signature-from <email>` |
-| `void reply <id> --message <text>` | Reply to a Gmail message. `--file`, `--signature` / `--signature-from <email>` |
+| `void gmail forward <id> --to <recipient>` | Forward a message. `--cc`, `--bcc`, `--comment`, `--signature` / `--signature-from <email>` (signature between comment and quote) |
+| `void send --via gmail --to <email> --message <text>` | Send a new email. `--subject`, `--cc`, `--bcc`, `--file`, `--signature` / `--signature-from <email>` |
+| `void reply <id> --message <text>` | Reply to a Gmail message. `--cc`, `--bcc`, `--file`, `--signature` / `--signature-from <email>` |
 | `void forward <id> --to <email>` | Forward a Gmail message (same flags as `void gmail forward`) |
 
 ## Slack
