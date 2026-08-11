@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use wa_rs::client::Client;
@@ -47,7 +48,7 @@ pub(crate) fn schedule_unavailable(client: Arc<Client>) {
 pub(crate) fn spawn_unavailable_refresher(
     client_holder: Arc<Mutex<Option<Arc<Client>>>>,
     cancel: CancellationToken,
-) {
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(REFRESH_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -61,15 +62,14 @@ pub(crate) fn spawn_unavailable_refresher(
                 }
                 _ = ticker.tick() => {
                     let client = client_holder.lock().await.clone();
-                    if let Some(client) = client {
-                        if client.is_connected() {
-                            set_unavailable(&client).await;
-                        }
-                    }
+                    let Some(client) = client.filter(|c| c.is_connected()) else {
+                        continue;
+                    };
+                    set_unavailable(&client).await;
                 }
             }
         }
-    });
+    })
 }
 
 #[cfg(test)]
@@ -86,5 +86,19 @@ mod tests {
     fn refresh_interval_is_minutes_not_seconds() {
         assert!(REFRESH_INTERVAL >= Duration::from_secs(60));
         assert!(REFRESH_INTERVAL <= Duration::from_secs(15 * 60));
+    }
+
+    #[tokio::test]
+    async fn refresher_exits_promptly_when_sync_is_cancelled() {
+        let holder = Arc::new(Mutex::new(None));
+        let cancel = CancellationToken::new();
+        let handle = spawn_unavailable_refresher(Arc::clone(&holder), cancel.clone());
+
+        cancel.cancel();
+
+        tokio::time::timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("refresher should exit shortly after cancel")
+            .expect("refresher task should not panic");
     }
 }
