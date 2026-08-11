@@ -498,6 +498,7 @@ gh pr checks "$PR" --json name,state,conclusion --jq '.[] | "\(.name): \(.conclu
 
 Append new, durable review insights here (newest first), per Step 5.
 
+- **Cancel-scope connector background tasks once per `start_sync`.** Periodic helpers (presence refresh, keepalive, etc.) must take the sync `CancellationToken` and be spawned once when sync starts — not on every `Connected`/reconnect event. Per-connect spawns leak tasks across reconnect storms. Prefer returning a `JoinHandle` so tests can assert prompt exit on cancel (constant-only tests are not enough for async spawn helpers).
 - **Stacked PRs need a tip-vs-dependency diff.** When the body says "Depends on #N" / "stacked on …", most of `main...HEAD` is the dependency. Fetch both fork refs and review `git diff dep_tip...pr_tip` (plus commit-oid overlap). Don't re-litigate the whole stack as if it were new; still spot-check OAuth/deps that ship together, and block merge until the dependency is on `main` (or explicitly accept a combined merge).
 - **`gh pr diff` accepts no pathspecs.** Only `--name-only` / `--patch`. Path filters like `gh pr diff N -- Cargo.lock` error with "accepts at most 1 arg". Pipe the full diff through `rg`, or `git fetch` the tip and use `git diff`.
 - **Prefer `git worktree add --detach` for local PR builds.** Safer than `gh pr checkout` on a shared clone (avoids branch-stealing races). Remove with `git worktree remove … --force` when done; main clone stays on `main`.
