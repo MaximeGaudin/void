@@ -75,7 +75,9 @@ impl WhatsAppConnector {
         let identity = self.own_identity.lock().expect("mutex").clone();
 
         if identity.should_route_as_self_chat(to) {
-            return send_self_chat_message(&client, &identity, content, None).await;
+            let msg_id = send_self_chat_message(&client, &identity, content, None).await?;
+            super::presence::schedule_unavailable(Arc::clone(&client));
+            return Ok(msg_id);
         }
 
         let jid = parse_jid(to)?;
@@ -104,6 +106,7 @@ impl WhatsAppConnector {
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
         debug!(connection_id = %self.config_id, message_id = %msg_id, "WhatsApp message sent via sync");
+        super::presence::schedule_unavailable(Arc::clone(&client));
         Ok(msg_id)
     }
 
@@ -140,7 +143,9 @@ impl WhatsAppConnector {
                 in_thread,
                 "sending WhatsApp notes-to-self reply via sync"
             );
-            return send_self_chat_message(&client, &identity, content, context_info).await;
+            let msg_id = send_self_chat_message(&client, &identity, content, context_info).await?;
+            super::presence::schedule_unavailable(Arc::clone(&client));
+            return Ok(msg_id);
         }
 
         let jid = parse_jid(&chat_jid_str)?;
@@ -177,6 +182,7 @@ impl WhatsAppConnector {
             .send_message_with_options(jid, msg, SendOptions::default())
             .await?;
         debug!(connection_id = %self.config_id, message_id = %msg_id, "WhatsApp reply sent via sync");
+        super::presence::schedule_unavailable(Arc::clone(&client));
         Ok(msg_id)
     }
 
