@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-08-20
+
 ### Fixed
 
 - **WhatsApp** — Sync no longer leaves the account looking permanently online. Void overrides `wa-rs`'s automatic `available` presence with `unavailable` on connect, after push-name sync, after sends, and on a periodic refresh so contacts stop seeing you as always online and phone notifications keep working.
