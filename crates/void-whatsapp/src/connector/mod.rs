@@ -4,6 +4,7 @@ mod connector_trait;
 mod extract;
 mod media;
 mod ops;
+mod presence;
 mod self_chat;
 mod send;
 mod sync;
@@ -83,8 +84,11 @@ impl WhatsAppConnector {
                     {
                         let mut holder = client_holder.lock().await;
                         if holder.is_none() {
-                            *holder = Some(client);
+                            *holder = Some(Arc::clone(&client));
                         }
+                    }
+                    if matches!(event, Event::Connected(_)) {
+                        presence::schedule_unavailable(client);
                     }
                     let _ = tx.send(event);
                 }

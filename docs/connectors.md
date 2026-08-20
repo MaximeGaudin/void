@@ -22,6 +22,8 @@ No external credentials needed.
 1. Run `void setup` and select WhatsApp
 2. Scan the QR code with your phone: **WhatsApp → Linked Devices → Link a Device**
 
+The sync daemon keeps the linked session in `unavailable` presence so contacts do not see you as permanently online (and phone push notifications keep working). Sending a message may briefly flip presence; void re-asserts unavailable shortly after.
+
 ## Telegram
 
 No external credentials needed.
