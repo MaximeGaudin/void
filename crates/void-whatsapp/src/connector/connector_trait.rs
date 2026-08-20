@@ -14,6 +14,7 @@ use void_core::models::*;
 
 use crate::CONNECTOR_ID;
 
+use super::presence::schedule_unavailable;
 use super::sync::{handle_history_sync, handle_message, render_qr};
 use super::WhatsAppConnector;
 
@@ -123,6 +124,12 @@ impl Connector for WhatsAppConnector {
                                 .lock()
                                 .expect("mutex")
                                 .update_from_connected(pn, lid);
+                            // wa-rs marks available just before Connected; override it.
+                            schedule_unavailable(Arc::clone(&client));
+                        }
+                        Event::SelfPushNameUpdated(_) => {
+                            // wa-rs may call set_available after pushname sync; beat that race.
+                            schedule_unavailable(Arc::clone(&client));
                         }
                         Event::Message(msg, info) => {
                             if info.source.is_from_me {
@@ -200,6 +207,8 @@ impl Connector for WhatsAppConnector {
             })
             .build()
             .await?;
+
+        super::presence::spawn_unavailable_refresher(Arc::clone(&self.client), cancel.clone());
 
         let bot_future = bot.run().await?;
 
