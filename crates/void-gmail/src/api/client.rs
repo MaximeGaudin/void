@@ -89,15 +89,15 @@ impl GmailApiClient {
         if let Some(q) = query {
             params.push(("q", q.to_string()));
         }
-        let resp: MessageListResponse = self
+        let resp = self
             .http
             .get(format!("{}/gmail/v1/users/me/messages", self.base_url))
             .bearer_auth(&self.access_token)
             .query(&params)
             .send()
             .await?
-            .json()
-            .await?;
+            .error_for_status()?;
+        let resp: MessageListResponse = resp.json().await?;
         let count = resp.messages.as_ref().map(|m| m.len()).unwrap_or(0);
         debug!(
             message_count = count,
@@ -109,7 +109,7 @@ impl GmailApiClient {
 
     pub async fn get_message(&self, message_id: &str) -> Result<GmailMessage, GmailError> {
         debug!(message_id, "gmail: get_message");
-        let resp: GmailMessage = self
+        let resp = self
             .http
             .get(format!(
                 "{}/gmail/v1/users/me/messages/{message_id}",
@@ -119,8 +119,8 @@ impl GmailApiClient {
             .query(&[("format", "full")])
             .send()
             .await?
-            .json()
-            .await?;
+            .error_for_status()?;
+        let resp: GmailMessage = resp.json().await?;
         Ok(resp)
     }
 
@@ -143,23 +143,29 @@ impl GmailApiClient {
             if let Some(pt) = &page_token {
                 params.push(("pageToken", pt.clone()));
             }
-            let resp: HistoryListResponse = self
+            let resp = self
                 .http
                 .get(format!("{}/gmail/v1/users/me/history", self.base_url))
                 .bearer_auth(&self.access_token)
                 .query(&params)
                 .send()
-                .await?
-                .json()
                 .await?;
+            // Gmail returns 404 once the startHistoryId is too old (history is
+            // only kept for a limited window). Surface that distinctly so the
+            // sync loop can fall back to a full INBOX refresh.
+            if resp.status() == reqwest::StatusCode::NOT_FOUND {
+                return Err(GmailError::HistoryExpired);
+            }
+            let resp = resp.error_for_status()?;
+            let page_resp: HistoryListResponse = resp.json().await?;
 
-            if let Some(records) = resp.history {
+            if let Some(records) = page_resp.history {
                 let count = records.len();
                 all_records.extend(records);
                 debug!(page, record_count = count, "gmail: listed history page");
             }
-            latest_history_id = resp.history_id.or(latest_history_id);
-            page_token = resp.next_page_token;
+            latest_history_id = page_resp.history_id.or(latest_history_id);
+            page_token = page_resp.next_page_token;
             if page_token.is_none() {
                 break;
             }
