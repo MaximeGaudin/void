@@ -394,6 +394,185 @@ async fn initial_sync_respects_max_pages() {
     drop(server);
 }
 
+// ---------------------------------------------------------------------------
+// refresh_inbox / incremental_sync — INBOX reconciliation
+// ---------------------------------------------------------------------------
+
+fn full_inbox_message(id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "threadId": "t1",
+        "snippet": "Hi",
+        "internalDate": "1741700000000",
+        "labelIds": ["INBOX"],
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": [
+                {"name": "From", "value": "sender@example.com"},
+                {"name": "Subject", "value": "Subj"},
+                {"name": "Date", "value": "Wed, 11 Mar 2026 10:00:00 +0000"}
+            ],
+            "body": {"data": "SGk", "size": 2}
+        }
+    })
+}
+
+fn seed_gmail_message(db: &Database, ext_id: &str, is_archived: bool) {
+    let connection_id = "test-gmail";
+    let conversation = Conversation {
+        id: format!("{connection_id}-t0"),
+        connection_id: connection_id.into(),
+        connector: "gmail".into(),
+        external_id: "t0".into(),
+        name: Some("Seed thread".into()),
+        kind: ConversationKind::Thread,
+        last_message_at: None,
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    };
+    db.upsert_conversation(&conversation).unwrap();
+
+    let msg = Message {
+        id: format!("{connection_id}-{ext_id}"),
+        conversation_id: format!("{connection_id}-t0"),
+        connection_id: connection_id.into(),
+        connector: "gmail".into(),
+        external_id: ext_id.into(),
+        sender: "x@example.com".into(),
+        sender_name: None,
+        sender_avatar_url: None,
+        body: None,
+        timestamp: 0,
+        synced_at: None,
+        is_archived,
+        is_saved: false,
+        reply_to_id: None,
+        media_type: None,
+        metadata: None,
+        context_id: Some(format!("{connection_id}-thread-t0")),
+        context: None,
+    };
+    db.upsert_message(&msg).unwrap();
+}
+
+fn test_connector() -> GmailConnector {
+    GmailConnector::new(
+        "test-gmail",
+        None,
+        std::path::Path::new("/tmp/void-gmail-test"),
+        60,
+    )
+}
+
+/// Regression (issue #63): `void inbox` must mirror Gmail's INBOX label.
+/// The refresh must list the *complete* INBOX (no `newer_than:7d` filter) and
+/// reconcile local `is_archived` both ways: un-archive INBOX mail that was
+/// locally archived, archive mail whose INBOX label is gone.
+#[tokio::test]
+async fn refresh_inbox_reconciles_complete_inbox_without_date_filter() {
+    let server = MockServer::start().await;
+
+    // The absence of the `q` matcher is the point: any query filter (e.g.
+    // `newer_than:7d`) would break reconciliation for older INBOX mail.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(query_param_is_missing("q"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                {"id": "old1", "threadId": "t1"},
+                {"id": "new2", "threadId": "t2"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    // `new2` is INBOX-labeled but unknown locally → must be fetched in full.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/new2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_inbox_message("new2")))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let db = Database::open_in_memory().unwrap();
+    // Simulated drift: `old1` is still in Gmail INBOX but locally archived
+    // (the old 7d-window reconcile did this); `gone1` lost its INBOX label.
+    seed_gmail_message(&db, "old1", true);
+    seed_gmail_message(&db, "gone1", false);
+
+    let connector = test_connector();
+    connector.refresh_inbox_with_api(&db, &api).await.unwrap();
+
+    let old1 = db.get_message("test-gmail-old1").unwrap().unwrap();
+    assert!(!old1.is_archived, "INBOX message must be un-archived");
+
+    let gone1 = db.get_message("test-gmail-gone1").unwrap().unwrap();
+    assert!(gone1.is_archived, "non-INBOX message must be archived");
+
+    let new2 = db
+        .get_message("test-gmail-new2")
+        .unwrap()
+        .expect("new2 stored");
+    assert!(!new2.is_archived, "new INBOX message stored un-archived");
+}
+
+/// Regression (issue #63): an expired historyId (Gmail returns 404) used to
+/// fail silently forever. It must trigger a full INBOX refresh and resume
+/// incremental sync from a fresh historyId.
+#[tokio::test]
+async fn incremental_sync_history_expired_falls_back_to_inbox_refresh() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/history"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "error": {"code": 404, "message": "HistoryId is invalid."}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/profile"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "emailAddress": "test@example.com",
+            "historyId": "99999"
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [{"id": "still1", "threadId": "t1"}]
+        })))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let db = Database::open_in_memory().unwrap();
+    db.set_sync_state("test-gmail", "history_id", "12345")
+        .unwrap();
+    seed_gmail_message(&db, "gone1", false);
+    seed_gmail_message(&db, "still1", true);
+
+    let connector = test_connector();
+    connector
+        .incremental_sync_with_api(&db, &api)
+        .await
+        .unwrap();
+
+    let gone1 = db.get_message("test-gmail-gone1").unwrap().unwrap();
+    assert!(gone1.is_archived, "archive state reconciled with Gmail");
+
+    let still1 = db.get_message("test-gmail-still1").unwrap().unwrap();
+    assert!(!still1.is_archived, "INBOX message un-archived");
+
+    let history_id = db.get_sync_state("test-gmail", "history_id").unwrap();
+    assert_eq!(history_id, Some("99999".to_string()));
+}
+
 #[test]
 fn parse_email_address_extracts_email() {
     assert_eq!(

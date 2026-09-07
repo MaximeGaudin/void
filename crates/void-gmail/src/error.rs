@@ -11,6 +11,10 @@ pub enum GmailError {
         "insufficient OAuth scope for Gmail settings (need gmail.settings.basic); re-authenticate"
     )]
     InsufficientScope,
+    /// The stored `historyId` is too old: Gmail purges history after a limited
+    /// window, so incremental sync must fall back to a full INBOX refresh.
+    #[error("gmail history expired; full inbox refresh required")]
+    HistoryExpired,
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("Parse error: {0}")]
