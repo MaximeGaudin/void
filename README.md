@@ -97,6 +97,8 @@ void gmail draft create --reply-to <id> --subject "Re: Q3" --body "LGTM, approve
 void gmail batch-modify <id1> <id2> --remove INBOX
 ```
 
+`void inbox` is the Inbox Zero surface for Gmail's `INBOX` label: after every sync it reconciles its archive state with Gmail, so mail you archive in the Gmail web UI disappears from `void inbox` (and vice versa). It lists one item per **thread** — the thread's latest unarchived message — while `void gmail search 'in:inbox'` lists individual **messages**; archiving the shown item removes that message's `INBOX` label and the thread's next message surfaces until the thread is fully out of Gmail's inbox.
+
 ### Calendar
 
 Docs: [commands](docs/commands.md#calendar)

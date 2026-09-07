@@ -5,10 +5,16 @@ use tracing::{debug, info, warn};
 use void_core::db::Database;
 use void_core::models::{Conversation, ConversationKind, Message};
 
-use crate::api::GmailMessage;
+use crate::api::{GmailApiClient, GmailMessage};
+use crate::error::GmailError;
 
 use super::compose::{html_to_markdown, looks_like_html, parse_email_address, parse_email_name};
 use super::GmailConnector;
+
+/// Page size for INBOX listings (Gmail API allows up to 500).
+const INBOX_PAGE_SIZE: u32 = 500;
+/// Safety cap on INBOX listing pages (20 × 500 = 10 000 messages).
+const INBOX_MAX_PAGES: u32 = 20;
 
 impl GmailConnector {
     pub(crate) async fn initial_sync(&self, db: &Database) -> anyhow::Result<()> {
@@ -23,7 +29,7 @@ impl GmailConnector {
 
         if had_history {
             debug!(config_id = %self.config_id, "history_id exists, refreshing inbox state");
-            self.refresh_inbox(db).await?;
+            self.refresh_inbox_with_api(db, &api).await?;
             return Ok(());
         }
 
@@ -33,71 +39,42 @@ impl GmailConnector {
 
         info!(config_id = %self.config_id, "starting Gmail initial sync");
 
-        let mut page_token: Option<String> = None;
-        let max_pages: u64 = 5;
+        self.refresh_inbox_with_api(db, &api).await?;
 
-        let mut progress = void_core::progress::BackfillProgress::new(
-            &format!("gmail:{}", self.config_id),
-            "messages",
-        );
-        progress.set_pages(max_pages);
-
-        loop {
-            let resp = api
-                .list_messages(
-                    100,
-                    page_token.as_deref(),
-                    Some(&["INBOX"]),
-                    Some("newer_than:7d"),
-                )
-                .await?;
-            progress.inc_page();
-
-            if let Some(msgs) = resp.messages {
-                for msg_ref in &msgs {
-                    match api.get_message(&msg_ref.id).await {
-                        Ok(msg) => {
-                            self.store_message(db, &msg)?;
-                            progress.inc(1);
-                        }
-                        Err(e) => {
-                            warn!(message_id = %msg_ref.id, "failed to fetch message: {e}");
-                        }
-                    }
-                }
-            }
-
-            page_token = resp.next_page_token;
-            if page_token.is_none() || progress.pages_done >= max_pages {
-                break;
-            }
-        }
-
-        progress.finish();
-        info!(config_id = %self.config_id, messages = progress.items, "Gmail initial sync complete");
+        info!(config_id = %self.config_id, "Gmail initial sync complete");
         Ok(())
     }
 
-    /// Refresh inbox state: fetch current INBOX message IDs from Gmail and
-    /// reconcile `is_archived` in the local DB so it mirrors Gmail exactly.
-    /// Also fetches any new INBOX messages not yet in the local DB.
+    /// Refresh inbox state: fetch the *complete* INBOX message ID list from
+    /// Gmail (no date filter) and reconcile `is_archived` in the local DB so
+    /// it mirrors Gmail exactly. Also fetches full bodies for any INBOX
+    /// messages not yet in the local DB, so `void inbox` matches
+    /// `gmail search 'in:inbox'`.
     pub(crate) async fn refresh_inbox(&self, db: &Database) -> anyhow::Result<()> {
         let api = self.get_client().await?;
+        self.refresh_inbox_with_api(db, &api).await
+    }
+
+    pub(crate) async fn refresh_inbox_with_api(
+        &self,
+        db: &Database,
+        api: &GmailApiClient,
+    ) -> anyhow::Result<()> {
         let connection_id = self.display_connection_id();
 
         let mut inbox_ids: HashSet<String> = HashSet::new();
         let mut new_msg_ids: Vec<String> = Vec::new();
         let mut page_token: Option<String> = None;
-        let max_pages = 5u32;
+        let mut truncated = false;
         let mut pages = 0u32;
 
         loop {
             let resp = api
                 .list_messages(
-                    100,
+                    INBOX_PAGE_SIZE,
                     page_token.as_deref(),
                     Some(&["INBOX"]),
-                    Some("newer_than:7d"),
+                    None,
                 )
                 .await?;
             pages += 1;
@@ -112,7 +89,16 @@ impl GmailConnector {
             }
 
             page_token = resp.next_page_token;
-            if page_token.is_none() || pages >= max_pages {
+            if page_token.is_none() {
+                break;
+            }
+            if pages >= INBOX_MAX_PAGES {
+                warn!(
+                    config_id = %self.config_id,
+                    listed = inbox_ids.len(),
+                    "Gmail INBOX listing hit page cap; older INBOX messages may be missed"
+                );
+                truncated = true;
                 break;
             }
         }
@@ -128,7 +114,13 @@ impl GmailConnector {
             }
         }
 
-        let (unarchived, archived) = db.reconcile_inbox(&connection_id, "gmail", &inbox_ids)?;
+        // Reconcile only when the INBOX listing is complete: a partial listing
+        // would wrongly archive messages that Gmail still keeps in INBOX.
+        let (unarchived, archived) = if truncated {
+            (0, 0)
+        } else {
+            db.reconcile_inbox(&connection_id, "gmail", &inbox_ids)?
+        };
 
         if unarchived > 0 || archived > 0 || !new_msg_ids.is_empty() {
             info!(
@@ -144,14 +136,41 @@ impl GmailConnector {
     }
 
     pub(crate) async fn incremental_sync(&self, db: &Database) -> anyhow::Result<()> {
+        let api = self.get_client().await?;
+        self.incremental_sync_with_api(db, &api).await
+    }
+
+    pub(crate) async fn incremental_sync_with_api(
+        &self,
+        db: &Database,
+        api: &GmailApiClient,
+    ) -> anyhow::Result<()> {
         let Some(history_id) = db.get_sync_state(&self.config_id, "history_id")? else {
             debug!("no history_id, skipping incremental sync");
             return Ok(());
         };
 
-        let api = self.get_client().await?;
         let connection_id = self.display_connection_id();
-        let resp = api.list_history(&history_id, Some("INBOX")).await?;
+        let resp = match api.list_history(&history_id, Some("INBOX")).await {
+            Ok(resp) => resp,
+            Err(GmailError::HistoryExpired) => {
+                // historyId is only valid for a limited window (e.g. daemon
+                // offline for a while). Reconcile against the full INBOX
+                // listing so local archive state mirrors Gmail again, then
+                // resume incremental sync from a fresh historyId.
+                warn!(
+                    config_id = %self.config_id,
+                    "gmail history expired, falling back to full inbox refresh"
+                );
+                self.refresh_inbox_with_api(db, api).await?;
+                let profile = api.get_profile().await?;
+                if let Some(new_id) = profile.history_id {
+                    db.set_sync_state(&self.config_id, "history_id", &new_id)?;
+                }
+                return Ok(());
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         if let Some(records) = resp.history {
             for record in &records {
