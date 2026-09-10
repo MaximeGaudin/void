@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Remote** — `void remote status` reports `local_version` and `remote_version` so version skew between the client and the server binary is visible at a glance.
+
+### Fixed
+
+- **Remote** — Proxied write commands print a warning on stderr when the server's `void` is a different version than the local client, instead of surfacing confusing `unexpected argument` errors from the older remote binary.
+
 ## [0.11.1] - 2026-08-20
 
 ### Fixed
