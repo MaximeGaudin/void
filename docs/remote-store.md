@@ -59,12 +59,14 @@ All `[store.remote]` options:
 ## Inspecting and refreshing
 
 ```bash
-# SSH connectivity, cache age, remote daemon state
+# SSH connectivity, cache age, remote daemon state, client/server versions
 void remote status
 
 # Force-refresh config + DB snapshot
 void remote refresh
 ```
+
+`void remote status` also reports `local_version` (this client) and `remote_version` (the server's `void`, `null` when unreachable). When they differ, proxied write commands print a warning: an outdated server binary rejects flags the local client accepts.
 
 Useful flags:
 

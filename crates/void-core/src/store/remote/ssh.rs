@@ -9,6 +9,8 @@ use super::REMOTE_PATH_PREFIX;
 pub struct RemoteProxyTargets {
     pub config_path: String,
     pub void_bin: String,
+    /// Remote `void --version` output (e.g. `void 0.11.1`), if resolvable.
+    pub void_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,7 +66,8 @@ impl SshTarget {
             "{REMOTE_PATH_PREFIX}; \
              home=$(printf %s \"$HOME\"); \
              bin=$(command -v void); \
-             printf '%s\n%s\n' \"$home\" \"$bin\""
+             ver=$(\"$bin\" --version 2>/dev/null | head -n1); \
+             printf '%s\n%s\n%s\n' \"$home\" \"$bin\" \"$ver\""
         ))?;
         if !output.status.success() {
             return Err(ConfigError::Remote(
@@ -89,6 +92,11 @@ impl SshTarget {
                         .into(),
                 )
             })?;
+        let void_version = lines
+            .next()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
 
         let resolved_config = if let Some(rest) = config_path.strip_prefix("~/") {
             format!("{home}/{rest}")
@@ -101,6 +109,7 @@ impl SshTarget {
         Ok(RemoteProxyTargets {
             config_path: resolved_config,
             void_bin: void_bin.to_string(),
+            void_version,
         })
     }
 

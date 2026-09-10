@@ -302,6 +302,9 @@ impl ResolvedContext {
             .unwrap_or(false);
 
         let daemon_running = remote_daemon_running(&remote.ssh, &remote.remote_store_path);
+        let remote_version = ssh_check
+            .then(|| remote_void_version(&remote.ssh))
+            .flatten();
 
         Ok(serde_json::json!({
             "mode": "remote",
@@ -315,6 +318,8 @@ impl ResolvedContext {
             "ssh_reachable": ssh_check,
             "remote_daemon_running": daemon_running,
             "proxy_writes": remote.proxy_writes,
+            "local_version": normalize_void_version(env!("CARGO_PKG_VERSION")),
+            "remote_version": remote_version,
         }))
     }
 
@@ -354,6 +359,12 @@ impl ResolvedContext {
                 targets
             }
         };
+
+        if let Some(warning) =
+            version_skew_message(targets.void_version.as_deref(), env!("CARGO_PKG_VERSION"))
+        {
+            eprintln!("{warning}");
+        }
 
         let store_path = remote.ssh.resolve_path_on_host(&remote.remote_store_path)?;
 
@@ -472,6 +483,43 @@ fn remote_daemon_running(ssh: &SshTarget, remote_store_path: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn remote_void_version(ssh: &SshTarget) -> Option<String> {
+    let output = ssh
+        .run_remote(&format!(
+            "{REMOTE_PATH_PREFIX}; void --version 2>/dev/null | head -n1"
+        ))
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8(output.stdout).ok()?;
+    let version = normalize_void_version(&raw);
+    (!version.is_empty()).then(|| version.to_string())
+}
+
+/// Reduce `void --version` output to a bare version string.
+///
+/// Accepts `void 0.11.1`, `0.11.1`, and trailing build metadata
+/// (`void 0.11.1 (abc1234)`), so comparisons never trip on formatting.
+fn normalize_void_version(raw: &str) -> &str {
+    let raw = raw.trim();
+    let rest = raw.strip_prefix("void ").unwrap_or(raw);
+    rest.split_whitespace().next().unwrap_or("")
+}
+
+/// Warning to emit when the remote `void` differs from the local one, if any.
+fn version_skew_message(remote_version: Option<&str>, local_version: &str) -> Option<String> {
+    let remote = normalize_void_version(remote_version?);
+    let local = normalize_void_version(local_version);
+    if remote.is_empty() || remote == local {
+        return None;
+    }
+    Some(format!(
+        "warning: remote void is {remote}, local is {local}. \
+         Update the server binary or proxied flags may fail with confusing clap errors."
+    ))
+}
+
 fn shell_escape(arg: &str) -> String {
     if arg.is_empty() {
         return "''".to_string();
@@ -514,5 +562,24 @@ mod tests {
         assert_eq!(shell_escape(path), path);
         let bin = "/Users/me/bin/void";
         assert_eq!(shell_escape(bin), bin);
+    }
+
+    #[test]
+    fn normalize_void_version_strips_prefix() {
+        assert_eq!(normalize_void_version("void 0.11.1"), "0.11.1");
+        assert_eq!(normalize_void_version("0.11.1"), "0.11.1");
+        assert_eq!(normalize_void_version("  void 0.10.3  "), "0.10.3");
+        assert_eq!(normalize_void_version("void 0.11.1 (abc1234)"), "0.11.1");
+        assert_eq!(normalize_void_version("   "), "");
+    }
+
+    #[test]
+    fn version_skew_message_only_on_mismatch() {
+        assert_eq!(version_skew_message(None, "0.11.1"), None);
+        assert_eq!(version_skew_message(Some("void 0.11.1"), "0.11.1"), None);
+        assert_eq!(version_skew_message(Some(""), "0.11.1"), None);
+        let warning = version_skew_message(Some("void 0.10.3"), "0.11.1").expect("skew warning");
+        assert!(warning.contains("remote void is 0.10.3"));
+        assert!(warning.contains("local is 0.11.1"));
     }
 }
