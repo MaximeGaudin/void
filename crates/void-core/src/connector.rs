@@ -78,6 +78,36 @@ pub trait Connector: Send + Sync {
         Ok(())
     }
 
+    /// Archive several messages of the same conversation.
+    ///
+    /// Default implementation archives them one by one and reports an error if
+    /// any call failed, without aborting the rest. Connectors with a bulk
+    /// endpoint should override this to issue a single request.
+    async fn archive_batch(
+        &self,
+        external_ids: &[&str],
+        conversation_external_id: &str,
+    ) -> anyhow::Result<()> {
+        let mut failed = 0usize;
+        for external_id in external_ids {
+            if self
+                .archive(external_id, conversation_external_id)
+                .await
+                .is_err()
+            {
+                failed += 1;
+            }
+        }
+        if failed > 0 {
+            anyhow::bail!(
+                "{failed}/{} remote archive calls failed for {}",
+                external_ids.len(),
+                self.connector_type()
+            );
+        }
+        Ok(())
+    }
+
     /// Forward a message to another recipient.
     /// `external_id` is the platform-specific message identifier.
     /// `conversation_external_id` is the platform-specific conversation/channel ID.

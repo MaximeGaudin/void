@@ -473,49 +473,84 @@ async fn archive_by_ids(
 
         let archived = db.mark_message_archived_with_context(&msg.id)?;
 
-        let mut remote_synced = connectors.contains_key(&connector_key);
-        if let Some(conn) = connectors.get(&connector_key) {
-            for archived_msg in &archived {
-                // Prefer each sibling's conversation external id when available.
-                let peer_conv_ext = db
-                    .get_conversation(&archived_msg.conversation_id)?
-                    .map(|c| c.external_id)
-                    .unwrap_or_else(|| conv.external_id.clone());
-                if conn
-                    .archive(&archived_msg.external_id, &peer_conv_ext)
-                    .await
-                    .is_err()
-                {
-                    remote_synced = false;
-                }
+        let remote_synced = match connectors.get(&connector_key) {
+            Some(conn) => {
+                sync_remote_archive(db, conn.as_ref(), &msg, &conv.external_id, &archived).await?
             }
-            // If nothing was newly archived (already archived), still try the
-            // resolved message so remote state stays consistent.
-            if archived.is_empty()
-                && conn
-                    .archive(&msg.external_id, &conv.external_id)
-                    .await
-                    .is_err()
-            {
-                remote_synced = false;
-            }
-        } else {
-            remote_synced = false;
-        }
+            None => false,
+        };
 
-        for archived_msg in &archived {
-            cleanup_cached_files(archived_msg);
+        if archived.is_empty() {
+            // Already archived: no row to clean up, but the cached files of the
+            // resolved message may still be around from an earlier run.
+            cleanup_cached_files(&msg);
+        } else {
+            for archived_msg in &archived {
+                cleanup_cached_files(archived_msg);
+            }
         }
 
         results.push(json!({
             "message_id": message_id,
             "is_archived": true,
-            "remote_synced": remote_synced,
+            // Rows newly archived by this call: the message plus its context
+            // siblings. Zero means it was already archived.
             "archived_count": archived.len(),
+            "remote_synced": remote_synced,
         }));
     }
 
     Ok(json!({ "data": results, "error": null }))
+}
+
+/// Push an archive to the remote service for every row that was just archived,
+/// grouped by conversation so connectors with a bulk endpoint issue one call per
+/// conversation instead of one per message. Returns whether every call succeeded.
+async fn sync_remote_archive(
+    db: &Database,
+    conn: &dyn Connector,
+    msg: &void_core::models::Message,
+    conv_external_id: &str,
+    archived: &[void_core::models::Message],
+) -> anyhow::Result<bool> {
+    if archived.is_empty() {
+        // Nothing newly archived: still push the resolved message so remote
+        // state converges even when the local row was already archived.
+        return Ok(conn
+            .archive(&msg.external_id, conv_external_id)
+            .await
+            .is_ok());
+    }
+
+    let mut conv_ext_cache: HashMap<String, String> = HashMap::new();
+    let mut by_conversation: HashMap<String, Vec<&str>> = HashMap::new();
+    for archived_msg in archived {
+        // Prefer each sibling's own conversation external id when available.
+        let peer_conv_ext = match conv_ext_cache.get(&archived_msg.conversation_id) {
+            Some(ext) => ext.clone(),
+            None => {
+                let ext = db
+                    .get_conversation(&archived_msg.conversation_id)?
+                    .map(|c| c.external_id)
+                    .unwrap_or_else(|| conv_external_id.to_string());
+                conv_ext_cache.insert(archived_msg.conversation_id.clone(), ext.clone());
+                ext
+            }
+        };
+        by_conversation
+            .entry(peer_conv_ext)
+            .or_default()
+            .push(archived_msg.external_id.as_str());
+    }
+
+    let mut synced = true;
+    for (peer_conv_ext, external_ids) in &by_conversation {
+        if let Err(e) = conn.archive_batch(external_ids, peer_conv_ext).await {
+            warn!(conversation = %peer_conv_ext, error = %e, "remote archive failed");
+            synced = false;
+        }
+    }
+    Ok(synced)
 }
 
 async fn run_slack_scheduled_send(
@@ -615,6 +650,161 @@ mod tests {
     use super::*;
     use void_core::config::VoidConfig;
     use void_core::models::{Conversation, ConversationKind};
+
+    use std::sync::Mutex;
+    use void_core::db::Database as CoreDatabase;
+    use void_core::models::{ConnectorType, HealthStatus, Message};
+    use void_core::test_fixtures::make_message;
+
+    /// Records the archive calls it receives so grouping can be asserted.
+    struct RecordingConnector {
+        batches: Mutex<Vec<(String, Vec<String>)>>,
+        singles: Mutex<Vec<(String, String)>>,
+    }
+
+    impl RecordingConnector {
+        fn new() -> Self {
+            Self {
+                batches: Mutex::new(Vec::new()),
+                singles: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Connector for RecordingConnector {
+        fn connector_type(&self) -> ConnectorType {
+            ConnectorType::from_static("slack")
+        }
+        fn connection_id(&self) -> &str {
+            "test-slack"
+        }
+        async fn authenticate(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn start_sync(
+            &self,
+            _db: std::sync::Arc<CoreDatabase>,
+            _cancel: tokio_util::sync::CancellationToken,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn health_check(&self) -> anyhow::Result<HealthStatus> {
+            anyhow::bail!("not used")
+        }
+        async fn send_message(
+            &self,
+            _to: &str,
+            _content: MessageContent,
+        ) -> anyhow::Result<String> {
+            anyhow::bail!("not used")
+        }
+        async fn reply(
+            &self,
+            _message_id: &str,
+            _content: MessageContent,
+            _in_thread: bool,
+        ) -> anyhow::Result<String> {
+            anyhow::bail!("not used")
+        }
+        async fn archive(
+            &self,
+            external_id: &str,
+            conversation_external_id: &str,
+        ) -> anyhow::Result<()> {
+            self.singles.lock().unwrap().push((
+                conversation_external_id.to_string(),
+                external_id.to_string(),
+            ));
+            Ok(())
+        }
+        async fn archive_batch(
+            &self,
+            external_ids: &[&str],
+            conversation_external_id: &str,
+        ) -> anyhow::Result<()> {
+            self.batches.lock().unwrap().push((
+                conversation_external_id.to_string(),
+                external_ids.iter().map(|s| s.to_string()).collect(),
+            ));
+            Ok(())
+        }
+    }
+
+    fn seed_conversation(db: &Database, id: &str, external_id: &str) {
+        db.upsert_conversation(&Conversation {
+            id: id.into(),
+            connection_id: "test-slack".into(),
+            connector: "slack".into(),
+            external_id: external_id.into(),
+            name: None,
+            kind: ConversationKind::Channel,
+            last_message_at: None,
+            unread_count: 0,
+            is_muted: false,
+            metadata: None,
+        })
+        .expect("seed conversation");
+    }
+
+    fn stub_message(id: &str, conversation_id: &str, external_id: &str) -> Message {
+        let mut msg = make_message(id, conversation_id, "test-slack", "body", 0);
+        msg.external_id = external_id.into();
+        msg
+    }
+
+    #[tokio::test]
+    async fn sync_remote_archive_groups_siblings_by_conversation() {
+        let db = test_db();
+        seed_conversation(&db, "c1", "C111");
+        seed_conversation(&db, "c2", "C222");
+        let conn = RecordingConnector::new();
+
+        let archived = vec![
+            stub_message("m1", "c1", "ts-1"),
+            stub_message("m2", "c1", "ts-2"),
+            stub_message("m3", "c2", "ts-3"),
+        ];
+
+        let synced = sync_remote_archive(&db, &conn, &archived[0], "C111", &archived)
+            .await
+            .expect("sync");
+
+        assert!(synced);
+        assert!(conn.singles.lock().unwrap().is_empty());
+        let mut batches = conn.batches.lock().unwrap().clone();
+        batches.sort();
+        assert_eq!(
+            batches,
+            vec![
+                (
+                    "C111".to_string(),
+                    vec!["ts-1".to_string(), "ts-2".to_string()]
+                ),
+                ("C222".to_string(), vec!["ts-3".to_string()]),
+            ],
+            "one batch call per conversation"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_remote_archive_falls_back_to_single_when_nothing_new() {
+        let db = test_db();
+        seed_conversation(&db, "c1", "C111");
+        let conn = RecordingConnector::new();
+        let msg = stub_message("m1", "c1", "ts-1");
+
+        let synced = sync_remote_archive(&db, &conn, &msg, "C111", &[])
+            .await
+            .expect("sync");
+
+        assert!(synced);
+        assert!(conn.batches.lock().unwrap().is_empty());
+        assert_eq!(
+            *conn.singles.lock().unwrap(),
+            vec![("C111".to_string(), "ts-1".to_string())]
+        );
+    }
 
     fn test_db() -> Database {
         Database::open(std::path::Path::new(":memory:")).expect("in-memory db")

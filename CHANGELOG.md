@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Archive** — `void archive <id>` now dismisses the whole context group behind the item (Slack thread, Slack 1-hour channel group, Gmail thread) instead of a single row. The inbox shows one row per context, so archiving only the visible id let an older sibling resurface as the next representative. The response gains `archived_count` (rows newly archived by the call, `0` when it was already archived), and Gmail pushes the group in one `batchModify` request.
+
 ### Added
 
 - **Remote** — `void remote status` reports `local_version` and `remote_version` so version skew between the client and the server binary is visible at a glance.

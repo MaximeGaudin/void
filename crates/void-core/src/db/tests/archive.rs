@@ -181,15 +181,30 @@ fn mark_archived_with_context_archives_all_siblings() {
 
     let ctx = "slack-group-C123-1000";
     db.upsert_message(&make_message_with_context(
-        "m1", "c1", "test-slack", "old", 1_000, Some(ctx),
+        "m1",
+        "c1",
+        "test-slack",
+        "old",
+        1_000,
+        Some(ctx),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m2", "c1", "test-slack", "mid", 2_000, Some(ctx),
+        "m2",
+        "c1",
+        "test-slack",
+        "mid",
+        2_000,
+        Some(ctx),
     ))
     .unwrap();
     db.upsert_message(&make_message_with_context(
-        "m3", "c1", "test-slack", "new", 3_000, Some(ctx),
+        "m3",
+        "c1",
+        "test-slack",
+        "new",
+        3_000,
+        Some(ctx),
     ))
     .unwrap();
     // Different context must stay unarchived.
@@ -221,7 +236,8 @@ fn mark_archived_with_context_archives_all_siblings() {
         .recent_messages_paginated(None, Some("slack"), 50, 0, false, true, true)
         .unwrap();
     assert!(
-        rows.iter().all(|m| m.id != "m1" && m.id != "m2" && m.id != "m3"),
+        rows.iter()
+            .all(|m| m.id != "m1" && m.id != "m2" && m.id != "m3"),
         "archived context group must leave inbox"
     );
 }
@@ -239,4 +255,111 @@ fn mark_archived_with_context_single_message_without_context() {
     assert_eq!(archived.len(), 1);
     assert_eq!(archived[0].id, "solo");
     assert!(db.get_message("solo").unwrap().unwrap().is_archived);
+}
+
+#[test]
+fn mark_archived_with_context_is_noop_when_group_already_archived() {
+    let db = test_db();
+    db.upsert_conversation(&make_conversation("c1", "test-slack", "C123"))
+        .unwrap();
+
+    let ctx = "slack-group-C123-1000";
+    db.upsert_message(&make_message_with_context(
+        "m1",
+        "c1",
+        "test-slack",
+        "old",
+        1_000,
+        Some(ctx),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2",
+        "c1",
+        "test-slack",
+        "new",
+        2_000,
+        Some(ctx),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        db.mark_message_archived_with_context("m2").unwrap().len(),
+        2
+    );
+    // Second call has nothing left to archive.
+    assert!(db
+        .mark_message_archived_with_context("m2")
+        .unwrap()
+        .is_empty());
+    assert!(db.get_message("m1").unwrap().unwrap().is_archived);
+    assert!(db.get_message("m2").unwrap().unwrap().is_archived);
+}
+
+#[test]
+fn mark_archived_with_context_is_noop_when_single_message_already_archived() {
+    let db = test_db();
+    db.upsert_conversation(&make_conversation("c1", "test-slack", "C123"))
+        .unwrap();
+    db.upsert_message(&make_message("solo", "c1", "test-slack", "hi", 1_000))
+        .unwrap();
+
+    assert_eq!(
+        db.mark_message_archived_with_context("solo").unwrap().len(),
+        1
+    );
+    assert!(db
+        .mark_message_archived_with_context("solo")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn mark_archived_with_context_spans_conversations() {
+    let db = test_db();
+    db.upsert_conversation(&make_conversation("c1", "test-slack", "C123"))
+        .unwrap();
+    db.upsert_conversation(&make_conversation("c2", "test-slack", "C456"))
+        .unwrap();
+
+    let ctx = "slack-thread-1000";
+    db.upsert_message(&make_message_with_context(
+        "m1",
+        "c1",
+        "test-slack",
+        "here",
+        1_000,
+        Some(ctx),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2",
+        "c2",
+        "test-slack",
+        "there",
+        2_000,
+        Some(ctx),
+    ))
+    .unwrap();
+
+    let archived = db.mark_message_archived_with_context("m1").unwrap();
+    let mut convs: Vec<_> = archived
+        .iter()
+        .map(|m| m.conversation_id.as_str())
+        .collect();
+    convs.sort();
+    assert_eq!(
+        convs,
+        ["c1", "c2"],
+        "siblings keep their own conversation id"
+    );
+}
+
+#[test]
+fn mark_archived_with_context_unknown_id_is_noop() {
+    let db = test_db();
+    assert!(db
+        .mark_message_archived_with_context("nope")
+        .unwrap()
+        .is_empty());
 }

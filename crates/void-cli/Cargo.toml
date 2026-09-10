@@ -43,6 +43,7 @@ rmcp = { workspace = true }
 schemars = { workspace = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
 tempfile = { workspace = true }
