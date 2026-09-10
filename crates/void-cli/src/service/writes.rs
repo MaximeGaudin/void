@@ -471,21 +471,47 @@ async fn archive_by_ids(
             }
         }
 
-        let remote_synced = if let Some(conn) = connectors.get(&connector_key) {
-            conn.archive(&msg.external_id, &conv.external_id)
-                .await
-                .is_ok()
-        } else {
-            false
-        };
+        let archived = db.mark_message_archived_with_context(&msg.id)?;
 
-        db.mark_message_archived(message_id)?;
-        cleanup_cached_files(&msg);
+        let mut remote_synced = connectors.contains_key(&connector_key);
+        if let Some(conn) = connectors.get(&connector_key) {
+            for archived_msg in &archived {
+                // Prefer each sibling's conversation external id when available.
+                let peer_conv_ext = db
+                    .get_conversation(&archived_msg.conversation_id)?
+                    .map(|c| c.external_id)
+                    .unwrap_or_else(|| conv.external_id.clone());
+                if conn
+                    .archive(&archived_msg.external_id, &peer_conv_ext)
+                    .await
+                    .is_err()
+                {
+                    remote_synced = false;
+                }
+            }
+            // If nothing was newly archived (already archived), still try the
+            // resolved message so remote state stays consistent.
+            if archived.is_empty()
+                && conn
+                    .archive(&msg.external_id, &conv.external_id)
+                    .await
+                    .is_err()
+            {
+                remote_synced = false;
+            }
+        } else {
+            remote_synced = false;
+        }
+
+        for archived_msg in &archived {
+            cleanup_cached_files(archived_msg);
+        }
 
         results.push(json!({
             "message_id": message_id,
             "is_archived": true,
             "remote_synced": remote_synced,
+            "archived_count": archived.len(),
         }));
     }
 

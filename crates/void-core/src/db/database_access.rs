@@ -224,6 +224,11 @@ impl Database {
         messages::mark_archived(&*self.conn()?, id)
     }
 
+    /// Archive a message and all siblings sharing its `context_id` (inbox thread/group).
+    pub fn mark_message_archived_with_context(&self, id: &str) -> Result<Vec<Message>, DbError> {
+        messages::mark_archived_with_context(&*self.conn()?, id)
+    }
+
     pub fn update_message_metadata(
         &self,
         id: &str,

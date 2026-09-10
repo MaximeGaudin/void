@@ -23,7 +23,7 @@ const DEDUP_CONTEXT_CLAUSE_UNARCHIVED: &str =
 pub(super) const DEDUP_CONTEXT_CLAUSE_ALIASED: &str =
     " AND (m.context_id IS NULL OR m.id = (SELECT m2.id FROM messages m2 WHERE m2.context_id = m.context_id ORDER BY m2.timestamp DESC, m2.id DESC LIMIT 1))";
 
-pub use archive::{bulk_archive_before, mark_archived, update_metadata};
+pub use archive::{bulk_archive_before, mark_archived, mark_archived_with_context, update_metadata};
 pub use inbox::{
     backfill_avatar_urls, enrich_with_context, messages_pending_file_download, reconcile_inbox,
     senders_missing_avatar,

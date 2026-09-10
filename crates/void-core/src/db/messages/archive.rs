@@ -61,6 +61,70 @@ pub fn mark_archived(conn: &Connection, id: &str) -> Result<bool, DbError> {
     Ok(updated > 0)
 }
 
+/// Archive a message and every sibling sharing its `context_id` (Slack thread /
+/// time-window group, Gmail thread, …). Inbox dedup shows one row per context, so
+/// archiving only the visible id leaves older siblings to reappear as the next
+/// representative (GitHub issue #67).
+///
+/// Messages with no `context_id` are archived alone. Returns the rows that were
+/// newly marked archived (for cache cleanup).
+pub fn mark_archived_with_context(conn: &Connection, id: &str) -> Result<Vec<Message>, DbError> {
+    let Some(msg) = super::read::get(conn, id)? else {
+        return Ok(Vec::new());
+    };
+
+    let (sql, params_owned): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+        if let Some(ref ctx) = msg.context_id {
+            (
+                "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
+                 FROM messages WHERE context_id = ?1 AND is_archived = 0"
+                    .into(),
+                vec![Box::new(ctx.clone())],
+            )
+        } else if msg.is_archived {
+            return Ok(Vec::new());
+        } else {
+            (
+                "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
+                 FROM messages WHERE id = ?1 AND is_archived = 0"
+                    .into(),
+                vec![Box::new(id.to_string())],
+            )
+        };
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        params_owned.iter().map(|p| p.as_ref()).collect();
+    let to_archive: Vec<Message> = stmt
+        .query_map(params_ref.as_slice(), row::row_to_message)?
+        .collect::<Result<_, _>>()?;
+
+    if to_archive.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    if let Some(ref ctx) = msg.context_id {
+        conn.execute(
+            "UPDATE messages SET is_archived = 1 WHERE context_id = ?1 AND is_archived = 0",
+            params![ctx],
+        )?;
+        debug!(
+            message_id = %id,
+            context_id = %ctx,
+            count = to_archive.len(),
+            "archived message context group"
+        );
+    } else {
+        conn.execute(
+            "UPDATE messages SET is_archived = 1 WHERE id = ?1",
+            params![id],
+        )?;
+        debug!(message_id = %id, "archived single message (no context)");
+    }
+
+    Ok(to_archive)
+}
+
 pub fn update_metadata(
     conn: &Connection,
     id: &str,

@@ -172,3 +172,71 @@ fn upsert_preserves_user_archived_flag() {
     );
     assert_eq!(loaded.body.as_deref(), Some("hello edited"));
 }
+
+#[test]
+fn mark_archived_with_context_archives_all_siblings() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    let ctx = "slack-group-C123-1000";
+    db.upsert_message(&make_message_with_context(
+        "m1", "c1", "test-slack", "old", 1_000, Some(ctx),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m2", "c1", "test-slack", "mid", 2_000, Some(ctx),
+    ))
+    .unwrap();
+    db.upsert_message(&make_message_with_context(
+        "m3", "c1", "test-slack", "new", 3_000, Some(ctx),
+    ))
+    .unwrap();
+    // Different context must stay unarchived.
+    db.upsert_message(&make_message_with_context(
+        "m4",
+        "c1",
+        "test-slack",
+        "other",
+        4_000,
+        Some("slack-group-other"),
+    ))
+    .unwrap();
+
+    let archived = db.mark_message_archived_with_context("m3").unwrap();
+    let mut ids: Vec<_> = archived.iter().map(|m| m.id.as_str()).collect();
+    ids.sort();
+    assert_eq!(ids, ["m1", "m2", "m3"]);
+
+    assert!(db.get_message("m1").unwrap().unwrap().is_archived);
+    assert!(db.get_message("m2").unwrap().unwrap().is_archived);
+    assert!(db.get_message("m3").unwrap().unwrap().is_archived);
+    assert!(
+        !db.get_message("m4").unwrap().unwrap().is_archived,
+        "other context untouched"
+    );
+
+    // Inbox must not promote a sibling from the archived group.
+    let (rows, _) = db
+        .recent_messages_paginated(None, Some("slack"), 50, 0, false, true, true)
+        .unwrap();
+    assert!(
+        rows.iter().all(|m| m.id != "m1" && m.id != "m2" && m.id != "m3"),
+        "archived context group must leave inbox"
+    );
+}
+
+#[test]
+fn mark_archived_with_context_single_message_without_context() {
+    let db = test_db();
+    let conv = make_conversation("c1", "test-slack", "C123");
+    db.upsert_conversation(&conv).unwrap();
+
+    db.upsert_message(&make_message("solo", "c1", "test-slack", "hi", 1_000))
+        .unwrap();
+
+    let archived = db.mark_message_archived_with_context("solo").unwrap();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].id, "solo");
+    assert!(db.get_message("solo").unwrap().unwrap().is_archived);
+}
