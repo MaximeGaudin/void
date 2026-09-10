@@ -315,6 +315,8 @@ impl ResolvedContext {
             "ssh_reachable": ssh_check,
             "remote_daemon_running": daemon_running,
             "proxy_writes": remote.proxy_writes,
+            "local_version": env!("CARGO_PKG_VERSION"),
+            "remote_version": remote_void_version(&remote.ssh),
         }))
     }
 
@@ -354,6 +356,8 @@ impl ResolvedContext {
                 targets
             }
         };
+
+        warn_remote_version_skew(targets.void_version.as_deref(), env!("CARGO_PKG_VERSION"));
 
         let store_path = remote.ssh.resolve_path_on_host(&remote.remote_store_path)?;
 
@@ -472,6 +476,41 @@ fn remote_daemon_running(ssh: &SshTarget, remote_store_path: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn remote_void_version(ssh: &SshTarget) -> Option<String> {
+    let output = ssh
+        .run_remote(&format!("{REMOTE_PATH_PREFIX}; void --version 2>/dev/null | head -n1"))
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Strip optional `void ` prefix from `--version` output.
+pub(crate) fn normalize_void_version(raw: &str) -> &str {
+    raw.trim()
+        .strip_prefix("void ")
+        .unwrap_or(raw)
+        .trim()
+}
+
+fn warn_remote_version_skew(remote_version: Option<&str>, local_version: &str) {
+    let Some(remote_raw) = remote_version else {
+        return;
+    };
+    let remote = normalize_void_version(remote_raw);
+    let local = normalize_void_version(local_version);
+    if remote != local {
+        eprintln!(
+            "warning: remote void is {remote}, local is {local}. \
+             Update the server binary or proxied flags may fail with confusing clap errors."
+        );
+    }
+}
+
 fn shell_escape(arg: &str) -> String {
     if arg.is_empty() {
         return "''".to_string();
@@ -514,5 +553,12 @@ mod tests {
         assert_eq!(shell_escape(path), path);
         let bin = "/Users/me/bin/void";
         assert_eq!(shell_escape(bin), bin);
+    }
+
+    #[test]
+    fn normalize_void_version_strips_prefix() {
+        assert_eq!(normalize_void_version("void 0.11.1"), "0.11.1");
+        assert_eq!(normalize_void_version("0.11.1"), "0.11.1");
+        assert_eq!(normalize_void_version("  void 0.10.3  "), "0.10.3");
     }
 }

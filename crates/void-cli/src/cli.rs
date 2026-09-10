@@ -548,6 +548,40 @@ mod tests {
         assert!(matches!(cli.command, Some(Command::Forward(_))));
     }
 
+    #[test]
+    fn parse_gmail_draft_create_accepts_cc_with_connection() {
+        // Regression for #66: --cc must not be rejected as a typo for --connection.
+        let cli = parse(&[
+            "void",
+            "gmail",
+            "draft",
+            "create",
+            "--to",
+            "a@b.com",
+            "--cc",
+            "c@d.com",
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--connection",
+            "me@example.com",
+        ]);
+        match cli.command {
+            Some(Command::Gmail(ref g)) => match &g.command {
+                commands::gmail::GmailCommand::Draft(d) => match &d.action {
+                    commands::gmail::DraftAction::Create(a) => {
+                        assert_eq!(a.cc.as_deref(), Some("c@d.com"));
+                        assert_eq!(a.connection.as_deref(), Some("me@example.com"));
+                    }
+                    other => panic!("expected Create, got {other:?}"),
+                },
+                other => panic!("expected Draft, got {other:?}"),
+            },
+            other => panic!("expected Gmail, got {other:?}"),
+        }
+    }
+
     // --- Unsupported connector forward rejection ---
 
     #[test]
