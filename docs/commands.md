@@ -59,7 +59,7 @@ Most read commands accept:
 | `void send --via <connector> --to <recipient> --message <text>` | Send a new message. Use `--conversation <id>` instead of `--to` to target an existing void conversation (e.g. WhatsApp notes-to-self / "Message yourself"). `--connection <id>` to pick an account, `--subject` (email), `--cc` / `--bcc` (Gmail only, comma-separated), `--file <path>` to attach, `--at <time>` to schedule delivery (Slack only), `--signature` / `--signature-from <email>` to append a Gmail send-as signature (Gmail only; not idempotent) |
 | `void reply <id> --message <text>` | Reply to a message. `--in-thread` for threaded replies, `--file` to attach, `--at` to schedule (Slack only), `--cc` / `--bcc` / `--signature` / `--signature-from <email>` (Gmail only) |
 | `void forward <id> --to <recipient>` | Forward a message. `--comment <text>` to add a note, `--cc` / `--bcc` / `--signature` / `--signature-from <email>` (Gmail only; signature sits between comment and quote) |
-| `void archive <ids...>` | Archive one or more messages (mark as processed). `--before <date>` and `--connector <type>` for bulk archiving |
+| `void archive <ids...>` | Archive one or more messages (mark as processed). Archiving an id dismisses its whole context group — Slack thread, Slack 1-hour channel group, Gmail thread — and reports `archived_count`. `--before <date>` and `--connector <type>` for bulk archiving |
 | `void mute <targets...>` | Mute conversations/channels (hidden from inbox). `--unmute` to reverse, `--list` to show muted, `--connection`/`--connector` to scope |
 
 ## Calendar

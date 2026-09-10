@@ -217,6 +217,25 @@ impl Connector for GmailConnector {
         Ok(())
     }
 
+    async fn archive_batch(
+        &self,
+        external_ids: &[&str],
+        _conversation_external_id: &str,
+    ) -> anyhow::Result<()> {
+        if external_ids.is_empty() {
+            return Ok(());
+        }
+        info!(
+            count = external_ids.len(),
+            "archiving Gmail messages (batch)"
+        );
+        // batchModify caps each request at 1000 ids.
+        for chunk in external_ids.chunks(1000) {
+            self.batch_modify(chunk, &[], &["INBOX"]).await?;
+        }
+        Ok(())
+    }
+
     async fn reply(
         &self,
         message_id: &str,
