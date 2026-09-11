@@ -29,3 +29,6 @@ chrono = { workspace = true }
 
 [dev-dependencies]
 uuid = { workspace = true }
+# Encodes protobuf fixtures for the history-sync tests. Must track the prost
+# version wa-rs-proto is built against.
+prost = "0.14"

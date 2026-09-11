@@ -799,3 +799,109 @@ fn is_system_message_pin_in_chat() {
     };
     assert!(sync::is_system_message(&msg));
 }
+
+// --- history sync via Event::JoinedGroup -------------------------------------
+//
+// Regression guard for PR #74 review: `LazyConversation::conversation()` clears
+// `conv.messages` after decoding as a memory optimisation, so storing from it
+// persists conversation metadata and zero messages. The connector must decode
+// with `get()`, which keeps the messages. These tests pin that difference so a
+// future edit back to `conversation()` fails loudly instead of silently
+// dropping the backfill.
+
+fn history_conversation_bytes(chat_jid: &str, texts: &[&str]) -> Vec<u8> {
+    use prost::Message as _;
+    use wa_rs_proto::whatsapp::{
+        Conversation as WaConversation, HistorySyncMsg, MessageKey, WebMessageInfo,
+    };
+
+    let messages = texts
+        .iter()
+        .enumerate()
+        .map(|(i, text)| HistorySyncMsg {
+            message: Some(WebMessageInfo {
+                key: MessageKey {
+                    remote_jid: Some(chat_jid.to_string()),
+                    from_me: Some(false),
+                    id: Some(format!("MSG{i}")),
+                    ..Default::default()
+                },
+                message: Some(WaMessage {
+                    conversation: Some((*text).to_string()),
+                    ..Default::default()
+                }),
+                message_timestamp: Some(1_700_000_000 + i as u64),
+                push_name: Some("Tester".into()),
+                ..Default::default()
+            }),
+            msg_order_id: Some(i as u64),
+        })
+        .collect();
+
+    let conv = WaConversation {
+        id: chat_jid.to_string(),
+        name: Some("History chat".into()),
+        messages,
+        ..Default::default()
+    };
+    conv.encode_to_vec()
+}
+
+#[test]
+fn lazy_conversation_conversation_strips_messages_but_get_keeps_them() {
+    use wa_rs::types::events::LazyConversation;
+
+    let bytes = history_conversation_bytes("33612345678@s.whatsapp.net", &["one", "two"]);
+
+    // get(): messages preserved. This is what the connector relies on.
+    let lazy = LazyConversation::new(bytes.clone());
+    let conv = lazy.get().expect("valid conversation");
+    assert_eq!(conv.messages.len(), 2);
+
+    // conversation(): same payload, messages cleared by the memory optimisation.
+    let lazy = LazyConversation::new(bytes);
+    assert!(lazy.conversation().messages.is_empty());
+}
+
+#[test]
+fn lazy_conversation_get_returns_none_on_garbage() {
+    use wa_rs::types::events::LazyConversation;
+
+    // Empty payload decodes to a default Conversation with an empty id.
+    // get() reports None instead of panicking like conversation() would.
+    assert!(LazyConversation::new(Vec::new()).get().is_none());
+}
+
+#[test]
+fn store_conversation_from_lazy_get_persists_messages() {
+    use wa_rs::types::events::LazyConversation;
+
+    let db = void_core::db::Database::open_in_memory().unwrap();
+    let bytes = history_conversation_bytes("33612345678@s.whatsapp.net", &["one", "two", "three"]);
+    let lazy = LazyConversation::new(bytes);
+    let own = OwnIdentity::default();
+
+    let stored = sync::store_conversation(&db, "test-conn", &own, lazy.get().unwrap()).unwrap();
+
+    assert_eq!(stored, 3);
+    let rows = db
+        .list_messages("wa_test-conn_33612345678@s.whatsapp.net", 10, None, None)
+        .unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].body.as_deref(), Some("one"));
+}
+
+#[test]
+fn store_conversation_from_lazy_conversation_stores_nothing() {
+    use wa_rs::types::events::LazyConversation;
+
+    // The bug this PR review caught: metadata lands, messages do not.
+    let db = void_core::db::Database::open_in_memory().unwrap();
+    let bytes = history_conversation_bytes("33698765432@s.whatsapp.net", &["one", "two"]);
+    let lazy = LazyConversation::new(bytes);
+    let own = OwnIdentity::default();
+
+    let stored = sync::store_conversation(&db, "test-conn", &own, lazy.conversation()).unwrap();
+
+    assert_eq!(stored, 0);
+}

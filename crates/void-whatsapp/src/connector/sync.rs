@@ -64,143 +64,141 @@ pub(super) fn store_conversation(
     conv: &WaConversation,
 ) -> anyhow::Result<u64> {
     let mut total_stored = 0u64;
-    {
-        let chat_jid = &conv.id;
-        if chat_jid.is_empty() {
-            return Ok(0);
+    let chat_jid = &conv.id;
+    if chat_jid.is_empty() {
+        return Ok(0);
+    }
+    let is_group = chat_jid.ends_with("@g.us");
+    let conv_id = format!("wa_{connection_id}_{chat_jid}");
+
+    let last_ts = conv
+        .messages
+        .iter()
+        .filter_map(|m| m.message.as_ref()?.message_timestamp)
+        .max()
+        .map(|t| t as i64);
+
+    let conv_name = conv.name.clone().unwrap_or_else(|| chat_jid.clone());
+    let is_self = own_identity.is_self_chat(chat_jid);
+    let conversation = Conversation {
+        id: conv_id.clone(),
+        connection_id: connection_id.to_string(),
+        connector: "whatsapp".into(),
+        external_id: chat_jid.clone(),
+        name: Some(if is_self {
+            SELF_CHAT_DISPLAY_NAME.to_string()
+        } else {
+            conv_name
+        }),
+        kind: if is_group {
+            ConversationKind::Group
+        } else if is_self {
+            ConversationKind::SelfChat
+        } else {
+            ConversationKind::Dm
+        },
+        last_message_at: last_ts,
+        unread_count: conv.unread_count.unwrap_or(0) as i64,
+        is_muted: false,
+        metadata: None,
+    };
+    db.upsert_conversation(&conversation)?;
+
+    let mut sorted_msgs: Vec<_> = conv
+        .messages
+        .iter()
+        .filter_map(|m| {
+            let wmi = m.message.as_ref()?;
+            let wa_msg = wmi.message.as_ref()?;
+            let ts = wmi.message_timestamp? as i64;
+            let key = &wmi.key;
+            let msg_id = key.id.as_deref().unwrap_or_default();
+            if msg_id.is_empty() {
+                return None;
+            }
+            Some((wmi, wa_msg, ts, msg_id))
+        })
+        .collect();
+    sorted_msgs.sort_by_key(|&(_, _, ts, _)| ts);
+
+    let mut prev_context_id: Option<String> = None;
+    let mut prev_ts: Option<i64> = None;
+
+    for (wmi, wa_msg, msg_ts, msg_id) in &sorted_msgs {
+        if is_system_message(wa_msg) {
+            continue;
         }
-        let is_group = chat_jid.ends_with("@g.us");
-        let conv_id = format!("wa_{connection_id}_{chat_jid}");
 
-        let last_ts = conv
-            .messages
-            .iter()
-            .filter_map(|m| m.message.as_ref()?.message_timestamp)
-            .max()
-            .map(|t| t as i64);
+        let body = extract_text(wa_msg);
+        let media_type = extract_media_type(wa_msg);
+        let media_metadata = extract_media_metadata(wa_msg);
 
-        let conv_name = conv.name.clone().unwrap_or_else(|| chat_jid.clone());
-        let is_self = own_identity.is_self_chat(chat_jid);
-        let conversation = Conversation {
-            id: conv_id.clone(),
-            connection_id: connection_id.to_string(),
-            connector: "whatsapp".into(),
-            external_id: chat_jid.clone(),
-            name: Some(if is_self {
-                SELF_CHAT_DISPLAY_NAME.to_string()
-            } else {
-                conv_name
-            }),
-            kind: if is_group {
-                ConversationKind::Group
-            } else if is_self {
-                ConversationKind::SelfChat
-            } else {
-                ConversationKind::Dm
-            },
-            last_message_at: last_ts,
-            unread_count: conv.unread_count.unwrap_or(0) as i64,
-            is_muted: false,
-            metadata: None,
+        if body.is_none() && media_type.is_none() {
+            continue;
+        }
+
+        let from_me = wmi.key.from_me.unwrap_or(false);
+        let sender_jid = if from_me {
+            own_identity
+                .lid_jid
+                .clone()
+                .or_else(|| own_identity.phone_jid.clone())
+                .or_else(|| {
+                    wmi.key
+                        .participant
+                        .clone()
+                        .or_else(|| wmi.participant.clone())
+                })
+                .unwrap_or_else(|| connection_id.to_string())
+        } else if is_group {
+            wmi.key
+                .participant
+                .clone()
+                .or_else(|| wmi.participant.clone())
+                .unwrap_or_else(|| chat_jid.clone())
+        } else {
+            chat_jid.clone()
         };
-        db.upsert_conversation(&conversation)?;
 
-        let mut sorted_msgs: Vec<_> = conv
-            .messages
-            .iter()
-            .filter_map(|m| {
-                let wmi = m.message.as_ref()?;
-                let wa_msg = wmi.message.as_ref()?;
-                let ts = wmi.message_timestamp? as i64;
-                let key = &wmi.key;
-                let msg_id = key.id.as_deref().unwrap_or_default();
-                if msg_id.is_empty() {
-                    return None;
-                }
-                Some((wmi, wa_msg, ts, msg_id))
-            })
-            .collect();
-        sorted_msgs.sort_by_key(|&(_, _, ts, _)| ts);
+        let sender_name = wmi.push_name.clone();
 
-        let mut prev_context_id: Option<String> = None;
-        let mut prev_ts: Option<i64> = None;
-
-        for (wmi, wa_msg, msg_ts, msg_id) in &sorted_msgs {
-            if is_system_message(wa_msg) {
-                continue;
-            }
-
-            let body = extract_text(wa_msg);
-            let media_type = extract_media_type(wa_msg);
-            let media_metadata = extract_media_metadata(wa_msg);
-
-            if body.is_none() && media_type.is_none() {
-                continue;
-            }
-
-            let from_me = wmi.key.from_me.unwrap_or(false);
-            let sender_jid = if from_me {
-                own_identity
-                    .lid_jid
-                    .clone()
-                    .or_else(|| own_identity.phone_jid.clone())
-                    .or_else(|| {
-                        wmi.key
-                            .participant
-                            .clone()
-                            .or_else(|| wmi.participant.clone())
-                    })
-                    .unwrap_or_else(|| connection_id.to_string())
-            } else if is_group {
-                wmi.key
-                    .participant
-                    .clone()
-                    .or_else(|| wmi.participant.clone())
-                    .unwrap_or_else(|| chat_jid.clone())
-            } else {
-                chat_jid.clone()
-            };
-
-            let sender_name = wmi.push_name.clone();
-
-            let context_id = if let (Some(prev_cid), Some(pt)) = (&prev_context_id, prev_ts) {
-                if (*msg_ts - pt).abs() <= 3600 {
-                    prev_cid.clone()
-                } else {
-                    format!("wa_{connection_id}-group-{chat_jid}-{msg_ts}")
-                }
+        let context_id = if let (Some(prev_cid), Some(pt)) = (&prev_context_id, prev_ts) {
+            if (*msg_ts - pt).abs() <= 3600 {
+                prev_cid.clone()
             } else {
                 format!("wa_{connection_id}-group-{chat_jid}-{msg_ts}")
-            };
+            }
+        } else {
+            format!("wa_{connection_id}-group-{chat_jid}-{msg_ts}")
+        };
 
-            prev_context_id = Some(context_id.clone());
-            prev_ts = Some(*msg_ts);
+        prev_context_id = Some(context_id.clone());
+        prev_ts = Some(*msg_ts);
 
-            let reply_to_id = extract_quoted_id(wa_msg);
+        let reply_to_id = extract_quoted_id(wa_msg);
 
-            let message = void_core::models::Message {
-                id: format!("wa_{connection_id}_{msg_id}"),
-                conversation_id: conv_id.clone(),
-                connection_id: connection_id.to_string(),
-                connector: "whatsapp".into(),
-                external_id: msg_id.to_string(),
-                sender: sender_jid,
-                sender_name,
-                sender_avatar_url: None,
-                body,
-                timestamp: *msg_ts,
-                synced_at: None,
-                is_archived: false,
-                is_saved: false,
-                reply_to_id,
-                media_type,
-                metadata: media_metadata,
-                context_id: Some(context_id),
-                context: None,
-            };
-            db.upsert_message(&message)?;
-            total_stored += 1;
-        }
+        let message = void_core::models::Message {
+            id: format!("wa_{connection_id}_{msg_id}"),
+            conversation_id: conv_id.clone(),
+            connection_id: connection_id.to_string(),
+            connector: "whatsapp".into(),
+            external_id: msg_id.to_string(),
+            sender: sender_jid,
+            sender_name,
+            sender_avatar_url: None,
+            body,
+            timestamp: *msg_ts,
+            synced_at: None,
+            is_archived: false,
+            is_saved: false,
+            reply_to_id,
+            media_type,
+            metadata: media_metadata,
+            context_id: Some(context_id),
+            context: None,
+        };
+        db.upsert_message(&message)?;
+        total_stored += 1;
     }
 
     Ok(total_stored)
