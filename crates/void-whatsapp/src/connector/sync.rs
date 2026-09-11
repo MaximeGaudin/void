@@ -4,7 +4,7 @@ use tracing::{debug, info};
 
 use wa_rs::proto_helpers::MessageExt;
 use wa_rs::types::message::MessageInfo;
-use wa_rs_proto::whatsapp::{HistorySync, Message as WaMessage};
+use wa_rs_proto::whatsapp::{Conversation as WaConversation, HistorySync, Message as WaMessage};
 
 use void_core::db::Database;
 use void_core::models::*;
@@ -34,9 +34,40 @@ pub(super) fn handle_history_sync(
     let mut total_stored = 0u64;
 
     for conv in &history.conversations {
+        total_stored += store_conversation(db, connection_id, own_identity, conv)?;
+    }
+
+    info!(
+        connection_id = %connection_id,
+        sync_type = history.sync_type,
+        stored = total_stored,
+        "history sync processed"
+    );
+    Ok(())
+}
+
+/// Stores one history conversation and its messages. Returns the number stored.
+///
+/// Split out of `handle_history_sync`: `wa-rs` 0.2 never dispatches
+/// `Event::HistorySync`. It streams the backfill one conversation at a time as
+/// `Event::JoinedGroup(LazyConversation)` (see `history_sync.rs`, "Receive and
+/// dispatch lazy conversations as they come in"). The `Event::HistorySync`
+/// variant still exists in the enum, so the arm matching it kept compiling
+/// while silently receiving nothing.
+///
+/// Measured on a fresh pairing before the fix: 775 conversations parsed by
+/// `wa-rs`, 4 rows stored, and not a single "history sync" line in the log.
+pub(super) fn store_conversation(
+    db: &Database,
+    connection_id: &str,
+    own_identity: &OwnIdentity,
+    conv: &WaConversation,
+) -> anyhow::Result<u64> {
+    let mut total_stored = 0u64;
+    {
         let chat_jid = &conv.id;
         if chat_jid.is_empty() {
-            continue;
+            return Ok(0);
         }
         let is_group = chat_jid.ends_with("@g.us");
         let conv_id = format!("wa_{connection_id}_{chat_jid}");
@@ -172,13 +203,7 @@ pub(super) fn handle_history_sync(
         }
     }
 
-    info!(
-        connection_id = %connection_id,
-        sync_type = history.sync_type,
-        stored = total_stored,
-        "history sync processed"
-    );
-    Ok(())
+    Ok(total_stored)
 }
 
 pub(super) struct StoredMessageInfo {
