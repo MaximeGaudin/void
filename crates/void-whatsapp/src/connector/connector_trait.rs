@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -15,7 +16,7 @@ use void_core::models::*;
 use crate::CONNECTOR_ID;
 
 use super::presence::schedule_unavailable;
-use super::sync::{handle_history_sync, handle_message, render_qr};
+use super::sync::{handle_history_sync, handle_message, render_qr, store_conversation};
 use super::WhatsAppConnector;
 
 #[async_trait]
@@ -93,6 +94,9 @@ impl Connector for WhatsAppConnector {
         let config_id = self.config_id.clone();
         let client_holder = Arc::clone(&self.client);
         let own_identity_holder = Arc::clone(&self.own_identity);
+        // Cumulative counter of imported history messages, shared across handler
+        // calls (one per conversation during a backfill).
+        let history_count = Arc::new(AtomicU64::new(0));
 
         let mut bot = Bot::builder()
             .with_backend(backend)
@@ -103,6 +107,7 @@ impl Connector for WhatsAppConnector {
                 let config_id = config_id.clone();
                 let client_holder = Arc::clone(&client_holder);
                 let own_identity_holder = Arc::clone(&own_identity_holder);
+                let history_count = Arc::clone(&history_count);
                 async move {
                     {
                         let mut holder = client_holder.lock().await;
@@ -179,6 +184,35 @@ impl Connector for WhatsAppConnector {
                                 from_full_sync = mute.from_full_sync,
                                 "WhatsApp mute update ignored (mute list is managed in config.toml)"
                             );
+                        }
+                        Event::JoinedGroup(lazy_conv) => {
+                            // wa-rs 0.2 delivers history sync here, one
+                            // conversation per event, not through
+                            // Event::HistorySync (never dispatched).
+                            //
+                            // Use get(), not conversation(): the latter clears
+                            // conv.messages after decoding to save memory, so it
+                            // would hand us metadata with an empty message list.
+                            // get() keeps the messages and returns None on a
+                            // malformed payload instead of panicking.
+                            let own_identity = own_identity_holder.lock().expect("mutex").clone();
+                            if let Some(conv) = lazy_conv.get() {
+                                match store_conversation(&db, &config_id, &own_identity, conv) {
+                                    Ok(0) => {}
+                                    Ok(n) => {
+                                        let hist =
+                                            history_count.fetch_add(n, Ordering::Relaxed) + n;
+                                        // Cumulative counter rather than one line per
+                                        // conversation: a backfill carries hundreds.
+                                        if hist % 250 < n {
+                                            eprintln!(
+                                                "[whatsapp:{config_id}] history sync: {hist} messages imported"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => warn!("Failed to store history conversation: {e}"),
+                                }
+                            }
                         }
                         Event::HistorySync(history) => {
                             let own_identity = own_identity_holder.lock().expect("mutex").clone();
