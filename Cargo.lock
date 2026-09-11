@@ -4725,6 +4725,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "void-circleback"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "void-core",
+ "wiremock",
+]
+
+[[package]]
 name = "void-cli"
 version = "0.12.0"
 dependencies = [
@@ -4753,6 +4771,7 @@ dependencies = [
  "urlencoding",
  "uuid",
  "void-calendar",
+ "void-circleback",
  "void-core",
  "void-github",
  "void-gmail",
