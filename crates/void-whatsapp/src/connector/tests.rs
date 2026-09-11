@@ -799,3 +799,154 @@ fn is_system_message_pin_in_chat() {
     };
     assert!(sync::is_system_message(&msg));
 }
+
+fn text_content(body: &str) -> MessageContent {
+    MessageContent::Text {
+        body: body.to_string(),
+        subject: None,
+        append_signature: false,
+        signature_from: None,
+        cc: None,
+        bcc: None,
+    }
+}
+
+/// Builds a real `wa_rs::Client` that has never connected, so `is_connected()`
+/// is false and its noise socket slot is empty. This is the dead-socket state
+/// the 2026-09-11 failure sent into.
+async fn disconnected_client() -> Arc<wa_rs::client::Client> {
+    use wa_rs::store::persistence_manager::PersistenceManager;
+    use wa_rs::store::traits::Backend;
+
+    let db = format!(
+        "file:void_wa_delivery_{}?mode=memory&cache=shared",
+        uuid::Uuid::new_v4().simple()
+    );
+    let backend = Arc::new(
+        wa_rs_sqlite_storage::SqliteStore::new(&db)
+            .await
+            .expect("in-memory wa-rs store"),
+    ) as Arc<dyn Backend>;
+    let pm = Arc::new(
+        PersistenceManager::new(backend)
+            .await
+            .expect("persistence manager"),
+    );
+    let (client, _sync_rx) = wa_rs::client::Client::new(
+        pm,
+        Arc::new(wa_rs_tokio_transport::TokioWebSocketTransportFactory::new()),
+        Arc::new(wa_rs_ureq_http::UreqHttpClient::new()),
+        None,
+    )
+    .await;
+    client
+}
+
+fn connector_with_client(client: Arc<wa_rs::client::Client>) -> WhatsAppConnector {
+    let connector = WhatsAppConnector::new("WA-french", "/nonexistent/session.db");
+    *connector.client.try_lock().expect("fresh mutex") = Some(client);
+    connector
+}
+
+#[tokio::test]
+async fn send_on_dead_socket_fails_instead_of_reporting_success() {
+    let connector = connector_with_client(disconnected_client().await);
+
+    let err = connector
+        .send_via_sync(
+            "33612345678",
+            text_content("this must never be reported as sent"),
+        )
+        .await
+        .expect_err("a send on a dead socket must not succeed");
+
+    let text = err.to_string();
+    assert!(
+        text.contains("WhatsApp send aborted"),
+        "unexpected error: {text}"
+    );
+    assert!(text.contains("WA-french"), "unexpected error: {text}");
+    assert!(text.contains("was not sent"), "unexpected error: {text}");
+    // The old behaviour returned Ok(message_id) here.
+    assert!(!text.contains("Message sent"), "unexpected error: {text}");
+}
+
+#[tokio::test]
+async fn reply_on_dead_socket_fails_instead_of_reporting_success() {
+    let connector = connector_with_client(disconnected_client().await);
+
+    let err = connector
+        .reply_via_sync(
+            "33612345678@s.whatsapp.net:3EB01E021E254E73BF2930",
+            text_content("this must never be reported as sent"),
+            false,
+        )
+        .await
+        .expect_err("a reply on a dead socket must not succeed");
+
+    assert!(
+        err.to_string().contains("WhatsApp send aborted"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn dead_socket_send_fails_fast() {
+    let connector = connector_with_client(disconnected_client().await);
+
+    let started = std::time::Instant::now();
+    let _ = connector
+        .send_via_sync("33612345678", text_content("fail fast"))
+        .await
+        .expect_err("must fail");
+    let elapsed = started.elapsed();
+
+    // The precheck retries a few times to absorb a transient `try_lock` miss,
+    // then gives up. It must not sit on the 12s barrier or the 30s write cap.
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "precheck took {elapsed:?}, expected a fast failure"
+    );
+}
+
+#[tokio::test]
+async fn barrier_on_dead_socket_reports_transport_failure() {
+    use super::delivery::confirm_accepted;
+
+    let client = disconnected_client().await;
+    let err = confirm_accepted(&client, "WA-french", "3EB01E021E254E73BF2930")
+        .await
+        .expect_err("the barrier cannot round-trip on a dead socket");
+
+    let text = err.to_string();
+    assert!(text.contains("NOT confirmed"), "unexpected error: {text}");
+    assert!(
+        text.contains("3EB01E021E254E73BF2930"),
+        "unexpected error: {text}"
+    );
+}
+
+/// The production failure of 2026-09-11, reproduced at the seam.
+///
+/// `wa-rs` handed back `Ok(id)` for a stanza the server never saw, and the CLI
+/// printed "Message sent (id: 3EB01E021E254E73BF2930)". Here the write is
+/// stubbed to succeed exactly like that, and the barrier that follows it cannot
+/// round-trip. The composed result must be an error.
+#[tokio::test]
+async fn a_send_that_returns_an_id_but_is_never_confirmed_is_a_failure() {
+    use super::delivery::{confirm_accepted, with_send_timeout};
+
+    let client = disconnected_client().await;
+
+    let msg_id = with_send_timeout("WA-french", async {
+        Ok::<_, anyhow::Error>("3EB01E021E254E73BF2930".to_string())
+    })
+    .await
+    .expect("the library reports success as soon as the bytes are written");
+    assert_eq!(msg_id, "3EB01E021E254E73BF2930");
+
+    let err = confirm_accepted(&client, "WA-french", &msg_id)
+        .await
+        .expect_err("an unconfirmed send must not be reported as sent");
+    assert!(err.to_string().contains("NOT confirmed"), "{err}");
+}

@@ -10,6 +10,7 @@ use wa_rs::client::Client;
 use wa_rs::send::SendOptions;
 use wa_rs_proto::whatsapp::ContextInfo;
 
+use super::delivery::{confirm_accepted, precheck, with_send_timeout};
 use super::media::{download_media_with_client, upload_and_build_media_message};
 use super::self_chat::send_self_chat_message;
 use super::send::{build_wa_message, parse_jid};
@@ -74,8 +75,17 @@ impl WhatsAppConnector {
         let client = self.require_sync_client().await?;
         let identity = self.own_identity.lock().expect("mutex").clone();
 
+        // Refuse to write into a dead socket. See `delivery` for why the
+        // library's own `Ok(id)` is not evidence that anything was sent.
+        precheck(&client, &self.config_id).await?;
+
         if identity.should_route_as_self_chat(to) {
-            let msg_id = send_self_chat_message(&client, &identity, content, None).await?;
+            let msg_id = with_send_timeout(
+                &self.config_id,
+                send_self_chat_message(&client, &identity, content, None),
+            )
+            .await?;
+            confirm_accepted(&client, &self.config_id, &msg_id).await?;
             super::presence::schedule_unavailable(Arc::clone(&client));
             return Ok(msg_id);
         }
@@ -102,9 +112,12 @@ impl WhatsAppConnector {
             _ => build_wa_message(&content, None)?,
         };
 
-        let msg_id = client
-            .send_message_with_options(jid, msg, SendOptions::default())
-            .await?;
+        let msg_id = with_send_timeout(
+            &self.config_id,
+            client.send_message_with_options(jid, msg, SendOptions::default()),
+        )
+        .await?;
+        confirm_accepted(&client, &self.config_id, &msg_id).await?;
         debug!(connection_id = %self.config_id, message_id = %msg_id, "WhatsApp message sent via sync");
         super::presence::schedule_unavailable(Arc::clone(&client));
         Ok(msg_id)
@@ -128,6 +141,8 @@ impl WhatsAppConnector {
         let client = self.require_sync_client().await?;
         let identity = self.own_identity.lock().expect("mutex").clone();
 
+        precheck(&client, &self.config_id).await?;
+
         if identity.should_route_as_self_chat(&chat_jid_str) {
             let context_info = if in_thread {
                 Some(ContextInfo {
@@ -143,7 +158,12 @@ impl WhatsAppConnector {
                 in_thread,
                 "sending WhatsApp notes-to-self reply via sync"
             );
-            let msg_id = send_self_chat_message(&client, &identity, content, context_info).await?;
+            let msg_id = with_send_timeout(
+                &self.config_id,
+                send_self_chat_message(&client, &identity, content, context_info),
+            )
+            .await?;
+            confirm_accepted(&client, &self.config_id, &msg_id).await?;
             super::presence::schedule_unavailable(Arc::clone(&client));
             return Ok(msg_id);
         }
@@ -178,9 +198,12 @@ impl WhatsAppConnector {
             _ => build_wa_message(&content, context_info)?,
         };
 
-        let msg_id = client
-            .send_message_with_options(jid, msg, SendOptions::default())
-            .await?;
+        let msg_id = with_send_timeout(
+            &self.config_id,
+            client.send_message_with_options(jid, msg, SendOptions::default()),
+        )
+        .await?;
+        confirm_accepted(&client, &self.config_id, &msg_id).await?;
         debug!(connection_id = %self.config_id, message_id = %msg_id, "WhatsApp reply sent via sync");
         super::presence::schedule_unavailable(Arc::clone(&client));
         Ok(msg_id)

@@ -1,6 +1,7 @@
 //! WhatsApp connector: struct, Connector impl, and orchestration.
 
 mod connector_trait;
+mod delivery;
 mod extract;
 mod media;
 mod ops;
