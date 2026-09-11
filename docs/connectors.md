@@ -192,6 +192,45 @@ Each repository appears as its own conversation. Mute noisy repos with `void mut
 ignore_conversations = ["facebook/react", "kubernetes"]
 ```
 
+## Circleback
+
+[Circleback](https://circleback.ai) records and summarizes meetings. The connector pulls them
+read-only: every meeting becomes a conversation holding its notes, its action items and, when
+enabled, the full transcript — so past meetings are searchable next to your messages.
+
+1. Open Circleback → Settings → API and create an API key
+2. Run `void setup`, select Circleback, and paste the key
+
+```toml
+[[connections]]
+id = "circleback"
+type = "circleback"
+api_key = "cb_..."
+backfill_days = 365
+include_transcript = true
+```
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `api_key` | — | required; the key from Circleback → Settings → API |
+| `backfill_days` | 365 | how far back the first sync reaches |
+| `include_transcript` | `true` | import each speaker turn as a message; set to `false` to keep only notes and action items |
+
+Each meeting yields one conversation named after the meeting, with:
+
+- a **notes** message: title, duration, attendees, meeting URL, then Circleback's summary
+- an **action items** message: a checklist with the assignee of each item
+- one message per **transcript** turn, attributed to the speaker, ordered by timestamp
+
+Meetings still being processed by Circleback are skipped and picked up on a later poll. A meeting
+already imported is re-imported only when Circleback changes it, and its transcript is fetched once.
+The connector is read-only: `void send` and `void reply` refuse a Circleback conversation.
+
+```bash
+void inbox --connector circleback
+void search "pricing" --connector circleback
+```
+
 ## Multiple accounts
 
 Add as many connections as you want, including several of the same type. Target a specific one anywhere with `--connection <id>`:

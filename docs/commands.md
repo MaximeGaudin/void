@@ -35,7 +35,7 @@ Most read commands accept:
 
 | Flag | Description |
 |------|-------------|
-| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `linkedin` (alias: `li`), `hackernews` (alias: `hn`), `googlenews` (alias: `gn`), `reddit` (alias: `rd`) |
+| `--connector <type>` | Filter by connector: `slack`, `gmail`, `whatsapp`, `telegram`, `calendar`, `linkedin` (alias: `li`), `hackernews` (alias: `hn`), `googlenews` (alias: `gn`), `reddit` (alias: `rd`), `circleback` (alias: `cb`) |
 | `--connection <id>` | Filter by connection ID (when you have several accounts of one type) |
 | `-n`, `--size <N>` | Limit number of results (default: 50) |
 | `--page <N>` | Page through results |

@@ -22,6 +22,7 @@ void-googlenews = { workspace = true }
 void-linkedin = { workspace = true }
 void-reddit = { workspace = true }
 void-github = { workspace = true }
+void-circleback = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
