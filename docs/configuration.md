@@ -34,6 +34,7 @@ reddit_poll_interval_secs = 3600
 linkedin_poll_interval_secs = 1800
 linkedin_backfill_days = 15
 github_poll_interval_secs = 120
+circleback_poll_interval_secs = 900
 
 [[connections]]
 id = "whatsapp"
@@ -113,6 +114,7 @@ Polling intervals for connectors that poll (push-based connectors — WhatsApp, 
 | `linkedin_poll_interval_secs` | 1800 |
 | `linkedin_backfill_days` | 15 |
 | `github_poll_interval_secs` | 120 |
+| `circleback_poll_interval_secs` | 900 |
 
 ## `[[connections]]`
 
@@ -121,7 +123,7 @@ Each connection is one account on one service. Every connection has:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | yes | Unique name you choose — used by `--connection <id>` |
-| `type` | yes | One of `whatsapp`, `telegram`, `slack`, `gmail`, `calendar`, `hackernews`, `googlenews`, `linkedin`, `reddit`, `github` |
+| `type` | yes | One of `whatsapp`, `telegram`, `slack`, `gmail`, `calendar`, `hackernews`, `googlenews`, `linkedin`, `reddit`, `github`, `circleback` |
 | `ignore_conversations` | no | List of conversations to auto-mute (see below) |
 
 Per-type fields:
@@ -138,6 +140,7 @@ Per-type fields:
 | `reddit` | `client_id`, `client_secret` | `refresh_token` (optional, enables commenting), `subreddits` (default: `[]`), `keywords` (default: `[]`), `min_score` (default: 0) |
 | `linkedin` | `api_key`, `dsn`, `account_id` (Unipile) | — |
 | `github` | `token`, `username` | — |
+| `circleback` | `api_key` | `backfill_days` (default: 365), `include_transcript` (default: `true`) |
 
 You can declare multiple connections of the same type (two Slack workspaces, several Gmail accounts, …) — give each a distinct `id`.
 

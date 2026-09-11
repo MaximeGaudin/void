@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Circleback** — new read-only connector for [Circleback](https://circleback.ai) meetings. Each meeting becomes a conversation carrying its notes, its action items and (optionally) every transcript turn, so meeting content is searchable alongside messages. Configure with `api_key`, `backfill_days` (default 365) and `include_transcript` (default true); `void setup` has a wizard for it.
 - **Remote** — `void remote status` reports `local_version` and `remote_version` so version skew between the client and the server binary is visible at a glance.
 
 ### Fixed

@@ -2,6 +2,7 @@
 
 pub(crate) mod auth;
 pub(crate) mod calendar;
+pub(crate) mod circleback;
 mod config_ui;
 pub(crate) mod connection_menu;
 pub(crate) mod github;
