@@ -74,12 +74,54 @@ fn jitter(capped: Duration) -> Duration {
     half + Duration::from_nanos(nanos % (spread.as_nanos() as u64).max(1))
 }
 
-/// Whether a response status is worth retrying.
+/// Whether the status alone is enough to retry.
 ///
-/// 429 is the quota case. 5xx covers Gmail's transient backend errors. Everything
-/// else (401, 403 scope errors, 404) is a real answer and must keep failing fast.
+/// 429 and 5xx are transient by definition. 401 and 404 are real answers and must
+/// keep failing fast. 403 is decided by the body instead: see
+/// [`needs_body_to_decide`].
 fn is_retryable(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// Whether the status is ambiguous, so the body has to be read to decide.
+///
+/// Gmail does not answer 429 for the per-user quota. It answers **403 with
+/// `reason: rateLimitExceeded`**, the same status it uses for a missing scope or a
+/// denied permission. One is transient, the others never clear. The discriminator
+/// is Google's `reason` field, parsed by
+/// [`crate::error::is_retryable_quota_body`].
+fn needs_body_to_decide(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::FORBIDDEN
+}
+
+/// Read the body once, and hand back a response the caller can still consume.
+///
+/// Deciding on a 403 costs the response: `bytes()` takes ownership. So the parts
+/// are put back together, URL and headers included, and the rebuilt response
+/// behaves like the original for `error_for_status`, `text` and `json`. Without
+/// this, a non-retryable 403 would reach the caller with an empty body and its
+/// error message would lose the Google reason that explains it.
+async fn buffer_body(
+    resp: reqwest::Response,
+) -> Result<(reqwest::Response, String), reqwest::Error> {
+    use reqwest::ResponseBuilderExt;
+
+    let url = resp.url().clone();
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = resp.bytes().await?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+
+    let mut builder = http::Response::builder().status(status).url(url);
+    if let Some(slot) = builder.headers_mut() {
+        *slot = headers;
+    }
+    // Infallible: the status and headers come from a response that already
+    // parsed, so there is nothing left for the builder to reject.
+    let rebuilt = builder
+        .body(bytes)
+        .expect("rebuilding a response from its own parts");
+    Ok((reqwest::Response::from(rebuilt), text))
 }
 
 /// Whether a transport error is worth retrying (timeouts and connection failures).
@@ -137,6 +179,24 @@ pub async fn send_with_retry(
                 );
                 tokio::time::sleep(wait).await;
             }
+            Ok(resp) if needs_body_to_decide(resp.status()) => {
+                let status = resp.status();
+                let wait = retry_after(&resp).unwrap_or_else(|| policy.delay_for(attempt));
+                let (resp, body) = buffer_body(resp).await?;
+                if !crate::error::is_retryable_quota_body(&body) {
+                    // A real 403: missing scope, denied permission, domain policy.
+                    // Retrying burns quota and hides the problem.
+                    return Ok(resp);
+                }
+                warn!(
+                    %status,
+                    attempt,
+                    max_attempts = policy.max_attempts,
+                    wait_ms = wait.as_millis() as u64,
+                    "gmail: quota exceeded (403 rateLimitExceeded), backing off"
+                );
+                tokio::time::sleep(wait).await;
+            }
             Ok(resp) => return Ok(resp),
             Err(e) if is_retryable_transport(&e) => {
                 let wait = policy.delay_for(attempt);
@@ -186,12 +246,52 @@ mod tests {
 
     #[test]
     fn retryable_excludes_real_answers() {
-        // A scope error or a missing thread must keep failing fast: retrying it
-        // burns quota for an answer that will not change.
+        // A missing thread must keep failing fast: retrying it burns quota for an
+        // answer that will not change.
         assert!(!is_retryable(reqwest::StatusCode::UNAUTHORIZED));
-        assert!(!is_retryable(reqwest::StatusCode::FORBIDDEN));
         assert!(!is_retryable(reqwest::StatusCode::NOT_FOUND));
         assert!(!is_retryable(reqwest::StatusCode::OK));
+    }
+
+    #[test]
+    fn forbidden_is_decided_by_the_body_not_the_status() {
+        // 403 is the status Gmail actually sends for the per-user quota, and also
+        // the one it sends for a missing scope. The status alone decides nothing.
+        assert!(!is_retryable(reqwest::StatusCode::FORBIDDEN));
+        assert!(needs_body_to_decide(reqwest::StatusCode::FORBIDDEN));
+        assert!(!needs_body_to_decide(reqwest::StatusCode::NOT_FOUND));
+        assert!(!needs_body_to_decide(
+            reqwest::StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(!needs_body_to_decide(reqwest::StatusCode::OK));
+    }
+
+    #[tokio::test]
+    async fn buffer_body_preserves_status_headers_and_body() {
+        use reqwest::ResponseBuilderExt;
+
+        let original = reqwest::Response::from(
+            http::Response::builder()
+                .status(403)
+                .header("X-Marker", "kept")
+                .url(url::Url::parse("https://example.test/threads/t1").unwrap())
+                .body("quota body")
+                .unwrap(),
+        );
+
+        let (rebuilt, text) = buffer_body(original).await.unwrap();
+        assert_eq!(text, "quota body");
+        assert_eq!(rebuilt.status(), reqwest::StatusCode::FORBIDDEN);
+        assert_eq!(
+            rebuilt
+                .headers()
+                .get("X-Marker")
+                .map(|v| v.to_str().unwrap()),
+            Some("kept")
+        );
+        assert_eq!(rebuilt.url().as_str(), "https://example.test/threads/t1");
+        // The caller still gets the body: reading it to decide must not consume it.
+        assert_eq!(rebuilt.text().await.unwrap(), "quota body");
     }
 
     #[test]

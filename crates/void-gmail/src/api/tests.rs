@@ -491,3 +491,120 @@ async fn get_message_does_not_retry_404() {
     }
     // Dropping the server verifies the `expect(1)`: a retry would make it 2.
 }
+
+// -- Retry on 403, decided by Google's `reason` --
+
+/// Gmail's real per-user quota answer. Measured on a shared account over a day:
+/// 16 of these, and zero 429. Retrying only 429 therefore missed every one.
+const QUOTA_403: &str = r#"{"error":{"code":403,"message":"User-rate limit exceeded.  Retry after 2026-09-11T20:00:00.000Z","errors":[{"message":"User-rate limit exceeded.","domain":"usageLimits","reason":"rateLimitExceeded"}],"status":"PERMISSION_DENIED"}}"#;
+
+/// A scope error carries the same 403 and must keep failing fast.
+const SCOPE_403: &str = r#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}"#;
+
+/// 403 + `rateLimitExceeded`, then 200: the caller never sees the quota error.
+/// This is the failure that motivated the change.
+#[tokio::test]
+async fn get_message_retries_403_rate_limit_then_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m3"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(QUOTA_403))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "m3",
+            "threadId": "t3",
+            "internalDate": "1741700000000"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let msg = api.get_message("m3").await.expect("retry should recover");
+    assert_eq!(msg.id.as_deref(), Some("m3"));
+}
+
+/// 403 + `ACCESS_TOKEN_SCOPE_INSUFFICIENT` must NOT be retried. `expect(1)` is the
+/// assertion: retrying a scope error burns quota and hides a real auth problem.
+#[tokio::test]
+async fn get_message_does_not_retry_403_scope_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/scoped"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(SCOPE_403))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api.get_message("scoped").await.expect_err("expected error");
+    match err {
+        GmailError::Http(e) => assert_eq!(e.status(), Some(reqwest::StatusCode::FORBIDDEN)),
+        other => panic!("expected Http error, got {other:?}"),
+    }
+    // Dropping the server verifies the `expect(1)`: a retry would make it 2.
+}
+
+/// A 403 that is not a quota error keeps its body, not just its status.
+///
+/// The retry path reads the body to decide, which consumes the response. If it
+/// were not rebuilt, this 403 would reach the caller empty and the Google reason
+/// that explains it would be lost.
+#[tokio::test]
+async fn resolve_signature_403_scope_error_keeps_its_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/settings/sendAs"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(SCOPE_403))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api.resolve_signature(None).await.expect_err("expected 403");
+    // Reaching InsufficientScope proves the body survived: the client maps it by
+    // parsing the reason out of the body, not from the status.
+    assert!(
+        matches!(err, GmailError::InsufficientScope),
+        "expected InsufficientScope, got {err:?}"
+    );
+}
+
+/// 403 + `rateLimitExceeded` on every attempt: the caller still gets 403, and the
+/// body still carries Google's reason.
+///
+/// Two assertions on one mock: the typed client path preserves the status, and the
+/// retry helper itself hands back a response whose body was not eaten by the read
+/// that decided to retry.
+#[tokio::test]
+async fn get_thread_403_rate_limit_preserves_status_and_body_after_retries() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/threads/t403"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(QUOTA_403))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = api.get_thread("t403").await.expect_err("expected error");
+    match err {
+        GmailError::Http(e) => assert_eq!(e.status(), Some(reqwest::StatusCode::FORBIDDEN)),
+        other => panic!("expected Http error, got {other:?}"),
+    }
+
+    // `error_for_status` keeps the status but drops the payload, so the body is
+    // asserted one level down, on what the retry loop actually returned.
+    let resp = retry::send_with_retry(
+        reqwest::Client::new().get(format!("{}/gmail/v1/users/me/threads/t403", server.uri())),
+        &RetryPolicy::fast(),
+    )
+    .await
+    .expect("retries exhausted, not a transport error");
+    assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
+    assert!(resp.text().await.unwrap().contains("rateLimitExceeded"));
+}
