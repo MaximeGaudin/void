@@ -3,6 +3,8 @@ use std::time::Duration;
 use crate::error::GmailError;
 use tracing::{debug, info};
 
+use super::retry::{RetryPolicy, SendRetrying};
+
 use super::types::{
     AttachmentResponse, DraftListResponse, GmailDraft, GmailMessage, GmailProfile, GmailThread,
     HistoryListResponse, HistoryRecord, LabelListResponse, MessageListResponse, SendAsAlias,
@@ -26,6 +28,7 @@ pub struct GmailApiClient {
     http: reqwest::Client,
     access_token: String,
     base_url: String,
+    retry: RetryPolicy,
 }
 
 impl GmailApiClient {
@@ -34,6 +37,7 @@ impl GmailApiClient {
             http: build_http_client(),
             access_token: access_token.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
+            retry: RetryPolicy::default(),
         }
     }
 
@@ -43,6 +47,7 @@ impl GmailApiClient {
             http: build_http_client(),
             access_token: access_token.to_string(),
             base_url: base_url.to_string(),
+            retry: RetryPolicy::fast(),
         }
     }
 
@@ -56,7 +61,7 @@ impl GmailApiClient {
             .http
             .get(format!("{}/gmail/v1/users/me/profile", self.base_url))
             .bearer_auth(&self.access_token)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .json()
             .await?;
@@ -94,7 +99,7 @@ impl GmailApiClient {
             .get(format!("{}/gmail/v1/users/me/messages", self.base_url))
             .bearer_auth(&self.access_token)
             .query(&params)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?;
         let resp: MessageListResponse = resp.json().await?;
@@ -117,7 +122,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .query(&[("format", "full")])
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?;
         let resp: GmailMessage = resp.json().await?;
@@ -148,7 +153,7 @@ impl GmailApiClient {
                 .get(format!("{}/gmail/v1/users/me/history", self.base_url))
                 .bearer_auth(&self.access_token)
                 .query(&params)
-                .send()
+                .send_retrying(&self.retry)
                 .await?;
             // Gmail returns 404 once the startHistoryId is too old (history is
             // only kept for a limited window). Surface that distinctly so the
@@ -210,7 +215,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .json()
             .await?;
@@ -226,7 +231,7 @@ impl GmailApiClient {
             .post(format!("{}/gmail/v1/users/me/messages/send", self.base_url))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .json()
             .await?;
@@ -244,7 +249,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .query(&[("format", "full")])
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -267,7 +272,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -282,7 +287,7 @@ impl GmailApiClient {
             .http
             .get(format!("{}/gmail/v1/users/me/labels", self.base_url))
             .bearer_auth(&self.access_token)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -316,7 +321,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -349,7 +354,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?;
         debug!("gmail: batch_modify ok");
@@ -363,7 +368,7 @@ impl GmailApiClient {
             .get(format!("{}/gmail/v1/users/me/drafts", self.base_url))
             .bearer_auth(&self.access_token)
             .query(&[("maxResults", max_results.to_string())])
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -383,7 +388,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .query(&[("format", "full")])
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -408,7 +413,7 @@ impl GmailApiClient {
             .post(format!("{}/gmail/v1/users/me/drafts", self.base_url))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -430,7 +435,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?
             .json()
@@ -447,7 +452,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send()
+            .send_retrying(&self.retry)
             .await?
             .error_for_status()?;
         debug!(draft_id, "gmail: delete_draft ok");
@@ -464,7 +469,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send()
+            .send_retrying(&self.retry)
             .await?;
         let resp: SendAsListResponse = Self::json_or_scope_error(resp).await?;
         let count = resp.send_as.as_ref().map(|s| s.len()).unwrap_or(0);
@@ -483,7 +488,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send()
+            .send_retrying(&self.retry)
             .await?;
         let resp: SendAsAlias = Self::json_or_scope_error(resp).await?;
         debug!(send_as_email, "gmail: get_send_as ok");
