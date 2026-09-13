@@ -19,8 +19,15 @@ pub struct RetryPolicy {
     pub max_attempts: u32,
     /// Delay before the second attempt; doubles after each failure.
     pub base_delay: Duration,
-    /// Upper bound on any single delay, before jitter.
+    /// Upper bound on exponential backoff, before jitter.
     pub max_delay: Duration,
+    /// Floor for a 403 quota wait when the body has no retry time.
+    ///
+    /// Gmail's per-user quota is a per-minute window. A 500 ms exponential
+    /// curve retries inside that window and burns more quota.
+    pub quota_min_delay: Duration,
+    /// Cap on any single sleep (header, body timestamp, or backoff).
+    pub max_wait: Duration,
 }
 
 impl Default for RetryPolicy {
@@ -29,6 +36,8 @@ impl Default for RetryPolicy {
             max_attempts: 4,
             base_delay: Duration::from_millis(500),
             max_delay: Duration::from_secs(16),
+            quota_min_delay: Duration::from_secs(15),
+            max_wait: Duration::from_secs(60),
         }
     }
 }
@@ -41,6 +50,8 @@ impl RetryPolicy {
             max_attempts: 4,
             base_delay: Duration::from_millis(1),
             max_delay: Duration::from_millis(4),
+            quota_min_delay: Duration::from_millis(1),
+            max_wait: Duration::from_millis(4),
         }
     }
 
@@ -144,6 +155,20 @@ fn retry_after(resp: &reqwest::Response) -> Option<Duration> {
     (delta > 0).then(|| Duration::from_secs(delta as u64))
 }
 
+/// Wait after a 403 quota error: header, then the body's retry time, then the
+/// per-minute floor. Always capped by [`RetryPolicy::max_wait`].
+fn quota_wait(
+    header: Option<Duration>,
+    body: &str,
+    policy: &RetryPolicy,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Duration {
+    let wait = header
+        .or_else(|| crate::error::retry_delay_from_quota_body(body, now))
+        .unwrap_or_else(|| jitter(policy.quota_min_delay));
+    wait.min(policy.max_wait)
+}
+
 /// Send a request, retrying transient failures per `policy`.
 ///
 /// Returns the last response when attempts run out, so the caller's existing
@@ -169,7 +194,9 @@ pub async fn send_with_retry(
         match this.send().await {
             Ok(resp) if is_retryable(resp.status()) => {
                 let status = resp.status();
-                let wait = retry_after(&resp).unwrap_or_else(|| policy.delay_for(attempt));
+                let wait = retry_after(&resp)
+                    .unwrap_or_else(|| policy.delay_for(attempt))
+                    .min(policy.max_wait);
                 warn!(
                     %status,
                     attempt,
@@ -181,13 +208,13 @@ pub async fn send_with_retry(
             }
             Ok(resp) if needs_body_to_decide(resp.status()) => {
                 let status = resp.status();
-                let wait = retry_after(&resp).unwrap_or_else(|| policy.delay_for(attempt));
                 let (resp, body) = buffer_body(resp).await?;
                 if !crate::error::is_retryable_quota_body(&body) {
                     // A real 403: missing scope, denied permission, domain policy.
                     // Retrying burns quota and hides the problem.
                     return Ok(resp);
                 }
+                let wait = quota_wait(retry_after(&resp), &body, policy, chrono::Utc::now());
                 warn!(
                     %status,
                     attempt,
@@ -300,6 +327,7 @@ mod tests {
             max_attempts: 6,
             base_delay: Duration::from_millis(100),
             max_delay: Duration::from_millis(800),
+            ..RetryPolicy::default()
         };
         // Jitter puts each delay in [capped/2, capped].
         assert!(p.delay_for(1) >= Duration::from_millis(50));
@@ -307,5 +335,38 @@ mod tests {
         assert!(p.delay_for(3) <= Duration::from_millis(400));
         // Far-out attempts stay bounded by max_delay.
         assert!(p.delay_for(20) <= Duration::from_millis(800));
+    }
+
+    #[test]
+    fn quota_wait_prefers_body_timestamp_over_the_500ms_curve() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-09-11T19:59:30Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let body = r#"{"error":{"message":"User-rate limit exceeded.  Retry after 2026-09-11T20:00:00.000Z","errors":[{"reason":"rateLimitExceeded"}]}}"#;
+        let p = RetryPolicy::default();
+        assert_eq!(quota_wait(None, body, &p, now), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn quota_wait_caps_far_future_retry_times() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-09-11T20:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let body = r#"{"error":{"message":"Retry after 2026-09-11T22:00:00.000Z"}}"#;
+        let p = RetryPolicy::default();
+        assert_eq!(quota_wait(None, body, &p, now), p.max_wait);
+    }
+
+    #[test]
+    fn quota_wait_header_wins_over_body() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-09-11T19:59:30Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let body = r#"{"error":{"message":"Retry after 2026-09-11T20:00:00.000Z"}}"#;
+        let p = RetryPolicy::default();
+        assert_eq!(
+            quota_wait(Some(Duration::from_secs(5)), body, &p, now),
+            Duration::from_secs(5)
+        );
     }
 }

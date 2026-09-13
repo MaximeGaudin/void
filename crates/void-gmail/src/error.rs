@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -106,9 +109,76 @@ pub fn is_retryable_quota_body(body: &str) -> bool {
     RETRYABLE_REASONS.iter().any(|r| lower.contains(r))
 }
 
+/// How long to wait before retrying a quota 403, taken from the error body.
+///
+/// Gmail's per-user quota is a per-minute window. The payload it actually sends
+/// does not put that wait in a `Retry-After` header: it puts
+/// `Retry after 2026-09-11T20:00:00.000Z` in `error.message`, or a protobuf
+/// `retryDelay` (`"30s"`) on `google.rpc.RetryInfo`. Honouring only a 500 ms
+/// exponential curve retries inside the same minute and burns more quota.
+///
+/// `now` is injected so tests do not depend on the wall clock.
+pub fn retry_delay_from_quota_body(body: &str, now: DateTime<Utc>) -> Option<Duration> {
+    retry_delay_from_json(body).or_else(|| retry_delay_from_retry_after_text(body, now))
+}
+
+fn retry_delay_from_json(body: &str) -> Option<Duration> {
+    let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
+    let details = parsed.get("error")?.get("details")?.as_array()?;
+    for item in details {
+        if let Some(d) = item
+            .get("retryDelay")
+            .and_then(|v| v.as_str())
+            .and_then(protobuf_duration)
+        {
+            return Some(d);
+        }
+        if let Some(d) = item
+            .get("metadata")
+            .and_then(|m| m.get("retryDelay"))
+            .and_then(|v| v.as_str())
+            .and_then(protobuf_duration)
+        {
+            return Some(d);
+        }
+    }
+    None
+}
+
+/// JSON encoding of `google.protobuf.Duration`: `"30s"`, `"1.5s"`.
+fn protobuf_duration(raw: &str) -> Option<Duration> {
+    let secs: f64 = raw.trim().strip_suffix('s')?.parse().ok()?;
+    if !secs.is_finite() || secs <= 0.0 {
+        return None;
+    }
+    Duration::try_from_secs_f64(secs).ok()
+}
+
+fn retry_delay_from_retry_after_text(body: &str, now: DateTime<Utc>) -> Option<Duration> {
+    let lower = body.to_ascii_lowercase();
+    let idx = lower.find("retry after")?;
+    let rest = body[idx + "retry after".len()..].trim_start();
+    // Timestamp sits inside JSON (`...000Z","errors"`), so stop at the first
+    // character that cannot appear in RFC 3339.
+    let token: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | ':' | '.' | '+' | 'T' | 'Z'))
+        .collect();
+    if token.is_empty() {
+        return None;
+    }
+    let when = DateTime::parse_from_rfc3339(&token)
+        .ok()?
+        .with_timezone(&Utc);
+    let secs = when.signed_duration_since(now).num_seconds();
+    (secs > 0).then(|| Duration::from_secs(secs as u64))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, Utc};
+    use std::time::Duration;
 
     #[test]
     fn insufficient_scope_body_detects_google_reason() {
@@ -182,5 +252,46 @@ mod tests {
             "You have exceeded your daily quota of patience."
         ));
         assert!(!is_retryable_quota_body(""));
+    }
+
+    #[test]
+    fn retry_delay_from_quota_body_reads_the_message_gmail_sends() {
+        let now = DateTime::parse_from_rfc3339("2026-09-11T19:59:30Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let body = r#"{"error":{"code":403,"message":"User-rate limit exceeded.  Retry after 2026-09-11T20:00:00.000Z","errors":[{"reason":"rateLimitExceeded"}]}}"#;
+        assert_eq!(
+            retry_delay_from_quota_body(body, now),
+            Some(Duration::from_secs(30))
+        );
+    }
+
+    #[test]
+    fn retry_delay_from_quota_body_reads_retryinfo() {
+        let now = Utc::now();
+        let body = r#"{"error":{"details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"45s"}]}}"#;
+        assert_eq!(
+            retry_delay_from_quota_body(body, now),
+            Some(Duration::from_secs(45))
+        );
+        let nested = r#"{"error":{"details":[{"metadata":{"retryDelay":"1.5s"}}]}}"#;
+        assert_eq!(
+            retry_delay_from_quota_body(nested, now),
+            Some(Duration::from_millis(1500))
+        );
+    }
+
+    #[test]
+    fn retry_delay_from_quota_body_ignores_past_and_prose() {
+        let now = DateTime::parse_from_rfc3339("2026-09-13T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let past = r#"{"error":{"message":"Retry after 2026-09-11T20:00:00.000Z"}}"#;
+        assert_eq!(retry_delay_from_quota_body(past, now), None);
+        assert_eq!(
+            retry_delay_from_quota_body("You have exceeded your daily quota of patience.", now),
+            None
+        );
+        assert_eq!(retry_delay_from_quota_body("", now), None);
     }
 }
