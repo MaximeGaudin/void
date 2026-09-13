@@ -10,6 +10,7 @@ mod events;
 mod hook_logs;
 mod messages;
 mod mute_sync;
+mod rate_limit;
 mod row;
 mod schema;
 mod search;

@@ -42,7 +42,8 @@ impl Connector for GmailConnector {
         let cache = auth::authorize_interactive(&creds, None).await?;
         cache.save(&token_path)?;
 
-        let api = GmailApiClient::new(&cache.access_token);
+        let api = GmailApiClient::new(&cache.access_token)
+            .with_store_limiter(&self.store_path, &self.config_id);
         let profile = api.get_profile().await?;
         info!(
             email = profile.email_address.as_deref().unwrap_or("?"),

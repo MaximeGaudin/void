@@ -55,6 +55,8 @@ Built-in OAuth2 credentials are included — **no Google Cloud setup required**:
 
 Gmail and Calendar share the same OAuth credentials, so adding the second one after the first is instant. By default Calendar syncs your primary calendar; list more with `calendar_ids`.
 
+Gmail API calls from the CLI and the sync daemon share a per-account token bucket in the local store (~90 requests / minute) so they do not stampede after a quota error.
+
 ## LinkedIn (Unipile)
 
 LinkedIn messages are synced through the [Unipile](https://www.unipile.com/) API. You need a Unipile account with a connected LinkedIn profile.

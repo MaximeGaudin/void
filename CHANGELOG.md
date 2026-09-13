@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Gmail** — `void gmail search` and `void gmail thread` read from the local INBOX store when a usable body is already synced. `--live` forces the Gmail API (`in:sent`, drafts, and unsynced mail still go to the network).
+- **Gmail** — Cross-process token bucket (~90 requests / 60s per account, stored in SQLite) so the CLI and sync daemon share quota instead of stampeding after a 429.
 
 ### Fixed
 

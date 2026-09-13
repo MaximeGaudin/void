@@ -1,9 +1,13 @@
 //! `Database` methods: hook logs and delegated CRUD entry points.
 
+use std::time::Duration;
+
 use crate::error::DbError;
 use crate::models::{CalendarEvent, Contact, Conversation, Message};
 
-use super::{conversations, directory, events, hook_logs, messages, mute_sync, Database};
+use super::{
+    conversations, directory, events, hook_logs, messages, mute_sync, rate_limit, Database,
+};
 
 impl Database {
     pub fn insert_hook_log(&self, log: &crate::hooks::HookLogInsert<'_>) -> Result<(), DbError> {
@@ -560,6 +564,21 @@ impl Database {
         value: &str,
     ) -> Result<(), DbError> {
         mute_sync::set_sync_state(&*self.conn()?, connection_id, key, value)
+    }
+
+    /// Take one token from a named bucket. Returns how long to sleep (zero = go).
+    ///
+    /// Uses `BEGIN IMMEDIATE` so two processes sharing the store serialize.
+    /// Does not sleep; the caller waits outside the write lock.
+    pub fn take_rate_token(
+        &self,
+        connection_id: &str,
+        key: &str,
+        capacity: f64,
+        refill_per_sec: f64,
+    ) -> Result<Duration, DbError> {
+        let mut conn = self.conn()?;
+        rate_limit::take_token(&mut conn, connection_id, key, capacity, refill_per_sec)
     }
 
     pub fn rename_connection(&self, old_id: &str, new_id: &str) -> Result<(), DbError> {
