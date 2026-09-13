@@ -10,6 +10,7 @@ use wa_rs::Jid;
 use wa_rs_binary::jid::JidExt;
 use wa_rs_proto::whatsapp::ContextInfo;
 
+use super::delivery::with_send_timeout;
 use super::media::upload_and_build_media_message;
 use super::send::{build_wa_message, normalize_phone, parse_jid};
 use void_core::models::MessageContent;
@@ -112,6 +113,7 @@ pub async fn send_self_chat_message(
     identity: &OwnIdentity,
     content: MessageContent,
     context_info: Option<ContextInfo>,
+    connection_id: &str,
 ) -> anyhow::Result<String> {
     let identity = identity.enrich_from_client(client).await;
     let own_pn = identity.phone_jid.as_deref().ok_or_else(|| {
@@ -146,9 +148,13 @@ pub async fn send_self_chat_message(
     // Use the same DM path as wa-rs for regular sends. The custom LID-targeted
     // stanza from 0.10.1 encrypted only for linked-device LIDs and never reached
     // the primary phone.
-    let msg_id = client
-        .send_message_with_options(own_pn, msg, SendOptions::default())
-        .await?;
+    // Timeout covers the stanza write only. Enrich + media upload sit above
+    // this, matching the regular DM path in `ops`.
+    let msg_id = with_send_timeout(
+        connection_id,
+        client.send_message_with_options(own_pn, msg, SendOptions::default()),
+    )
+    .await?;
     Ok(msg_id)
 }
 

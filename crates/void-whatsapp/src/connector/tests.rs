@@ -911,10 +911,10 @@ async fn dead_socket_send_fails_fast() {
 
 #[tokio::test]
 async fn barrier_on_dead_socket_reports_transport_failure() {
-    use super::delivery::confirm_accepted;
+    use super::delivery::confirm_stream_past_write;
 
     let client = disconnected_client().await;
-    let err = confirm_accepted(&client, "WA-french", "3EB01E021E254E73BF2930")
+    let err = confirm_stream_past_write(&client, "WA-french", "3EB01E021E254E73BF2930")
         .await
         .expect_err("the barrier cannot round-trip on a dead socket");
 
@@ -934,7 +934,7 @@ async fn barrier_on_dead_socket_reports_transport_failure() {
 /// round-trip. The composed result must be an error.
 #[tokio::test]
 async fn a_send_that_returns_an_id_but_is_never_confirmed_is_a_failure() {
-    use super::delivery::{confirm_accepted, with_send_timeout};
+    use super::delivery::{confirm_stream_past_write, with_send_timeout};
 
     let client = disconnected_client().await;
 
@@ -945,7 +945,7 @@ async fn a_send_that_returns_an_id_but_is_never_confirmed_is_a_failure() {
     .expect("the library reports success as soon as the bytes are written");
     assert_eq!(msg_id, "3EB01E021E254E73BF2930");
 
-    let err = confirm_accepted(&client, "WA-french", &msg_id)
+    let err = confirm_stream_past_write(&client, "WA-french", &msg_id)
         .await
         .expect_err("an unconfirmed send must not be reported as sent");
     assert!(err.to_string().contains("NOT confirmed"), "{err}");

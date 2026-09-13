@@ -41,7 +41,7 @@ pub(crate) const ACK_TIMEOUT: Duration = Duration::from_secs(12);
 /// Hard ceiling on the barrier call. `send_iq` applies `ACK_TIMEOUT` to the
 /// response wait only: the `send_node` that precedes it can itself block on a
 /// stuck transport, so the whole call gets an outer deadline too.
-const BARRIER_HARD_TIMEOUT: Duration = Duration::from_secs(15);
+pub(crate) const BARRIER_HARD_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Hard ceiling on the stanza write. `send_message_with_options` has no
 /// internal timeout, and the noise sender task can hang on `transport.send`.
@@ -88,7 +88,7 @@ pub(crate) enum SendFailure {
 
     #[error(
         "WhatsApp send NOT confirmed on connection '{connection_id}': the stanza for message \
-         {message_id} was written but the server did not confirm it within {}s ({reason}). \
+         {message_id} was written but a post-send ping did not round-trip within {}s ({reason}). \
          Delivery is unknown, do not assume the message arrived.",
         .waited.as_secs()
     )]
@@ -101,8 +101,8 @@ pub(crate) enum SendFailure {
 
     #[error(
         "WhatsApp send NOT confirmed on connection '{connection_id}': the transport failed while \
-         confirming message {message_id} ({detail}). The message very likely never reached \
-         WhatsApp."
+         checking stream liveness after message {message_id} ({detail}). The message very likely \
+         never reached WhatsApp."
     )]
     Transport {
         connection_id: String,
@@ -143,21 +143,19 @@ pub(crate) fn liveness_failure(
 
 /// Fails fast when the connection cannot carry a stanza right now.
 pub(crate) async fn precheck(client: &Client, connection_id: &str) -> Result<(), SendFailure> {
-    let mut failure = None;
     for attempt in 0..LIVENESS_ATTEMPTS {
         match liveness_failure(connection_id, client.is_connected(), client.is_logged_in()) {
             None => return Ok(()),
-            Some(f) => {
-                failure = Some(f);
-                if attempt + 1 < LIVENESS_ATTEMPTS {
-                    tokio::time::sleep(LIVENESS_RETRY_DELAY).await;
+            Some(failure) => {
+                if attempt + 1 == LIVENESS_ATTEMPTS {
+                    warn!(connection_id = %connection_id, error = %failure, "WhatsApp send rejected by liveness precheck");
+                    return Err(failure);
                 }
+                tokio::time::sleep(LIVENESS_RETRY_DELAY).await;
             }
         }
     }
-    let failure = failure.expect("loop ran at least once without returning Ok");
-    warn!(connection_id = %connection_id, error = %failure, "WhatsApp send rejected by liveness precheck");
-    Err(failure)
+    unreachable!("LIVENESS_ATTEMPTS is > 0 and every iteration returns")
 }
 
 /// Turns a barrier IQ result into a send verdict.
@@ -167,11 +165,12 @@ pub(crate) fn classify_barrier(
     connection_id: &str,
     message_id: &str,
     result: Result<(), IqError>,
+    waited: Duration,
 ) -> Result<(), SendFailure> {
     let unconfirmed = |reason| SendFailure::Unconfirmed {
         connection_id: connection_id.to_string(),
         message_id: message_id.to_string(),
-        waited: ACK_TIMEOUT,
+        waited,
         reason,
     };
     let transport = |detail: String| SendFailure::Transport {
@@ -181,14 +180,14 @@ pub(crate) fn classify_barrier(
     };
 
     match result {
-        // The pong came back, so the server consumed the stream past our
-        // message frame. The stanza was accepted.
+        // A pong proves the server consumed the stream past our message frame.
+        // That is stream liveness, not a per-message ack.
         Ok(()) => Ok(()),
 
         Err(IqError::Timeout) => Err(unconfirmed(UnconfirmedReason::Timeout)),
 
         // A reply came back but was not a clean result. The stream did
-        // round-trip, yet we refuse to read that as proof of acceptance.
+        // round-trip, yet we refuse to read that as proof the message was stored.
         Err(e @ IqError::ServerError { .. }) | Err(e @ IqError::ParseError(_)) => Err(unconfirmed(
             UnconfirmedReason::BadServerReply(e.to_string()),
         )),
@@ -197,28 +196,29 @@ pub(crate) fn classify_barrier(
     }
 }
 
-/// Waits, bounded, for proof that the server consumed the message stanza.
+/// Waits, bounded, for proof that the server consumed the stream past the
+/// message frame. A pong is not a per-message ack.
 ///
 /// Call this immediately after the send, on the same `Client`, so no other
 /// stanza can be interleaved by this code path between the two.
-pub(crate) async fn confirm_accepted(
+pub(crate) async fn confirm_stream_past_write(
     client: &Client,
     connection_id: &str,
     message_id: &str,
 ) -> Result<(), SendFailure> {
     let barrier = client.execute(KeepaliveSpec::with_timeout(ACK_TIMEOUT));
-    let result = match tokio::time::timeout(BARRIER_HARD_TIMEOUT, barrier).await {
-        Ok(result) => result,
-        Err(_) => Err(IqError::Timeout),
+    let (result, waited) = match tokio::time::timeout(BARRIER_HARD_TIMEOUT, barrier).await {
+        Ok(result) => (result, ACK_TIMEOUT),
+        Err(_) => (Err(IqError::Timeout), BARRIER_HARD_TIMEOUT),
     };
 
-    match classify_barrier(connection_id, message_id, result) {
+    match classify_barrier(connection_id, message_id, result, waited) {
         Ok(()) => {
-            debug!(connection_id = %connection_id, message_id = %message_id, "WhatsApp send confirmed by server");
+            debug!(connection_id = %connection_id, message_id = %message_id, "WhatsApp send stream confirmed past write");
             Ok(())
         }
         Err(failure) => {
-            warn!(connection_id = %connection_id, message_id = %message_id, error = %failure, "WhatsApp send not confirmed");
+            warn!(connection_id = %connection_id, message_id = %message_id, error = %failure, "WhatsApp send stream not confirmed past write");
             Err(failure)
         }
     }
@@ -302,14 +302,18 @@ mod tests {
         assert!(matches!(failure, SendFailure::NotLive { .. }));
     }
 
+    fn classify(result: Result<(), IqError>) -> Result<(), SendFailure> {
+        classify_barrier(CONN, MSG, result, ACK_TIMEOUT)
+    }
+
     #[test]
     fn barrier_pong_confirms_the_send() {
-        assert!(classify_barrier(CONN, MSG, Ok(())).is_ok());
+        assert!(classify(Ok(())).is_ok());
     }
 
     #[test]
     fn barrier_timeout_is_unconfirmed_not_transport() {
-        let failure = classify_barrier(CONN, MSG, Err(IqError::Timeout)).expect_err("must fail");
+        let failure = classify(Err(IqError::Timeout)).expect_err("must fail");
         assert!(matches!(
             failure,
             SendFailure::Unconfirmed {
@@ -321,6 +325,17 @@ mod tests {
         assert!(text.contains(MSG));
         assert!(text.contains("12s"));
         assert!(text.contains("Delivery is unknown"));
+        assert!(text.contains("post-send ping"));
+        assert_never_claims_success(&failure);
+    }
+
+    #[test]
+    fn barrier_hard_timeout_reports_the_outer_deadline() {
+        let failure = classify_barrier(CONN, MSG, Err(IqError::Timeout), BARRIER_HARD_TIMEOUT)
+            .expect_err("must fail");
+        let text = failure.to_string();
+        assert!(text.contains("15s"), "{text}");
+        assert!(!text.contains("12s"), "{text}");
         assert_never_claims_success(&failure);
     }
 
@@ -334,26 +349,23 @@ mod tests {
         ];
         for case in cases {
             let label = case.to_string();
-            let failure = classify_barrier(CONN, MSG, Err(case)).expect_err("must fail");
+            let failure = classify(Err(case)).expect_err("must fail");
             assert!(
                 matches!(failure, SendFailure::Transport { .. }),
                 "{label} should classify as transport, got {failure:?}"
             );
             assert!(failure.to_string().contains("never reached WhatsApp"));
+            assert!(failure.to_string().contains("stream liveness"));
             assert_never_claims_success(&failure);
         }
     }
 
     #[test]
     fn barrier_bad_server_reply_is_unconfirmed() {
-        let failure = classify_barrier(
-            CONN,
-            MSG,
-            Err(IqError::ServerError {
-                code: 500,
-                text: "internal".into(),
-            }),
-        )
+        let failure = classify(Err(IqError::ServerError {
+            code: 500,
+            text: "internal".into(),
+        }))
         .expect_err("must fail");
         assert!(matches!(
             failure,

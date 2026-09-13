@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **WhatsApp** — `void send` / `void reply` no longer report success on a dead or dying socket. Sends fail fast when the connection is down, and after the write a ping must round-trip before success is printed; if it does not, the command exits non-zero and says delivery is unknown.
+
 - **Archive** — `void archive <id>` now dismisses the whole context group behind the item (Slack thread, Slack 1-hour channel group, Gmail thread) instead of a single row. The inbox shows one row per context, so archiving only the visible id let an older sibling resurface as the next representative. The response gains `archived_count` (rows newly archived by the call, `0` when it was already archived), and Gmail pushes the group in one `batchModify` request.
 
 ### Added
