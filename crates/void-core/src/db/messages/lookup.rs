@@ -4,6 +4,21 @@ use super::super::row;
 use crate::error::DbError;
 use crate::models::Message;
 
+pub fn find_by_connector_external_id(
+    conn: &Connection,
+    connector: &str,
+    external_id: &str,
+) -> Result<Option<Message>, DbError> {
+    conn.query_row(
+        "SELECT id, conversation_id, connection_id, connector, external_id, sender, sender_name, sender_avatar_url, body, timestamp, synced_at, is_archived, reply_to_id, media_type, metadata, context_id, is_saved
+         FROM messages WHERE connector = ?1 AND external_id = ?2 LIMIT 1",
+        params![connector, external_id],
+        row::row_to_message,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
 pub fn find_by_external_id(
     conn: &Connection,
     connection_id: &str,

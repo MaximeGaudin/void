@@ -88,8 +88,8 @@ Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) acc
 
 | Command | Description |
 |---------|-------------|
-| `void gmail search <query>` | Search with Gmail query syntax (`from:`, `newer_than:7d`, …). `--max <N>` |
-| `void gmail thread <id>` | View a full email thread |
+| `void gmail search <query>` | Search with Gmail query syntax (`from:`, `newer_than:7d`, …). `--max <N>`. Reads the local INBOX store when a usable body is already synced; `--live` forces the Gmail API |
+| `void gmail thread <id>` | View a full email thread. Serves the local INBOX mirror when every message has a usable stored body; `--live` fetches from Gmail |
 | `void gmail url <id>` | Generate the Gmail web URL for a thread |
 | `void gmail labels` | List labels |
 | `void gmail label <id> --add <labels> --remove <labels>` | Modify labels on a thread |

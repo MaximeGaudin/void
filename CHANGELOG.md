@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Gmail** — `void gmail search` and `void gmail thread` read from the local INBOX store when a usable body is already synced. `--live` forces the Gmail API (`in:sent`, drafts, and unsynced mail still go to the network).
+
 ### Fixed
 
 - **Gmail** — Retry transient API failures (429, 5xx, and 403 `rateLimitExceeded`) with exponential backoff, honouring `Retry-After` and the retry timestamp in Google's error body.

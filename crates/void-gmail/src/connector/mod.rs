@@ -1,6 +1,7 @@
 mod api_methods;
 mod compose;
 mod connector_trait;
+mod store;
 mod sync;
 
 #[cfg(test)]

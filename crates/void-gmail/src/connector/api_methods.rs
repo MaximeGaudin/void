@@ -5,6 +5,7 @@ use tracing::warn;
 
 use crate::api::GmailApiClient;
 use crate::auth;
+use void_core::db::Database;
 
 use super::GmailConnector;
 
@@ -39,24 +40,29 @@ impl GmailConnector {
         &self,
         query: &str,
         max_results: u32,
+        live: bool,
     ) -> anyhow::Result<Vec<crate::api::GmailMessage>> {
         let api = self.get_client().await?;
-        let resp = api
-            .list_messages(max_results, None, None, Some(query))
-            .await?;
-        let mut messages = Vec::new();
-        if let Some(refs) = resp.messages {
-            for r in &refs {
-                match api.get_message(&r.id).await {
-                    Ok(msg) => messages.push(msg),
-                    Err(e) => warn!(message_id = %r.id, "failed to fetch: {e}"),
+        let db = if live {
+            None
+        } else {
+            super::store::open_store(&self.store_path)?
+        };
+        search_with_api(&api, db.as_ref(), query, max_results).await
+    }
+
+    pub async fn get_thread(
+        &self,
+        thread_id: &str,
+        live: bool,
+    ) -> anyhow::Result<crate::api::GmailThread> {
+        if !live {
+            if let Some(db) = super::store::open_store(&self.store_path)? {
+                if let Some(thread) = super::store::load_stored_thread(&db, thread_id) {
+                    return Ok(thread);
                 }
             }
         }
-        Ok(messages)
-    }
-
-    pub async fn get_thread(&self, thread_id: &str) -> anyhow::Result<crate::api::GmailThread> {
         let api = self.get_client().await?;
         api.get_thread(thread_id).await.map_err(Into::into)
     }
@@ -373,4 +379,32 @@ pub(super) fn build_reply_all_recipients(
     }
 
     recipients.join(", ")
+}
+
+pub(super) async fn search_with_api(
+    api: &GmailApiClient,
+    db: Option<&Database>,
+    query: &str,
+    max_results: u32,
+) -> anyhow::Result<Vec<crate::api::GmailMessage>> {
+    let resp = api
+        .list_messages(max_results, None, None, Some(query))
+        .await?;
+    let mut messages = Vec::new();
+    if let Some(refs) = resp.messages {
+        for r in &refs {
+            if let Some(db) = db {
+                if let Some(stored) = super::store::load_stored_message(db, &r.id) {
+                    debug!(message_id = %r.id, "gmail: serving message from local store");
+                    messages.push(stored);
+                    continue;
+                }
+            }
+            match api.get_message(&r.id).await {
+                Ok(msg) => messages.push(msg),
+                Err(e) => warn!(message_id = %r.id, "failed to fetch: {e}"),
+            }
+        }
+    }
+    Ok(messages)
 }

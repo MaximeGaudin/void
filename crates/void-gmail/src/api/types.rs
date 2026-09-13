@@ -65,7 +65,7 @@ pub struct MessageHeader {
     pub value: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileAttachment {
     pub filename: String,
     pub mime_type: Option<String>,

@@ -151,6 +151,21 @@ pub(super) fn find_by_name_contains(
     rows.collect::<Result<_, _>>().map_err(Into::into)
 }
 
+pub(super) fn find_by_connector_external_id(
+    conn: &Connection,
+    connector: &str,
+    external_id: &str,
+) -> Result<Option<Conversation>, DbError> {
+    conn.query_row(
+        "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
+         FROM conversations WHERE connector = ?1 AND external_id = ?2 LIMIT 1",
+        params![connector, external_id],
+        row::row_to_conversation,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
 pub(super) fn get(conn: &Connection, id: &str) -> Result<Option<Conversation>, DbError> {
     conn.query_row(
         "SELECT id, connection_id, connector, external_id, name, kind, last_message_at, unread_count, is_muted, metadata
