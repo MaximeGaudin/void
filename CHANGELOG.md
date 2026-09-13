@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Slack** — Retry HTTP 5xx and retryable JSON errors (`internal_error`, `fatal_error`) on every GET/POST, including sends, with the same `Retry-After` backoff as 429.
 - **Gmail** — Retry transient API failures (429, 5xx, and 403 `rateLimitExceeded`) with exponential backoff, honouring `Retry-After` and the retry timestamp in Google's error body.
 - **WhatsApp** — `void send` / `void reply` no longer report success on a dead or dying socket. Sends fail fast when the connection is down, and after the write a ping must round-trip before success is printed; if it does not, the command exits non-zero and says delivery is unknown.
 - **WhatsApp** — History sync after pairing is stored again. The library now delivers the backfill one conversation at a time, so the old bulk handler never ran and the pairing dump was dropped (observed: 775 conversations parsed, 4 rows stored). Progress is logged every 250 messages.
