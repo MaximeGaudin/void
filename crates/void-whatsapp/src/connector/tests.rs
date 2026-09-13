@@ -867,9 +867,11 @@ fn lazy_conversation_conversation_strips_messages_but_get_keeps_them() {
 fn lazy_conversation_get_returns_none_on_garbage() {
     use wa_rs::types::events::LazyConversation;
 
-    // Empty payload decodes to a default Conversation with an empty id.
-    // get() reports None instead of panicking like conversation() would.
+    // Empty payload decodes to a default Conversation with an empty id, not a
+    // panic: prost succeeds on [] and get() is None because id is empty.
     assert!(LazyConversation::new(Vec::new()).get().is_none());
+    let empty = LazyConversation::new(Vec::new());
+    assert!(empty.conversation().id.is_empty());
 }
 
 #[test]

@@ -97,6 +97,10 @@ impl Connector for WhatsAppConnector {
         // Cumulative counter of imported history messages, shared across handler
         // calls (one per conversation during a backfill).
         let history_count = Arc::new(AtomicU64::new(0));
+        // wa-rs Bot spawns one tokio task per event. Serialize decode+store so
+        // a hundreds-of-conversations backfill does not decode every payload
+        // at once while they convoy on Database's mutex.
+        let history_gate = Arc::new(tokio::sync::Mutex::new(()));
 
         let mut bot = Bot::builder()
             .with_backend(backend)
@@ -108,6 +112,7 @@ impl Connector for WhatsAppConnector {
                 let client_holder = Arc::clone(&client_holder);
                 let own_identity_holder = Arc::clone(&own_identity_holder);
                 let history_count = Arc::clone(&history_count);
+                let history_gate = Arc::clone(&history_gate);
                 async move {
                     {
                         let mut holder = client_holder.lock().await;
@@ -193,8 +198,10 @@ impl Connector for WhatsAppConnector {
                             // Use get(), not conversation(): the latter clears
                             // conv.messages after decoding to save memory, so it
                             // would hand us metadata with an empty message list.
-                            // get() keeps the messages and returns None on a
-                            // malformed payload instead of panicking.
+                            // get() keeps the messages and returns None when
+                            // decode yields an empty id (empty or undecodable
+                            // payload).
+                            let _guard = history_gate.lock().await;
                             let own_identity = own_identity_holder.lock().expect("mutex").clone();
                             if let Some(conv) = lazy_conv.get() {
                                 match store_conversation(&db, &config_id, &own_identity, conv) {
@@ -212,6 +219,11 @@ impl Connector for WhatsAppConnector {
                                     }
                                     Err(e) => warn!("Failed to store history conversation: {e}"),
                                 }
+                            } else {
+                                warn!(
+                                    connection_id = %config_id,
+                                    "skipping history conversation with empty or undecodable id"
+                                );
                             }
                         }
                         Event::HistorySync(history) => {
