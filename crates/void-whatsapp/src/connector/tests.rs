@@ -799,3 +799,262 @@ fn is_system_message_pin_in_chat() {
     };
     assert!(sync::is_system_message(&msg));
 }
+
+// --- history sync via Event::JoinedGroup -------------------------------------
+//
+// Regression guard for PR #74 review: `LazyConversation::conversation()` clears
+// `conv.messages` after decoding as a memory optimisation, so storing from it
+// persists conversation metadata and zero messages. The connector must decode
+// with `get()`, which keeps the messages. These tests pin that difference so a
+// future edit back to `conversation()` fails loudly instead of silently
+// dropping the backfill.
+
+fn history_conversation_bytes(chat_jid: &str, texts: &[&str]) -> Vec<u8> {
+    use prost::Message as _;
+    use wa_rs_proto::whatsapp::{
+        Conversation as WaConversation, HistorySyncMsg, MessageKey, WebMessageInfo,
+    };
+
+    let messages = texts
+        .iter()
+        .enumerate()
+        .map(|(i, text)| HistorySyncMsg {
+            message: Some(WebMessageInfo {
+                key: MessageKey {
+                    remote_jid: Some(chat_jid.to_string()),
+                    from_me: Some(false),
+                    id: Some(format!("MSG{i}")),
+                    ..Default::default()
+                },
+                message: Some(WaMessage {
+                    conversation: Some((*text).to_string()),
+                    ..Default::default()
+                }),
+                message_timestamp: Some(1_700_000_000 + i as u64),
+                push_name: Some("Tester".into()),
+                ..Default::default()
+            }),
+            msg_order_id: Some(i as u64),
+        })
+        .collect();
+
+    let conv = WaConversation {
+        id: chat_jid.to_string(),
+        name: Some("History chat".into()),
+        messages,
+        ..Default::default()
+    };
+    conv.encode_to_vec()
+}
+
+#[test]
+fn lazy_conversation_conversation_strips_messages_but_get_keeps_them() {
+    use wa_rs::types::events::LazyConversation;
+
+    let bytes = history_conversation_bytes("33612345678@s.whatsapp.net", &["one", "two"]);
+
+    // get(): messages preserved. This is what the connector relies on.
+    let lazy = LazyConversation::new(bytes.clone());
+    let conv = lazy.get().expect("valid conversation");
+    assert_eq!(conv.messages.len(), 2);
+
+    // conversation(): same payload, messages cleared by the memory optimisation.
+    let lazy = LazyConversation::new(bytes);
+    assert!(lazy.conversation().messages.is_empty());
+}
+
+#[test]
+fn lazy_conversation_get_returns_none_on_garbage() {
+    use wa_rs::types::events::LazyConversation;
+
+    // Empty payload decodes to a default Conversation with an empty id, not a
+    // panic: prost succeeds on [] and get() is None because id is empty.
+    assert!(LazyConversation::new(Vec::new()).get().is_none());
+    let empty = LazyConversation::new(Vec::new());
+    assert!(empty.conversation().id.is_empty());
+}
+
+#[test]
+fn store_conversation_from_lazy_get_persists_messages() {
+    use wa_rs::types::events::LazyConversation;
+
+    let db = void_core::db::Database::open_in_memory().unwrap();
+    let bytes = history_conversation_bytes("33612345678@s.whatsapp.net", &["one", "two", "three"]);
+    let lazy = LazyConversation::new(bytes);
+    let own = OwnIdentity::default();
+
+    let stored = sync::store_conversation(&db, "test-conn", &own, lazy.get().unwrap()).unwrap();
+
+    assert_eq!(stored, 3);
+    let rows = db
+        .list_messages("wa_test-conn_33612345678@s.whatsapp.net", 10, None, None)
+        .unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].body.as_deref(), Some("one"));
+}
+
+#[test]
+fn store_conversation_from_lazy_conversation_stores_nothing() {
+    use wa_rs::types::events::LazyConversation;
+
+    // The bug this PR review caught: metadata lands, messages do not.
+    let db = void_core::db::Database::open_in_memory().unwrap();
+    let bytes = history_conversation_bytes("33698765432@s.whatsapp.net", &["one", "two"]);
+    let lazy = LazyConversation::new(bytes);
+    let own = OwnIdentity::default();
+
+    let stored = sync::store_conversation(&db, "test-conn", &own, lazy.conversation()).unwrap();
+
+    assert_eq!(stored, 0);
+}
+
+fn text_content(body: &str) -> MessageContent {
+    MessageContent::Text {
+        body: body.to_string(),
+        subject: None,
+        append_signature: false,
+        signature_from: None,
+        cc: None,
+        bcc: None,
+    }
+}
+
+/// Builds a real `wa_rs::Client` that has never connected, so `is_connected()`
+/// is false and its noise socket slot is empty. This is the dead-socket state
+/// the 2026-09-11 failure sent into.
+async fn disconnected_client() -> Arc<wa_rs::client::Client> {
+    use wa_rs::store::persistence_manager::PersistenceManager;
+    use wa_rs::store::traits::Backend;
+
+    let db = format!(
+        "file:void_wa_delivery_{}?mode=memory&cache=shared",
+        uuid::Uuid::new_v4().simple()
+    );
+    let backend = Arc::new(
+        wa_rs_sqlite_storage::SqliteStore::new(&db)
+            .await
+            .expect("in-memory wa-rs store"),
+    ) as Arc<dyn Backend>;
+    let pm = Arc::new(
+        PersistenceManager::new(backend)
+            .await
+            .expect("persistence manager"),
+    );
+    let (client, _sync_rx) = wa_rs::client::Client::new(
+        pm,
+        Arc::new(wa_rs_tokio_transport::TokioWebSocketTransportFactory::new()),
+        Arc::new(wa_rs_ureq_http::UreqHttpClient::new()),
+        None,
+    )
+    .await;
+    client
+}
+
+fn connector_with_client(client: Arc<wa_rs::client::Client>) -> WhatsAppConnector {
+    let connector = WhatsAppConnector::new("WA-french", "/nonexistent/session.db");
+    *connector.client.try_lock().expect("fresh mutex") = Some(client);
+    connector
+}
+
+#[tokio::test]
+async fn send_on_dead_socket_fails_instead_of_reporting_success() {
+    let connector = connector_with_client(disconnected_client().await);
+
+    let err = connector
+        .send_via_sync(
+            "33612345678",
+            text_content("this must never be reported as sent"),
+        )
+        .await
+        .expect_err("a send on a dead socket must not succeed");
+
+    let text = err.to_string();
+    assert!(
+        text.contains("WhatsApp send aborted"),
+        "unexpected error: {text}"
+    );
+    assert!(text.contains("WA-french"), "unexpected error: {text}");
+    assert!(text.contains("was not sent"), "unexpected error: {text}");
+    // The old behaviour returned Ok(message_id) here.
+    assert!(!text.contains("Message sent"), "unexpected error: {text}");
+}
+
+#[tokio::test]
+async fn reply_on_dead_socket_fails_instead_of_reporting_success() {
+    let connector = connector_with_client(disconnected_client().await);
+
+    let err = connector
+        .reply_via_sync(
+            "33612345678@s.whatsapp.net:3EB01E021E254E73BF2930",
+            text_content("this must never be reported as sent"),
+            false,
+        )
+        .await
+        .expect_err("a reply on a dead socket must not succeed");
+
+    assert!(
+        err.to_string().contains("WhatsApp send aborted"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn dead_socket_send_fails_fast() {
+    let connector = connector_with_client(disconnected_client().await);
+
+    let started = std::time::Instant::now();
+    let _ = connector
+        .send_via_sync("33612345678", text_content("fail fast"))
+        .await
+        .expect_err("must fail");
+    let elapsed = started.elapsed();
+
+    // The precheck retries a few times to absorb a transient `try_lock` miss,
+    // then gives up. It must not sit on the 12s barrier or the 30s write cap.
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "precheck took {elapsed:?}, expected a fast failure"
+    );
+}
+
+#[tokio::test]
+async fn barrier_on_dead_socket_reports_transport_failure() {
+    use super::delivery::confirm_stream_past_write;
+
+    let client = disconnected_client().await;
+    let err = confirm_stream_past_write(&client, "WA-french", "3EB01E021E254E73BF2930")
+        .await
+        .expect_err("the barrier cannot round-trip on a dead socket");
+
+    let text = err.to_string();
+    assert!(text.contains("NOT confirmed"), "unexpected error: {text}");
+    assert!(
+        text.contains("3EB01E021E254E73BF2930"),
+        "unexpected error: {text}"
+    );
+}
+
+/// The production failure of 2026-09-11, reproduced at the seam.
+///
+/// `wa-rs` handed back `Ok(id)` for a stanza the server never saw, and the CLI
+/// printed "Message sent (id: 3EB01E021E254E73BF2930)". Here the write is
+/// stubbed to succeed exactly like that, and the barrier that follows it cannot
+/// round-trip. The composed result must be an error.
+#[tokio::test]
+async fn a_send_that_returns_an_id_but_is_never_confirmed_is_a_failure() {
+    use super::delivery::{confirm_stream_past_write, with_send_timeout};
+
+    let client = disconnected_client().await;
+
+    let msg_id = with_send_timeout("WA-french", async {
+        Ok::<_, anyhow::Error>("3EB01E021E254E73BF2930".to_string())
+    })
+    .await
+    .expect("the library reports success as soon as the bytes are written");
+    assert_eq!(msg_id, "3EB01E021E254E73BF2930");
+
+    let err = confirm_stream_past_write(&client, "WA-french", &msg_id)
+        .await
+        .expect_err("an unconfirmed send must not be reported as sent");
+    assert!(err.to_string().contains("NOT confirmed"), "{err}");
+}
