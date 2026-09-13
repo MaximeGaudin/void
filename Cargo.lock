@@ -4814,6 +4814,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "html-to-markdown-rs",
+ "http",
  "open",
  "reqwest",
  "serde",
