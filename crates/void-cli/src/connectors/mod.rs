@@ -6,6 +6,7 @@ mod github;
 mod gmail;
 mod googlenews;
 mod hackernews;
+mod imessage;
 mod linkedin;
 mod reddit;
 mod slack;
