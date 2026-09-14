@@ -63,7 +63,9 @@ pub(super) fn load_stored_thread(db: &Database, thread_id: &str) -> Option<Gmail
         .find_conversation_by_connector_external_id(CONNECTOR_ID, thread_id)
         .ok()
         .flatten()?;
-    let stored = db.list_messages(&conv.id, MAX_THREAD_MESSAGES, None, None).ok()?;
+    let stored = db
+        .list_messages(&conv.id, MAX_THREAD_MESSAGES, None, None)
+        .ok()?;
     if stored.is_empty() {
         return None;
     }

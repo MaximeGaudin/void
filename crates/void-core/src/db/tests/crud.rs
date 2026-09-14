@@ -481,13 +481,15 @@ fn schema_snapshot_matches_expected() {
 
     let names: Vec<&str> = rows.iter().map(|(n, _)| n.as_str()).collect();
 
-    // Expected object names at SCHEMA_VERSION = 13. Includes FTS5 shadow tables
+    // Expected object names at SCHEMA_VERSION = 14. Includes FTS5 shadow tables
     // (messages_fts_*) created automatically by the virtual table.
     let expected = [
         "conversations",
         "events",
         "hook_logs",
+        "idx_conversations_connector_ext",
         "idx_hook_logs_started",
+        "idx_messages_connector_ext",
         "idx_messages_context_id",
         "idx_messages_is_saved",
         "messages",
