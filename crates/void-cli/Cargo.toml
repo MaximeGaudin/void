@@ -18,6 +18,7 @@ void-calendar = { workspace = true }
 void-whatsapp = { workspace = true }
 void-telegram = { workspace = true }
 void-hackernews = { workspace = true }
+void-imessage = { workspace = true }
 void-googlenews = { workspace = true }
 void-linkedin = { workspace = true }
 void-reddit = { workspace = true }

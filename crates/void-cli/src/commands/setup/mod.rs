@@ -8,6 +8,7 @@ pub(crate) mod github;
 pub(crate) mod gmail;
 pub(crate) mod googlenews;
 pub(crate) mod hackernews;
+pub(crate) mod imessage;
 pub(crate) mod linkedin;
 pub(crate) mod prompt;
 pub(crate) mod reddit;
