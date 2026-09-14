@@ -83,7 +83,10 @@ pub(crate) fn prepare_image(data: Vec<u8>, declared_mime: &str) -> anyhow::Resul
     // over HEIC bytes would be worse than the Document fallback it replaces:
     // a broken photo instead of an openable attachment.
     let (bytes, mime) = if source_is_heif {
-        (encode_jpeg(&decoded, JPEG_QUALITY)?, "image/jpeg".to_string())
+        (
+            encode_jpeg(&decoded, JPEG_QUALITY)?,
+            "image/jpeg".to_string(),
+        )
     } else {
         (data, declared_mime.to_string())
     };
@@ -119,7 +122,9 @@ fn register_heif_hooks() {
 /// `mif2` also appear. We deliberately omit `avif`: that is a different codec
 /// and must not be silently JPEG-transcoded.
 fn looks_like_heif(data: &[u8]) -> bool {
-    const BRANDS: &[&[u8; 4]] = &[b"heic", b"heix", b"heif", b"hevc", b"hevx", b"mif1", b"mif2"];
+    const BRANDS: &[&[u8; 4]] = &[
+        b"heic", b"heix", b"heif", b"hevc", b"hevx", b"mif1", b"mif2",
+    ];
     if data.len() < 12 || &data[4..8] != b"ftyp" {
         return false;
     }
