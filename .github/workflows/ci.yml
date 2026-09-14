@@ -45,6 +45,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # void-whatsapp links libheif for iPhone HEIC→JPEG on send. System
+      # packages (not embedded-libheif): embedded still needs libde265 at
+      # runtime for HEVC stills, and brew/apt already ship a working stack.
+      - name: Install libheif (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libheif-dev
+      - name: Install libheif (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install libheif
+      - name: Install libheif (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: johnwason/vcpkg-action@v8
+        id: vcpkg
+        with:
+          # libde265 = HEVC still decode (iPhone .heic). Match libheif-sys's
+          # static-md triplet so the vcpkg crate finder resolves the install.
+          pkgs: 'libheif[core,libde265]'
+          triplet: x64-windows-static-md
+          cache-key: libheif-hevc
+          token: ${{ github.token }}
+      - name: Export VCPKG_ROOT (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
           # Cache writes are restricted to main to protect the 10 GB quota —
@@ -77,6 +103,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.95.0
+      - name: Install libheif
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libheif-dev
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
@@ -107,6 +137,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+      - name: Install libheif
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libheif-dev
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
