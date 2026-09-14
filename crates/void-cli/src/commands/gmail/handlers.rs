@@ -25,7 +25,9 @@ pub(super) async fn dispatch(args: &GmailArgs) -> anyhow::Result<()> {
 
 async fn run_search(args: &SearchArgs) -> anyhow::Result<()> {
     let connector = build_gmail_connector(args.connection.as_deref())?;
-    let messages = connector.search_api(&args.query, args.max).await?;
+    let messages = connector
+        .search_api(&args.query, args.max, args.live)
+        .await?;
 
     let items: Vec<serde_json::Value> = messages
         .iter()
@@ -57,7 +59,7 @@ async fn run_search(args: &SearchArgs) -> anyhow::Result<()> {
 
 async fn run_thread(args: &ThreadArgs) -> anyhow::Result<()> {
     let connector = build_gmail_connector(args.connection.as_deref())?;
-    let thread = connector.get_thread(&args.thread_id).await?;
+    let thread = connector.get_thread(&args.thread_id, args.live).await?;
 
     let msgs: Vec<serde_json::Value> = thread
         .messages

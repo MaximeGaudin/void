@@ -37,6 +37,12 @@ pub struct SearchArgs {
     /// Max results to return
     #[arg(long, default_value = "20")]
     pub max: u32,
+    /// Skip the local store and hit the Gmail API for every message.
+    ///
+    /// Default reads hydrate from the INBOX mirror when a usable body is already
+    /// stored (`in:sent`, drafts, and unsynced mail still go to the API).
+    #[arg(long)]
+    pub live: bool,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,
@@ -46,6 +52,9 @@ pub struct SearchArgs {
 pub struct ThreadArgs {
     /// Thread ID
     pub thread_id: String,
+    /// Skip the local store and fetch the live Gmail thread.
+    #[arg(long)]
+    pub live: bool,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,

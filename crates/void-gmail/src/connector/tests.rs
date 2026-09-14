@@ -1,4 +1,4 @@
-use super::api_methods::{build_reply_all_recipients, create_draft_with_api};
+use super::api_methods::{build_reply_all_recipients, create_draft_with_api, search_with_api};
 use super::*;
 use crate::api::{GmailApiClient, GmailMessage};
 use base64::Engine;
@@ -1341,4 +1341,146 @@ async fn create_draft_errors_without_to_and_reply_to() {
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("--to is required"));
+}
+
+fn seed_gmail_store(db: &Database, body: &str) {
+    db.upsert_conversation(&Conversation {
+        id: "c1".into(),
+        connection_id: "acct@gmail.com".into(),
+        connector: "gmail".into(),
+        external_id: "t1".into(),
+        name: Some("Hello".into()),
+        kind: ConversationKind::Thread,
+        last_message_at: None,
+        unread_count: 0,
+        is_muted: false,
+        metadata: None,
+    })
+    .unwrap();
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("subject".into(), serde_json::json!("Hello"));
+    db.upsert_message(&Message {
+        id: "c1-m1".into(),
+        conversation_id: "c1".into(),
+        connection_id: "acct@gmail.com".into(),
+        connector: "gmail".into(),
+        external_id: "m1".into(),
+        sender: "a@b.com".into(),
+        sender_name: Some("Ann".into()),
+        sender_avatar_url: None,
+        body: Some(body.into()),
+        timestamp: 1_700_000_000,
+        synced_at: None,
+        is_archived: false,
+        is_saved: false,
+        reply_to_id: None,
+        media_type: None,
+        metadata: Some(serde_json::Value::Object(metadata)),
+        context_id: None,
+        context: None,
+    })
+    .unwrap();
+}
+
+fn list_one_message_mock() -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        "messages": [{"id": "m1", "threadId": "t1"}]
+    }))
+}
+
+fn api_full_message() -> serde_json::Value {
+    serde_json::json!({
+        "id": "m1",
+        "threadId": "t1",
+        "snippet": "Hello",
+        "internalDate": "1741700000000",
+        "labelIds": ["INBOX"],
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": [
+                {"name": "From", "value": "sender@example.com"},
+                {"name": "Subject", "value": "Live"}
+            ],
+            "body": {"data": "SGVsbG8gV29ybGQ", "size": 11}
+        }
+    })
+}
+
+#[tokio::test]
+async fn search_serves_complete_store_body_without_get_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .respond_with(list_one_message_mock())
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m1"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let db = Database::open_in_memory().unwrap();
+    let body = "x".repeat(200);
+    seed_gmail_store(&db, &body);
+
+    let msgs = search_with_api(&api, Some(&db), "in:inbox", 10)
+        .await
+        .unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].id.as_deref(), Some("m1"));
+    assert_eq!(msgs[0].get_header("Subject").as_deref(), Some("Hello"));
+    assert_eq!(msgs[0].text_body().as_deref(), Some(body.as_str()));
+}
+
+#[tokio::test]
+async fn search_fetches_when_store_body_is_snippet() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .respond_with(list_one_message_mock())
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(api_full_message()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let db = Database::open_in_memory().unwrap();
+    seed_gmail_store(&db, "tiny snippet");
+
+    let msgs = search_with_api(&api, Some(&db), "in:inbox", 10)
+        .await
+        .unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].get_header("Subject").as_deref(), Some("Live"));
+}
+
+#[tokio::test]
+async fn search_live_skips_store() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .respond_with(list_one_message_mock())
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(api_full_message()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let db = Database::open_in_memory().unwrap();
+    seed_gmail_store(&db, &"x".repeat(200));
+
+    let msgs = search_with_api(&api, None, "in:inbox", 10).await.unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].get_header("Subject").as_deref(), Some("Live"));
 }

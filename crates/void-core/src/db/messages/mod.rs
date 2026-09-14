@@ -31,8 +31,8 @@ pub use inbox::{
     senders_missing_avatar,
 };
 pub use lookup::{
-    find_by_external_id, find_by_slack_link, find_slack_conversation_by_external_id,
-    last_in_conversation,
+    find_by_connector_external_id, find_by_external_id, find_by_slack_link,
+    find_slack_conversation_by_external_id, last_in_conversation,
 };
 pub use read::{
     count_for_conversation, count_recent, get, latest_timestamp, list_for_conversation, list_recent,

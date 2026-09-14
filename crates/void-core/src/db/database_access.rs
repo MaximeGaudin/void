@@ -280,6 +280,27 @@ impl Database {
         messages::find_by_external_id(&*self.conn()?, connection_id, external_id)
     }
 
+    /// Look up a message by connector + native id, across connection ids.
+    ///
+    /// Gmail stores `connection_id` as the account email after the first sync,
+    /// while CLI commands may still key off the config id. Routing by
+    /// `(connector, external_id)` finds the row either way.
+    pub fn find_message_by_connector_external_id(
+        &self,
+        connector: &str,
+        external_id: &str,
+    ) -> Result<Option<Message>, DbError> {
+        messages::find_by_connector_external_id(&*self.conn()?, connector, external_id)
+    }
+
+    pub fn find_conversation_by_connector_external_id(
+        &self,
+        connector: &str,
+        external_id: &str,
+    ) -> Result<Option<Conversation>, DbError> {
+        conversations::find_by_connector_external_id(&*self.conn()?, connector, external_id)
+    }
+
     /// Resolve a Slack permalink to a stored message.
     ///
     /// Looks up by the Slack-native `(channel external_id, message ts)` pair,

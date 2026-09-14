@@ -170,3 +170,17 @@ fn inbox_with_bogus_connector_fails_with_message() {
         .stderr(predicate::str::contains("Unknown connector"))
         .stderr(predicate::str::contains("bogus"));
 }
+
+#[test]
+fn gmail_search_and_thread_help_include_live() {
+    void()
+        .args(["gmail", "search", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--live"));
+    void()
+        .args(["gmail", "thread", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--live"));
+}

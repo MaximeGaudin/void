@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Gmail** — `void gmail search` and `void gmail thread` read from the local INBOX store when a usable body is already synced. `--live` forces the Gmail API (`in:sent`, drafts, and unsynced mail still go to the network).
+
 ### Fixed
 
 - **Slack** — Retry HTTP 5xx and retryable JSON errors (`internal_error`, `fatal_error`) on every GET/POST, including sends, with the same `Retry-After` backoff as 429.

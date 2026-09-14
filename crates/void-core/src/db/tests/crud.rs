@@ -679,3 +679,29 @@ fn migrations_preserve_existing_data() {
         .unwrap();
     assert_eq!(sync_conn, "legacy-acct");
 }
+
+#[test]
+fn find_by_connector_external_id_ignores_connection_id() {
+    let db = test_db();
+    let conv = make_conversation_with_connector("c1", "me@gmail.com", "t1", "gmail");
+    db.upsert_conversation(&conv).unwrap();
+    let mut msg = make_message_with_connector("m1", "c1", "me@gmail.com", "hello", 1, "gmail");
+    msg.external_id = "gmail-msg-1".into();
+    db.upsert_message(&msg).unwrap();
+
+    let found = db
+        .find_message_by_connector_external_id("gmail", "gmail-msg-1")
+        .unwrap()
+        .expect("row");
+    assert_eq!(found.id, "m1");
+    assert_eq!(found.connection_id, "me@gmail.com");
+
+    assert!(db
+        .find_conversation_by_connector_external_id("gmail", "t1")
+        .unwrap()
+        .is_some());
+    assert!(db
+        .find_message_by_connector_external_id("gmail", "missing")
+        .unwrap()
+        .is_none());
+}
