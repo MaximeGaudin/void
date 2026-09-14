@@ -1,5 +1,6 @@
 mod client;
 mod message;
+mod rate_limit;
 mod retry;
 mod types;
 

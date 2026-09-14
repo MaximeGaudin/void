@@ -602,6 +602,7 @@ async fn get_thread_403_rate_limit_preserves_status_and_body_after_retries() {
     let resp = retry::send_with_retry(
         reqwest::Client::new().get(format!("{}/gmail/v1/users/me/threads/t403", server.uri())),
         &RetryPolicy::fast(),
+        None,
     )
     .await
     .expect("retries exhausted, not a transport error");

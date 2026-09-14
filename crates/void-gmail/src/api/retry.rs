@@ -179,9 +179,13 @@ fn quota_wait(
 pub async fn send_with_retry(
     req: reqwest::RequestBuilder,
     policy: &RetryPolicy,
+    limiter: Option<&super::rate_limit::StoreRateLimiter>,
 ) -> Result<reqwest::Response, reqwest::Error> {
     let mut attempt = 1u32;
     loop {
+        if let Some(limiter) = limiter {
+            limiter.acquire().await;
+        }
         let clone = req.try_clone();
         let is_last = attempt >= policy.max_attempts || clone.is_none();
 
@@ -242,12 +246,13 @@ pub async fn send_with_retry(
 }
 
 /// Lets a call site opt into retrying by replacing `.send()` with
-/// `.send_retrying(&self.retry)`, keeping the rest of the chain untouched.
+/// `.send_retrying(&self.retry, self.limiter.as_ref())`.
 pub trait SendRetrying {
     /// Send with the given retry policy. See [`send_with_retry`].
     fn send_retrying(
         self,
         policy: &RetryPolicy,
+        limiter: Option<&super::rate_limit::StoreRateLimiter>,
     ) -> impl std::future::Future<Output = Result<reqwest::Response, reqwest::Error>>;
 }
 
@@ -255,8 +260,9 @@ impl SendRetrying for reqwest::RequestBuilder {
     async fn send_retrying(
         self,
         policy: &RetryPolicy,
+        limiter: Option<&super::rate_limit::StoreRateLimiter>,
     ) -> Result<reqwest::Response, reqwest::Error> {
-        send_with_retry(self, policy).await
+        send_with_retry(self, policy, limiter).await
     }
 }
 

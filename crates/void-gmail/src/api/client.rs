@@ -1,8 +1,11 @@
+use std::path::Path;
 use std::time::Duration;
 
 use crate::error::GmailError;
 use tracing::{debug, info};
+use void_core::db::Database;
 
+use super::rate_limit::StoreRateLimiter;
 use super::retry::{RetryPolicy, SendRetrying};
 
 use super::types::{
@@ -29,6 +32,7 @@ pub struct GmailApiClient {
     access_token: String,
     base_url: String,
     retry: RetryPolicy,
+    limiter: Option<StoreRateLimiter>,
 }
 
 impl GmailApiClient {
@@ -38,6 +42,7 @@ impl GmailApiClient {
             access_token: access_token.to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
             retry: RetryPolicy::default(),
+            limiter: None,
         }
     }
 
@@ -48,7 +53,35 @@ impl GmailApiClient {
             access_token: access_token.to_string(),
             base_url: base_url.to_string(),
             retry: RetryPolicy::fast(),
+            limiter: None,
         }
+    }
+
+    /// Share a SQLite token bucket with other processes using the same store.
+    ///
+    /// Missing or unreadable `void.db` fails open (no limiter). Tests using
+    /// [`Self::with_base_url`] never attach one.
+    pub fn with_store_limiter(self, store_path: &Path, connection_id: &str) -> Self {
+        let path = store_path.join("void.db");
+        if !path.exists() {
+            return self;
+        }
+        match Database::open(&path) {
+            Ok(db) => self.with_limiter(StoreRateLimiter::new(db, connection_id.to_string())),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    path = %path.display(),
+                    "gmail: rate limiter unavailable, failing open"
+                );
+                self
+            }
+        }
+    }
+
+    fn with_limiter(mut self, limiter: StoreRateLimiter) -> Self {
+        self.limiter = Some(limiter);
+        self
     }
 
     pub fn set_token(&mut self, token: &str) {
@@ -61,7 +94,7 @@ impl GmailApiClient {
             .http
             .get(format!("{}/gmail/v1/users/me/profile", self.base_url))
             .bearer_auth(&self.access_token)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .json()
             .await?;
@@ -99,7 +132,7 @@ impl GmailApiClient {
             .get(format!("{}/gmail/v1/users/me/messages", self.base_url))
             .bearer_auth(&self.access_token)
             .query(&params)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?;
         let resp: MessageListResponse = resp.json().await?;
@@ -122,7 +155,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .query(&[("format", "full")])
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?;
         let resp: GmailMessage = resp.json().await?;
@@ -153,7 +186,7 @@ impl GmailApiClient {
                 .get(format!("{}/gmail/v1/users/me/history", self.base_url))
                 .bearer_auth(&self.access_token)
                 .query(&params)
-                .send_retrying(&self.retry)
+                .send_retrying(&self.retry, self.limiter.as_ref())
                 .await?;
             // Gmail returns 404 once the startHistoryId is too old (history is
             // only kept for a limited window). Surface that distinctly so the
@@ -215,7 +248,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .json()
             .await?;
@@ -231,7 +264,7 @@ impl GmailApiClient {
             .post(format!("{}/gmail/v1/users/me/messages/send", self.base_url))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .json()
             .await?;
@@ -249,7 +282,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .query(&[("format", "full")])
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -272,7 +305,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -287,7 +320,7 @@ impl GmailApiClient {
             .http
             .get(format!("{}/gmail/v1/users/me/labels", self.base_url))
             .bearer_auth(&self.access_token)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -321,7 +354,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -354,7 +387,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?;
         debug!("gmail: batch_modify ok");
@@ -368,7 +401,7 @@ impl GmailApiClient {
             .get(format!("{}/gmail/v1/users/me/drafts", self.base_url))
             .bearer_auth(&self.access_token)
             .query(&[("maxResults", max_results.to_string())])
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -388,7 +421,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .query(&[("format", "full")])
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -413,7 +446,7 @@ impl GmailApiClient {
             .post(format!("{}/gmail/v1/users/me/drafts", self.base_url))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -435,7 +468,7 @@ impl GmailApiClient {
             ))
             .bearer_auth(&self.access_token)
             .json(&body)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
             .json()
@@ -452,7 +485,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?;
         debug!(draft_id, "gmail: delete_draft ok");
@@ -469,7 +502,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?;
         let resp: SendAsListResponse = Self::json_or_scope_error(resp).await?;
         let count = resp.send_as.as_ref().map(|s| s.len()).unwrap_or(0);
@@ -488,7 +521,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .send_retrying(&self.retry)
+            .send_retrying(&self.retry, self.limiter.as_ref())
             .await?;
         let resp: SendAsAlias = Self::json_or_scope_error(resp).await?;
         debug!(send_as_email, "gmail: get_send_as ok");

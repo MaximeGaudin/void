@@ -33,7 +33,8 @@ impl GmailConnector {
             debug!(config_id = %self.config_id, "token fresh, reusing");
         }
 
-        Ok(GmailApiClient::new(&cache.access_token))
+        Ok(GmailApiClient::new(&cache.access_token)
+            .with_store_limiter(&self.store_path, &self.config_id))
     }
 
     pub async fn search_api(
