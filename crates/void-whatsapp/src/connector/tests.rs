@@ -568,7 +568,9 @@ fn determine_media_type_unknown_mime_falls_back_to_extension() {
 
 #[test]
 fn determine_media_type_default_mime_strings() {
-    assert_eq!(media::determine_media_type(None, "a.png").1, "image/jpeg");
+    // PNG announces image/png: claiming image/jpeg on PNG bytes broke rendering
+    // on receiving clients. See determine_media_type_does_not_lie_about_png_gif_webp.
+    assert_eq!(media::determine_media_type(None, "a.png").1, "image/png");
     assert_eq!(media::determine_media_type(None, "a.mp4").1, "video/mp4");
     assert_eq!(
         media::determine_media_type(None, "a.ogg").1,
@@ -1057,4 +1059,40 @@ async fn a_send_that_returns_an_id_but_is_never_confirmed_is_a_failure() {
         .await
         .expect_err("an unconfirmed send must not be reported as sent");
     assert!(err.to_string().contains("NOT confirmed"), "{err}");
+}
+
+#[test]
+fn determine_media_type_heic_and_heif_are_images() {
+    // iPhone photos land as .heic/.heif and must not fall through to Document.
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heic").0,
+        WaMediaType::Image
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heif").0,
+        WaMediaType::Image
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.HEIC").0,
+        WaMediaType::Image
+    );
+}
+
+#[test]
+fn determine_media_type_heic_declares_jpeg_because_we_transcode() {
+    // We transcode HEIC to JPEG before upload, so the announced MIME is JPEG.
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heic").1,
+        "image/jpeg"
+    );
+}
+
+#[test]
+fn determine_media_type_does_not_lie_about_png_gif_webp() {
+    // Announcing image/jpeg on PNG bytes breaks rendering on receiving clients.
+    assert_eq!(media::determine_media_type(None, "a.png").1, "image/png");
+    assert_eq!(media::determine_media_type(None, "a.gif").1, "image/gif");
+    assert_eq!(media::determine_media_type(None, "a.webp").1, "image/webp");
+    assert_eq!(media::determine_media_type(None, "a.jpg").1, "image/jpeg");
+    assert_eq!(media::determine_media_type(None, "a.jpeg").1, "image/jpeg");
 }
