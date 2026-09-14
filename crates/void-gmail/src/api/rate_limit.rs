@@ -5,6 +5,9 @@ use std::time::Duration;
 use tracing::{debug, warn};
 use void_core::db::Database;
 
+/// Gmail per-user quota: ~250 quota units / minute, where reads cost ~5 units
+/// and list calls ~2. ~90 requests/min is a safe operational ceiling that leaves
+/// headroom for spikes. See https://developers.google.com/gmail/api/reference/quota
 const CAPACITY: f64 = 90.0;
 const REFILL_PER_SEC: f64 = 90.0 / 60.0;
 const KEY: &str = "gmail_rate_limit";

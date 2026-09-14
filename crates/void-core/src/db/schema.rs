@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::error::DbError;
 
-pub const SCHEMA_VERSION: i32 = 13;
+pub const SCHEMA_VERSION: i32 = 14;
 
 /// Run all pending migrations on the database connection.
 pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
@@ -63,6 +63,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     }
     if version < 13 {
         migrate_v13(conn)?;
+    }
+    if version < 14 {
+        migrate_v14(conn)?;
     }
     Ok(())
 }
@@ -314,6 +317,21 @@ fn migrate_v13(conn: &Connection) -> Result<(), DbError> {
         CREATE INDEX IF NOT EXISTS idx_messages_is_saved ON messages(is_saved, timestamp DESC);
 
         INSERT OR REPLACE INTO schema_version (version) VALUES (13);
+    ",
+    )?;
+    Ok(())
+}
+
+fn migrate_v14(conn: &Connection) -> Result<(), DbError> {
+    debug!("running migration v14: add indexes on (connector, external_id)");
+    conn.execute_batch(
+        "
+        CREATE INDEX IF NOT EXISTS idx_conversations_connector_ext
+            ON conversations(connector, external_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_connector_ext
+            ON messages(connector, external_id);
+
+        INSERT OR REPLACE INTO schema_version (version) VALUES (14);
     ",
     )?;
     Ok(())

@@ -31,6 +31,11 @@ impl SlackApiClient {
             .unwrap_or(DEFAULT_RETRY_SECS)
     }
 
+    /// Send with automatic retry on 429, 5xx, and retryable Slack JSON errors.
+    ///
+    /// POST calls (including `chat.postMessage`) are retried too: a 5xx that
+    /// already applied the write can produce a duplicate message. This is an
+    /// accepted trade-off — the same policy as the Gmail connector.
     async fn request_with_retry<T, F, Fut>(&self, label: &str, mut send: F) -> Result<T, SlackError>
     where
         F: FnMut() -> Fut,

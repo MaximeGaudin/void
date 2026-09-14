@@ -15,6 +15,9 @@ use crate::CONNECTOR_ID;
 /// Bodies shorter than this are treated as snippets, not a full read.
 pub(super) const MIN_STORED_BODY_CHARS: usize = 200;
 
+/// Upper bound on messages fetched when loading a stored thread.
+const MAX_THREAD_MESSAGES: i64 = 500;
+
 pub(super) fn open_store(store_path: &std::path::Path) -> anyhow::Result<Option<Database>> {
     let path = store_path.join("void.db");
     if !path.exists() {
@@ -60,7 +63,7 @@ pub(super) fn load_stored_thread(db: &Database, thread_id: &str) -> Option<Gmail
         .find_conversation_by_connector_external_id(CONNECTOR_ID, thread_id)
         .ok()
         .flatten()?;
-    let stored = db.list_messages(&conv.id, 500, None, None).ok()?;
+    let stored = db.list_messages(&conv.id, MAX_THREAD_MESSAGES, None, None).ok()?;
     if stored.is_empty() {
         return None;
     }
