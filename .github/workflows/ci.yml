@@ -45,14 +45,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      # void-whatsapp links libheif for iPhone HEIC→JPEG on send. System
-      # packages (not embedded-libheif): embedded still needs libde265 at
-      # runtime for HEVC stills, and brew/apt already ship a working stack.
+      # void-whatsapp links libheif for iPhone HEIC→JPEG on send.
+      # Ubuntu LTS apt is stuck on 1.17 (< 1.21 required by libheif-sys
+      # v1_21), so Linux builds from upstream. macOS uses brew. Windows uses
+      # vcpkg; libde265 is a hard port dependency (not a feature). Features
+      # match libheif-sys's own package.metadata.vcpkg for MSVC.
       - name: Install libheif (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libheif-dev
+        run: bash .github/scripts/install-libheif-linux.sh
       - name: Install libheif (macOS)
         if: matrix.os == 'macos-latest'
         run: brew install libheif
@@ -61,11 +61,9 @@ jobs:
         uses: johnwason/vcpkg-action@v8
         id: vcpkg
         with:
-          # libde265 = HEVC still decode (iPhone .heic). Match libheif-sys's
-          # static-md triplet so the vcpkg crate finder resolves the install.
-          pkgs: 'libheif[core,libde265]'
+          pkgs: 'libheif[aom]'
           triplet: x64-windows-static-md
-          cache-key: libheif-hevc
+          cache-key: libheif-aom
           token: ${{ github.token }}
       - name: Export VCPKG_ROOT (Windows)
         if: matrix.os == 'windows-latest'
@@ -104,9 +102,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.95.0
       - name: Install libheif
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libheif-dev
+        run: bash .github/scripts/install-libheif-linux.sh
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
@@ -138,9 +134,7 @@ jobs:
         with:
           components: llvm-tools-preview
       - name: Install libheif
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libheif-dev
+        run: bash .github/scripts/install-libheif-linux.sh
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
