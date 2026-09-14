@@ -155,13 +155,18 @@ async fn rate_limited_429_exhausts_retries() {
     }
 }
 
-/// 5xx with a non-JSON body cannot decode into SlackResponse -> Http error.
+/// 5xx with `Retry-After: 0` exhausts MAX_RETRIES instantly -> Http error.
 #[tokio::test]
-async fn server_error_5xx_surfaces_http_error() {
+async fn server_error_5xx_retries_then_http() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/conversations.list"))
-        .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+        .respond_with(
+            ResponseTemplate::new(503)
+                .insert_header("Retry-After", "0")
+                .set_body_string("Service Unavailable"),
+        )
+        .expect(MAX_RETRIES as u64 + 1)
         .mount(&server)
         .await;
 
@@ -171,6 +176,145 @@ async fn server_error_5xx_surfaces_http_error() {
         .await
         .expect_err("expected error");
     assert!(matches!(err, SlackError::Http(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn server_error_5xx_recovers_on_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/conversations.list"))
+        .respond_with(
+            ResponseTemplate::new(503)
+                .insert_header("Retry-After", "0")
+                .set_body_string("Service Unavailable"),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/conversations.list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+            "channels": [{"id": "C1", "name": "general", "is_channel": true}]
+        })))
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let resp = api.conversations_list(None, 100).await.unwrap();
+    assert_eq!(resp.channels.len(), 1);
+    assert_eq!(resp.channels[0].id, "C1");
+}
+
+fn post_ok() -> serde_json::Value {
+    serde_json::json!({
+        "ok": true,
+        "channel": "C1",
+        "ts": "1700000000.000100"
+    })
+}
+
+#[tokio::test]
+async fn chat_post_message_retries_5xx_then_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat.postMessage"))
+        .respond_with(
+            ResponseTemplate::new(500)
+                .insert_header("Retry-After", "0")
+                .set_body_string("boom"),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/chat.postMessage"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(post_ok()))
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let resp = api.chat_post_message("C1", "hi", None).await.unwrap();
+    assert_eq!(resp.ts.as_deref(), Some("1700000000.000100"));
+}
+
+#[tokio::test]
+async fn chat_post_message_retries_internal_error_then_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat.postMessage"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Retry-After", "0")
+                .set_body_json(serde_json::json!({
+                    "ok": false,
+                    "error": "internal_error"
+                })),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/chat.postMessage"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(post_ok()))
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let resp = api.chat_post_message("C1", "hi", None).await.unwrap();
+    assert_eq!(resp.channel.as_deref(), Some("C1"));
+}
+
+#[tokio::test]
+async fn fatal_error_retries_then_api() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat.postMessage"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Retry-After", "0")
+                .set_body_json(serde_json::json!({
+                    "ok": false,
+                    "error": "fatal_error"
+                })),
+        )
+        .expect(MAX_RETRIES as u64 + 1)
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let err = api
+        .chat_post_message("C1", "hi", None)
+        .await
+        .expect_err("expected error");
+    match err {
+        SlackError::Api(msg) => assert!(msg.contains("fatal_error"), "got {msg}"),
+        other => panic!("expected Api error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn channel_not_found_fails_fast() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat.postMessage"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": false,
+            "error": "channel_not_found"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let err = api
+        .chat_post_message("C1", "hi", None)
+        .await
+        .expect_err("expected error");
+    match err {
+        SlackError::Api(msg) => assert!(msg.contains("channel_not_found"), "got {msg}"),
+        other => panic!("expected Api error, got {other:?}"),
+    }
 }
 
 /// Malformed JSON: `messages` is required (Vec) but absent -> Http decode error.
