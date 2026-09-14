@@ -34,6 +34,9 @@ allow = [
     "Unicode-3.0",
     "CDLA-Permissive-2.0",
     "LGPL-2.1-or-later",
+    # libheif (system) / libheif-rs path for HEIC decode on outgoing WhatsApp
+    # photos. JL authorized LGPL-3.0-or-later on 2026-09-12 for this purpose.
+    "LGPL-3.0-or-later",
     "AGPL-3.0-only",
 ]
 

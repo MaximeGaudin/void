@@ -26,6 +26,22 @@ wa-rs-proto = "0.2"
 qr2term = "0.3"
 base64 = { workspace = true }
 chrono = { workspace = true }
+# Image pipeline for outgoing photos: decode, resize a thumbnail, re-encode JPEG.
+# default-features = false keeps the codec list to what we actually send.
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+] }
+# HEIC/HEIF (the iPhone camera default) is not decodable by `image`
+# (image-rs/image#1375 was closed without an implementation). libheif-rs wraps
+# the system libheif C library and its `image` feature registers decoding hooks
+# into the `image` crate. Requires libheif >= 1.21 (brew install libheif).
+libheif-rs = { version = "2.7.0", default-features = false, features = [
+    "v1_21",
+    "image",
+] }
 
 [dev-dependencies]
 uuid = { workspace = true }
