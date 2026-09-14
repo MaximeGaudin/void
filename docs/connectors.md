@@ -228,6 +228,10 @@ Meetings still being processed by Circleback are skipped and picked up on a late
 already imported is re-imported only when Circleback changes it, and its transcript is fetched once.
 The connector is read-only: `void send` and `void reply` refuse a Circleback conversation.
 
+Turning `include_transcript` on after the first import does not backfill transcripts for meetings
+already stored: a meeting is only re-read when Circleback changes it. To fetch them, clear the
+connector's state first with `void sync --clear-connector circleback`, then sync again.
+
 ```bash
 void inbox --connector circleback
 void search "pricing" --connector circleback

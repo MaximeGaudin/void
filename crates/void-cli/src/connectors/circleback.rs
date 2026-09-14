@@ -7,10 +7,11 @@ use void_core::config::{
 };
 use void_core::connector::Connector;
 
+use void_circleback::DEFAULT_BACKFILL_DAYS;
+
 use super::{ConnectorPlugin, ReplyIdStyle, SetupCtx};
 
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 900;
-pub(crate) const DEFAULT_BACKFILL_DAYS: u32 = 365;
 
 inventory::submit! {
     ConnectorPlugin {

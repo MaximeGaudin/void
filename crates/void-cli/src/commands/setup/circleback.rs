@@ -5,7 +5,7 @@ use void_core::models::ConnectorType;
 
 use super::auth::{pick_connector_action, ConnectorAction};
 use super::prompt::{confirm_default_yes, prompt, prompt_default};
-use crate::connectors::circleback::DEFAULT_BACKFILL_DAYS;
+use void_circleback::DEFAULT_BACKFILL_DAYS;
 
 pub(crate) async fn setup_circleback(cfg: &mut VoidConfig, add_only: bool) -> anyhow::Result<()> {
     eprintln!("🎙️  CIRCLEBACK");

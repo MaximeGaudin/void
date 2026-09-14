@@ -17,6 +17,7 @@ async-trait = { workspace = true }
 tokio-util = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
+urlencoding = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

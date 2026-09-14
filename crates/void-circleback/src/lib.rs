@@ -9,3 +9,6 @@ pub mod api;
 pub mod connector;
 
 pub const CONNECTOR_ID: &str = "circleback";
+
+/// How far back the first sync reaches when the user keeps the default.
+pub const DEFAULT_BACKFILL_DAYS: u32 = 365;

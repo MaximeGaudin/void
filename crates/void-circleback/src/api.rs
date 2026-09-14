@@ -200,7 +200,7 @@ impl CirclebackClient {
     /// `next_cursor` to continue, `None` for the first page.
     pub async fn list_meetings(&self, cursor: Option<&str>) -> anyhow::Result<MeetingsPage> {
         let path = match cursor {
-            Some(c) => format!("meetings?cursor={}", urlencode(c)),
+            Some(c) => format!("meetings?cursor={}", urlencoding::encode(c)),
             None => "meetings".to_string(),
         };
         let resp = self.get(&path).await?;
@@ -221,7 +221,9 @@ impl CirclebackClient {
 
     /// A single meeting, `None` when it does not exist (or is not visible).
     pub async fn get_meeting(&self, id: &str) -> anyhow::Result<Option<Meeting>> {
-        let resp = self.get(&format!("meeting/{}", urlencode(id))).await?;
+        let resp = self
+            .get(&format!("meeting/{}", urlencoding::encode(id)))
+            .await?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -234,7 +236,7 @@ impl CirclebackClient {
     /// Speaker turns of a meeting; empty when no transcript exists.
     pub async fn transcript(&self, id: &str) -> anyhow::Result<Vec<TranscriptTurn>> {
         let resp = self
-            .get(&format!("meeting/{}/transcript", urlencode(id)))
+            .get(&format!("meeting/{}/transcript", urlencoding::encode(id)))
             .await?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(Vec::new());
@@ -271,19 +273,6 @@ pub(crate) fn next_cursor_from_link(link: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -397,6 +386,53 @@ mod tests {
         assert_eq!(turns.len(), 2);
         assert_eq!(turns[1].speaker.as_deref(), Some("Bob"));
         assert!(client.transcript("m2").await.unwrap().is_empty());
+    }
+
+    /// A `429` with `Retry-After` is waited out and the call succeeds on the
+    /// next attempt, without the caller ever seeing the rate limit.
+    #[tokio::test]
+    async fn rate_limited_request_is_retried_and_succeeds() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/meetings"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/meetings"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(vec![meeting_json("m1", Some("notes"))]),
+            )
+            .with_priority(2)
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = CirclebackClient::with_base_url("cb_test", server.uri());
+        let page = client.list_meetings(None).await.unwrap();
+        assert_eq!(page.meetings.len(), 1);
+        assert_eq!(page.meetings[0].id, "m1");
+        // Both mocks verified on drop: exactly one 429 then one 200.
+    }
+
+    /// The client gives up after `MAX_RATE_LIMIT_RETRIES` and surfaces the
+    /// `429` instead of looping forever.
+    #[tokio::test]
+    async fn rate_limit_retries_are_bounded() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/meetings"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
+            .expect(u64::from(MAX_RATE_LIMIT_RETRIES) + 1)
+            .mount(&server)
+            .await;
+
+        let client = CirclebackClient::with_base_url("cb_test", server.uri());
+        let err = client.list_meetings(None).await.unwrap_err();
+        assert!(err.to_string().contains("429"), "{err}");
     }
 
     #[tokio::test]
