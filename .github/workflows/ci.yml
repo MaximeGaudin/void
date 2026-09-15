@@ -45,6 +45,30 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # void-whatsapp links libheif for iPhone HEIC→JPEG on send.
+      # Ubuntu LTS apt is stuck on 1.17 (< 1.21 required by libheif-sys
+      # v1_21), so Linux builds from upstream. macOS uses brew. Windows uses
+      # vcpkg; libde265 is a hard port dependency (not a feature). Features
+      # match libheif-sys's own package.metadata.vcpkg for MSVC.
+      - name: Install libheif (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: bash .github/scripts/install-libheif-linux.sh
+      - name: Install libheif (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install libheif
+      - name: Install libheif (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: johnwason/vcpkg-action@v8
+        id: vcpkg
+        with:
+          pkgs: 'libheif[aom]'
+          triplet: x64-windows-static-md
+          cache-key: libheif-aom
+          token: ${{ github.token }}
+      - name: Export VCPKG_ROOT (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
           # Cache writes are restricted to main to protect the 10 GB quota —
@@ -77,6 +101,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.95.0
+      - name: Install libheif
+        run: bash .github/scripts/install-libheif-linux.sh
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
@@ -107,6 +133,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+      - name: Install libheif
+        run: bash .github/scripts/install-libheif-linux.sh
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
