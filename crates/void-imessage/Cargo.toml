@@ -22,6 +22,9 @@ serde_json = { workspace = true }
 # build at runtime with a clear message instead of silently not existing.
 [target.'cfg(target_os = "macos")'.dependencies]
 rusqlite = { workspace = true }
+# Home directory lookup for the default store path, consistent with
+# void_core::config::paths rather than reading HOME directly.
+dirs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
