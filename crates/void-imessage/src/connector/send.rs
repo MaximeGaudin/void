@@ -17,6 +17,25 @@ use void_core::models::MessageContent;
 use super::store;
 
 /// Escapes a string so it can be safely embedded in an AppleScript string literal.
+///
+/// Only `\` and `"` need escaping, and that is sufficient rather than merely
+/// convenient: every value passed through this function is interpolated inside
+/// a double-quoted AppleScript string literal in [`build_applescript`]. Within
+/// those delimiters the only two characters that can terminate the literal or
+/// change its meaning are the closing quote and the escape character itself.
+/// Escaping the quote is what closes the injection path: a recipient or body
+/// containing `" & (do shell script "…") & "` stays one inert literal instead
+/// of becoming concatenation and a command.
+///
+/// Newlines, tabs, carriage returns and non-ASCII text deliberately pass
+/// through unchanged. AppleScript accepts a raw newline inside a string
+/// literal, and `osascript` reads the script as UTF-8, so rewriting them to
+/// `\n`-style sequences would alter the message the recipient sees rather than
+/// protect anything. This is verified by the escaping tests below.
+///
+/// This function is NOT safe for building AppleScript outside a quoted string
+/// literal (an identifier, a raw script fragment); nothing in this module does
+/// that.
 pub fn escape_applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -88,13 +107,25 @@ pub async fn execute_applescript(script: &str) -> Result<()> {
 }
 
 /// Query `chat.db` for the most recent outgoing message to `to` sent after `sent_after_apple_time`.
+///
+/// Matching deliberately avoids `LIKE`. The recipient is caller data, and in a
+/// `LIKE` pattern `%` and `_` are wildcards: the address `a_b@example.com`
+/// would match the unrelated handle `axb@example.com` and confirm a send that
+/// never happened, returning the GUID of somebody else's conversation.
+/// `INSTR` and `SUBSTR` compare literal text, so no escaping is needed and no
+/// input is special.
+///
+/// The empty-string guards matter for the same reason: `INSTR(x, '')` is 1 and
+/// a zero-length suffix comparison is trivially true, so an empty handle or an
+/// empty recipient would match every outgoing row.
 pub fn find_sent_message(
     conn: &rusqlite::Connection,
     to: &str,
     sent_after_apple_time: i64,
 ) -> Result<Option<String>> {
-    // Normalization check: `handle.id` may match `to` or have phone prefixes.
-    // We check both exact match or match on suffix/handle.
+    // `chat.db` normalizes handles, so the stored form may omit the country
+    // code the caller passed (or carry one the caller omitted). Compare in both
+    // directions by literal suffix.
     let mut stmt = conn.prepare(
         "SELECT m.guid
          FROM message m
@@ -103,23 +134,19 @@ pub fn find_sent_message(
          LEFT JOIN chat c ON c.ROWID = cmj.chat_id
          WHERE m.is_from_me = 1
            AND m.date >= ?1
+           AND LENGTH(?2) > 0
            AND (
                 h.id = ?2
                 OR c.chat_identifier = ?2
-                OR c.guid LIKE ?3
-                OR ?2 LIKE '%' || h.id
-                OR h.id LIKE '%' || ?2
+                OR INSTR(c.guid, ?2) > 0
+                OR (LENGTH(h.id) > 0 AND SUBSTR(?2, -LENGTH(h.id)) = h.id)
+                OR (LENGTH(h.id) > 0 AND SUBSTR(h.id, -LENGTH(?2)) = ?2)
            )
          ORDER BY m.date DESC
          LIMIT 1",
     )?;
 
-    let chat_guid_pattern = format!("%{to}%");
-    let mut rows = stmt.query(rusqlite::params![
-        sent_after_apple_time,
-        to,
-        chat_guid_pattern
-    ])?;
+    let mut rows = stmt.query(rusqlite::params![sent_after_apple_time, to])?;
 
     if let Some(row) = rows.next()? {
         let guid: String = row.get(0)?;
