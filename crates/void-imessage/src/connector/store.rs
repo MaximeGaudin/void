@@ -14,13 +14,12 @@ use super::typedstream;
 pub const APPLE_EPOCH_OFFSET: i64 = 978_307_200;
 
 /// Default location of the Messages store for the current user.
+///
+/// Uses `dirs::home_dir()` rather than reading `HOME` directly, to match the
+/// rest of the workspace (`void_core::config::paths`) and to keep working when
+/// the variable is absent from the daemon's environment.
 pub fn default_db_path() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| {
-        PathBuf::from(home)
-            .join("Library")
-            .join("Messages")
-            .join("chat.db")
-    })
+    dirs::home_dir().map(|home| home.join("Library").join("Messages").join("chat.db"))
 }
 
 /// Why the store could not be read.

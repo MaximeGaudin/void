@@ -65,13 +65,12 @@ fn build(
 ///
 /// The daemon, not the shell, opens this path, so a literal `~` would be taken
 /// as a directory name and the store would look missing while it plainly exists.
+/// Resolves the home directory with `dirs::home_dir()`, as the rest of the
+/// workspace does, instead of reading `HOME` directly.
 fn shellexpand_home(path: &str) -> String {
     match path.strip_prefix("~/") {
-        Some(rest) => match std::env::var_os("HOME") {
-            Some(home) => PathBuf::from(home)
-                .join(rest)
-                .to_string_lossy()
-                .into_owned(),
+        Some(rest) => match dirs::home_dir() {
+            Some(home) => home.join(rest).to_string_lossy().into_owned(),
             None => path.to_string(),
         },
         None => path.to_string(),
@@ -102,10 +101,15 @@ mod tests {
 
     #[test]
     fn expands_leading_tilde_so_the_daemon_finds_the_store() {
-        let home = std::env::var("HOME").unwrap();
+        // Resolve the expectation the same way the function does: asserting
+        // against `HOME` would pass by coincidence on macOS and drift the day
+        // the two disagree.
+        let home = dirs::home_dir().unwrap();
         assert_eq!(
             shellexpand_home("~/Library/Messages/chat.db"),
-            format!("{home}/Library/Messages/chat.db")
+            home.join("Library/Messages/chat.db")
+                .to_string_lossy()
+                .into_owned()
         );
     }
 

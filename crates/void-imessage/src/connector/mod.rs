@@ -24,6 +24,13 @@ use void_core::models::{ConnectorType, HealthStatus, MessageContent};
 
 use crate::CONNECTOR_ID;
 
+/// Off macOS the two store fields are carried but never read: every code path
+/// that touches them is `#[cfg(target_os = "macos")]`, so `-D warnings` turns
+/// the resulting dead-code lint into a build error on Linux and Windows. The
+/// fields stay in the struct rather than being cfg-gated themselves so that
+/// `new()` keeps one signature on every platform and the caller in void-cli
+/// does not need its own gating.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct ImessageConnector {
     config_id: String,
     db_path: PathBuf,
