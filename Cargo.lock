@@ -4757,6 +4757,7 @@ dependencies = [
  "void-gmail",
  "void-googlenews",
  "void-hackernews",
+ "void-imessage",
  "void-linkedin",
  "void-reddit",
  "void-slack",
@@ -4869,6 +4870,23 @@ dependencies = [
  "tracing",
  "void-core",
  "wiremock",
+]
+
+[[package]]
+name = "void-imessage"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "void-core",
 ]
 
 [[package]]
