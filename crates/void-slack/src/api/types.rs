@@ -203,6 +203,23 @@ pub struct FilesUploadUrlResponse {
     pub file_id: String,
 }
 
+/// One entry of `files.completeUploadExternal`'s `files` array: the files Slack
+/// confirms it actually shared.
+#[derive(Debug, Deserialize)]
+pub struct CompletedUploadFile {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// Response of `files.completeUploadExternal`. An `ok: true` with an empty
+/// `files` array means nothing was shared, so it must not count as a send.
+#[derive(Debug, Deserialize)]
+pub struct FilesCompleteUploadResponse {
+    #[serde(default)]
+    pub files: Vec<CompletedUploadFile>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchMessagesResponse {
     pub messages: SearchMessagesMatches,

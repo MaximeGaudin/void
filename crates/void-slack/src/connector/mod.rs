@@ -39,6 +39,24 @@ fn is_invalid_refresh_token_err(result: &anyhow::Result<()>) -> bool {
         .is_some_and(|e| e.to_string().contains("invalid_refresh_token"))
 }
 
+/// Slack's documented per-file upload cap is 1 GB.
+/// <https://slack.com/help/articles/201330736-Add-files-to-Slack>
+pub(crate) const MAX_UPLOAD_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// Reject a file locally when Slack is guaranteed to refuse it, so no bytes
+/// leave the machine and no upload ticket is left dangling server-side.
+pub(crate) fn check_upload_size(filename: &str, len: u64) -> anyhow::Result<()> {
+    if len == 0 {
+        anyhow::bail!("refusing to upload an empty file: {filename} is 0 bytes");
+    }
+    if len > MAX_UPLOAD_BYTES {
+        anyhow::bail!(
+            "file too large for Slack: {filename} is {len} bytes, limit is {MAX_UPLOAD_BYTES} bytes (1 GB)"
+        );
+    }
+    Ok(())
+}
+
 impl SlackConnector {
     pub fn new(
         connection_id: &str,
@@ -269,6 +287,11 @@ impl SlackConnector {
         }
     }
 
+    /// Upload a file and share it in `channel`.
+    ///
+    /// Returns the file id **Slack confirms it shared**, not the upload ticket
+    /// id: `files.completeUploadExternal` can answer `ok: true` while sharing
+    /// nothing, and reporting that as a successful send would be a lie.
     pub async fn upload_file(
         &self,
         channel: &str,
@@ -276,12 +299,26 @@ impl SlackConnector {
         caption: Option<&str>,
         thread_ts: Option<&str>,
     ) -> anyhow::Result<String> {
-        let data = std::fs::read(file_path)
-            .with_context(|| format!("failed to read file {}", file_path))?;
         let filename = Path::new(file_path)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("file");
+
+        // Check the size from metadata first: an oversized file is rejected
+        // without reading a gigabyte into memory, and without calling Slack.
+        let len = tokio::fs::metadata(file_path)
+            .await
+            .with_context(|| format!("failed to stat file {file_path}"))?
+            .len();
+        check_upload_size(filename, len)?;
+
+        let data = tokio::fs::read(file_path)
+            .await
+            .with_context(|| format!("failed to read file {file_path}"))?;
+        // Re-check: the file may have been truncated or grown between the stat
+        // and the read, and `length` must match the bytes actually posted.
+        check_upload_size(filename, data.len() as u64)?;
+
         let upload_info = self
             .api
             .files_get_upload_url_external(filename, data.len() as u64)
@@ -291,7 +328,8 @@ impl SlackConnector {
             .post_file_to_url(&upload_info.upload_url, data, filename)
             .await
             .context("file upload to URL failed")?;
-        self.api
+        let completed = self
+            .api
             .files_complete_upload_external(
                 &upload_info.file_id,
                 filename,
@@ -301,6 +339,13 @@ impl SlackConnector {
             )
             .await
             .context("files.completeUploadExternal failed")?;
-        Ok(upload_info.file_id)
+
+        let shared = completed.files.first().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Slack did not confirm sharing {filename} in {channel}: \
+                 files.completeUploadExternal returned no file"
+            )
+        })?;
+        Ok(shared.id.clone())
     }
 }
