@@ -1,9 +1,13 @@
 #[cfg(target_os = "macos")]
+pub mod send;
+#[cfg(target_os = "macos")]
 pub mod store;
 #[cfg(target_os = "macos")]
 mod sync;
 pub mod typedstream;
 
+#[cfg(all(test, target_os = "macos"))]
+mod send_tests;
 #[cfg(all(test, target_os = "macos"))]
 mod store_tests;
 #[cfg(test)]
@@ -125,23 +129,50 @@ impl Connector for ImessageConnector {
         }
     }
 
-    /// Sending is deliberately absent in this connector.
-    ///
-    /// The only route is driving Messages.app over AppleScript, which returns
-    /// success as soon as the app accepts the event, long before anything
-    /// reaches Apple. Reporting that as sent would repeat the bug fixed in
-    /// 0380e6e for WhatsApp. `chat.db` does expose `date_delivered`, so a real
-    /// confirmation loop is possible, but it belongs in its own change.
-    async fn send_message(&self, _to: &str, _content: MessageContent) -> anyhow::Result<String> {
-        anyhow::bail!("iMessage is a read-only connector")
+    async fn send_message(&self, to: &str, content: MessageContent) -> anyhow::Result<String> {
+        #[cfg(target_os = "macos")]
+        {
+            send::send_and_confirm(
+                &self.db_path,
+                to,
+                &content,
+                std::time::Duration::from_secs(15),
+            )
+            .await
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (to, content);
+            anyhow::bail!("iMessage sending is only available on macOS")
+        }
     }
 
     async fn reply(
         &self,
-        _message_id: &str,
-        _content: MessageContent,
+        message_id: &str,
+        content: MessageContent,
         _in_thread: bool,
     ) -> anyhow::Result<String> {
-        anyhow::bail!("iMessage is a read-only connector")
+        #[cfg(target_os = "macos")]
+        {
+            // Parse recipient from reply_id: either "conv_id:msg_id" or raw external_id
+            let to = if let Ok((conv_ext, _)) = void_core::models::parse_reply_id(message_id) {
+                conv_ext
+            } else {
+                message_id.to_string()
+            };
+            send::send_and_confirm(
+                &self.db_path,
+                &to,
+                &content,
+                std::time::Duration::from_secs(15),
+            )
+            .await
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (message_id, content, _in_thread);
+            anyhow::bail!("iMessage sending is only available on macOS")
+        }
     }
 }

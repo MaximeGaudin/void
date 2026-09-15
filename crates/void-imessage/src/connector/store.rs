@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use super::typedstream;
 
 /// Apple's epoch (2001-01-01) offset from the Unix epoch, in seconds.
-const APPLE_EPOCH_OFFSET: i64 = 978_307_200;
+pub const APPLE_EPOCH_OFFSET: i64 = 978_307_200;
 
 /// Default location of the Messages store for the current user.
 ///
