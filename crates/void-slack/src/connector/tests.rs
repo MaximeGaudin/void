@@ -783,9 +783,16 @@ async fn upload_file_calls_three_step_flow_and_returns_shared_id() {
             "initial_comment": "my caption",
             "thread_ts": "123.456"
         })))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
-            serde_json::json!({"ok": true, "files": [{"id": "F12345", "title": "test.txt"}]}),
-        ))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "files": [{
+                    "id": "F12345",
+                    "title": "test.txt",
+                    "shares": {"public": {"C1": [{"ts": "123.457"}]}}
+                }]
+            })),
+        )
         .mount(&server)
         .await;
 
@@ -1478,7 +1485,12 @@ async fn upload_file_returns_id_confirmed_by_server() {
         .and(wiremock::matchers::path("/files.completeUploadExternal"))
         .respond_with(
             wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "ok": true, "files": [{"id": "F_SHARED", "title": "test.txt"}]
+                "ok": true,
+                "files": [{
+                    "id": "F_SHARED",
+                    "title": "test.txt",
+                    "shares": {"public": {"C1": [{"ts": "123.458"}]}}
+                }]
             })),
         )
         .mount(&server)
@@ -1539,4 +1551,78 @@ async fn upload_file_rejects_empty_file_without_calling_slack() {
         0,
         "no Slack call must be made for an empty file"
     );
+}
+
+/// Slack applies the channel share asynchronously: the immediate
+/// `completeUploadExternal` reply carries `shares: {}` even when the file does
+/// land in the channel (measured against a live workspace). So a send whose
+/// response has no share record must still succeed. This test locks that in,
+/// because tightening the check to require `shares` breaks every real send.
+#[tokio::test]
+async fn upload_file_succeeds_when_shares_not_yet_populated() {
+    let server = wiremock::MockServer::start().await;
+    let upload_path = "/upload-asyncshare";
+    let upload_url = mock_get_upload_url(&server, upload_path);
+
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path_regex(
+            r"^/files\.getUploadURLExternal",
+        ))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "upload_url": upload_url, "file_id": "F_ASYNC"
+            })),
+        )
+        .mount(&server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path(upload_path))
+        .respond_with(wiremock::ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    // Exactly what Slack returns immediately: acknowledged, but shares still empty.
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/files.completeUploadExternal"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "files": [{
+                    "id": "F_ASYNC",
+                    "title": "test.txt",
+                    "shares": {},
+                    "ims": [],
+                    "channels": []
+                }]
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let path = temp_upload_file("asyncshare", b"hello world");
+    let id = upload_test_connector(&server.uri())
+        .upload_file("D123", path.to_str().unwrap(), None, None)
+        .await
+        .expect("an empty shares map is normal and must not fail the send");
+    assert_eq!(id, "F_ASYNC");
+}
+
+/// The `shares` map is still parsed, so the message `ts` is available for logging
+/// when Slack does include it.
+#[test]
+fn share_ts_in_reads_the_live_response_shape() {
+    let f: crate::api::CompletedUploadFile = serde_json::from_value(serde_json::json!({
+        "id": "F1",
+        "shares": {"private": {"D03711FJA10": [{"ts": "1789437150.935529"}]}}
+    }))
+    .unwrap();
+    assert_eq!(f.share_ts_in("D03711FJA10"), Some("1789437150.935529"));
+    assert_eq!(f.share_ts_in("C_OTHER"), None);
+
+    let empty: crate::api::CompletedUploadFile =
+        serde_json::from_value(serde_json::json!({"id": "F2", "shares": {}})).unwrap();
+    assert_eq!(empty.share_ts_in("D03711FJA10"), None);
+
+    let absent: crate::api::CompletedUploadFile =
+        serde_json::from_value(serde_json::json!({"id": "F3"})).unwrap();
+    assert_eq!(absent.share_ts_in("D03711FJA10"), None);
 }

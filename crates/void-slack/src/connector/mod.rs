@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::Context;
+use tracing::debug;
 
 use void_core::config::{default_config_path, VoidConfig};
 
@@ -289,9 +290,10 @@ impl SlackConnector {
 
     /// Upload a file and share it in `channel`.
     ///
-    /// Returns the file id **Slack confirms it shared**, not the upload ticket
-    /// id: `files.completeUploadExternal` can answer `ok: true` while sharing
-    /// nothing, and reporting that as a successful send would be a lie.
+    /// Returns the file id **Slack confirms it shared**. An `ok: true` with an
+    /// empty `files` array means nothing was acknowledged, so it fails rather
+    /// than reporting a false success. If Slack includes the message `ts` in
+    /// `shares` on the immediate reply, it is logged at debug level.
     pub async fn upload_file(
         &self,
         channel: &str,
@@ -340,12 +342,22 @@ impl SlackConnector {
             .await
             .context("files.completeUploadExternal failed")?;
 
+        // Slack must acknowledge the file. An `ok: true` with an empty `files`
+        // array means it acknowledged nothing, so it is not a send.
+        //
+        // Deliberately NOT checked here: whether `files[0].shares` names
+        // `channel`. Slack applies the share asynchronously, so the immediate
+        // reply carries `shares: {}` even for a send that lands correctly
+        // (measured on a live workspace); requiring it would fail every send.
         let shared = completed.files.first().ok_or_else(|| {
             anyhow::anyhow!(
                 "Slack did not confirm sharing {filename} in {channel}: \
                  files.completeUploadExternal returned no file"
             )
         })?;
+        if let Some(ts) = shared.share_ts_in(channel) {
+            debug!(file_id = %shared.id, ts, channel, "slack: file share confirmed");
+        }
         Ok(shared.id.clone())
     }
 }
