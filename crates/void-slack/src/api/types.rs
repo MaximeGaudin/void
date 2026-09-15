@@ -1,5 +1,7 @@
 //! Slack Web API response types.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -201,6 +203,56 @@ pub struct ConnectionsOpenResponse {
 pub struct FilesUploadUrlResponse {
     pub upload_url: String,
     pub file_id: String,
+}
+
+/// One entry of `files.completeUploadExternal`'s `files` array.
+///
+/// Note on `shares`: it is **not** usable as proof of delivery from this
+/// response. Measured against a live workspace, the immediate reply carries
+/// `shares: {}` with empty `ims`/`channels`, and the share record only appears
+/// on `files.info` a moment later, because Slack shares the file
+/// asynchronously after the upload is completed. Keying a send's success on
+/// `shares` therefore fails every successful send. It is parsed only so the
+/// `ts` can be logged when Slack does happen to include it.
+#[derive(Debug, Deserialize)]
+pub struct CompletedUploadFile {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub shares: Option<HashMap<String, HashMap<String, Vec<ShareRecord>>>>,
+}
+
+/// A single share of a file into one channel.
+#[derive(Debug, Deserialize)]
+pub struct ShareRecord {
+    /// Timestamp of the message carrying the file in that channel.
+    #[serde(default)]
+    pub ts: Option<String>,
+}
+
+impl CompletedUploadFile {
+    /// The message `ts` for this file in `channel`, when Slack already knows it.
+    ///
+    /// Often `None` on the immediate `completeUploadExternal` reply (the share is
+    /// applied asynchronously), so this is for logging, never for deciding
+    /// whether the send succeeded.
+    pub fn share_ts_in(&self, channel: &str) -> Option<&str> {
+        self.shares
+            .as_ref()?
+            .values()
+            .filter_map(|by_channel| by_channel.get(channel))
+            .flatten()
+            .find_map(|share| share.ts.as_deref())
+    }
+}
+
+/// Response of `files.completeUploadExternal`. An `ok: true` with an empty
+/// `files` array means Slack acknowledged nothing, so it must not count as a send.
+#[derive(Debug, Deserialize)]
+pub struct FilesCompleteUploadResponse {
+    #[serde(default)]
+    pub files: Vec<CompletedUploadFile>,
 }
 
 #[derive(Debug, Deserialize)]

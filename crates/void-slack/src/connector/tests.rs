@@ -749,7 +749,7 @@ async fn backfill_syncs_all_channels() {
 }
 
 #[tokio::test]
-async fn upload_file_calls_three_step_flow() {
+async fn upload_file_calls_three_step_flow_and_returns_shared_id() {
     let server = wiremock::MockServer::start().await;
 
     let file_content = b"hello world";
@@ -784,7 +784,14 @@ async fn upload_file_calls_three_step_flow() {
             "thread_ts": "123.456"
         })))
         .respond_with(
-            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})),
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "files": [{
+                    "id": "F12345",
+                    "title": "test.txt",
+                    "shares": {"public": {"C1": [{"ts": "123.457"}]}}
+                }]
+            })),
         )
         .mount(&server)
         .await;
@@ -814,6 +821,8 @@ async fn upload_file_calls_three_step_flow() {
         .await
         .unwrap();
 
+    // The id comes from the `files` array Slack echoed back, which is the only
+    // evidence the file was really shared.
     assert_eq!(file_id, "F12345");
 }
 
@@ -1370,4 +1379,250 @@ fn build_socket_metadata_falls_back_to_channel_id_when_unnamed() {
     };
     let meta = super::socket_mode::build_socket_metadata(&conv, "C2", None, None);
     assert_eq!(meta["channel_name"], "C2");
+}
+
+// ── File send: server confirmation, not just "the call returned" ──────────
+
+use super::MAX_UPLOAD_BYTES;
+
+/// Build a connector pointed at a mock server, for file-upload tests.
+fn upload_test_connector(server_uri: &str) -> SlackConnector {
+    SlackConnector {
+        connection_id: "test-slack".to_string(),
+        api: crate::api::SlackApiClient::with_base_url("test-token", server_uri).unwrap(),
+        app_token: "xapp-test".to_string(),
+        app_id: None,
+        config_refresh_token: std::sync::Mutex::new(None),
+        config_path: None,
+        store_path: std::env::temp_dir(),
+    }
+}
+
+/// Write a throwaway file and return its path.
+fn temp_upload_file(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("void-slack-up-{}-{tag}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("test.txt");
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+fn mock_get_upload_url(server: &wiremock::MockServer, upload_path: &str) -> String {
+    let upload_url = format!("{}{}", server.uri(), upload_path);
+    upload_url
+}
+
+/// `files.completeUploadExternal` answers `ok: true` but shares nothing.
+/// Reporting that as a successful send is a lie: the file stayed private.
+#[tokio::test]
+async fn upload_file_fails_when_server_shares_no_file() {
+    let server = wiremock::MockServer::start().await;
+    let upload_path = "/upload-noshare";
+    let upload_url = mock_get_upload_url(&server, upload_path);
+
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path_regex(
+            r"^/files\.getUploadURLExternal",
+        ))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "upload_url": upload_url, "file_id": "F12345"
+            })),
+        )
+        .mount(&server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path(upload_path))
+        .respond_with(wiremock::ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    // ok: true, but an empty files array — nothing was shared.
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/files.completeUploadExternal"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true, "files": []})),
+        )
+        .mount(&server)
+        .await;
+
+    let path = temp_upload_file("noshare", b"hello world");
+    let err = upload_test_connector(&server.uri())
+        .upload_file("C1", path.to_str().unwrap(), None, None)
+        .await
+        .expect_err("empty files array must not be reported as a successful send");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("did not confirm"),
+        "error should say the server never confirmed the share, got: {msg}"
+    );
+}
+
+/// Slack echoes back the shared file id. Trust that, not the upload ticket.
+#[tokio::test]
+async fn upload_file_returns_id_confirmed_by_server() {
+    let server = wiremock::MockServer::start().await;
+    let upload_path = "/upload-confirmed";
+    let upload_url = mock_get_upload_url(&server, upload_path);
+
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path_regex(
+            r"^/files\.getUploadURLExternal",
+        ))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "upload_url": upload_url, "file_id": "F_TICKET"
+            })),
+        )
+        .mount(&server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path(upload_path))
+        .respond_with(wiremock::ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/files.completeUploadExternal"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "files": [{
+                    "id": "F_SHARED",
+                    "title": "test.txt",
+                    "shares": {"public": {"C1": [{"ts": "123.458"}]}}
+                }]
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let path = temp_upload_file("confirmed", b"hello world");
+    let id = upload_test_connector(&server.uri())
+        .upload_file("C1", path.to_str().unwrap(), None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        id, "F_SHARED",
+        "must return the id Slack confirmed sharing, not the upload ticket id"
+    );
+}
+
+/// A file too large for Slack must fail before any byte leaves the machine.
+/// Checked as a pure function so the limit is testable without a 1 GB fixture.
+#[test]
+fn upload_size_guard_rejects_over_slack_limit() {
+    // Slack's documented cap is 1 GB per file.
+    assert!(super::check_upload_size("big.bin", MAX_UPLOAD_BYTES + 1).is_err());
+    let err = super::check_upload_size("big.bin", MAX_UPLOAD_BYTES + 1).unwrap_err();
+    assert!(
+        err.to_string().contains("too large"),
+        "error should name the size problem, got: {err}"
+    );
+    // Exactly at the limit is allowed.
+    assert!(super::check_upload_size("edge.bin", MAX_UPLOAD_BYTES).is_ok());
+    assert!(super::check_upload_size("ok.txt", 1).is_ok());
+}
+
+/// Zero bytes is rejected too, and the message names the file.
+#[test]
+fn upload_size_guard_rejects_empty_and_names_the_file() {
+    let err = super::check_upload_size("notes.txt", 0).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("empty"), "should name the empty file: {msg}");
+    assert!(msg.contains("notes.txt"), "should name the file: {msg}");
+}
+
+/// An empty file has no meaning as an attachment and Slack rejects it late.
+#[tokio::test]
+async fn upload_file_rejects_empty_file_without_calling_slack() {
+    let server = wiremock::MockServer::start().await;
+
+    let path = temp_upload_file("empty", b"");
+    let err = upload_test_connector(&server.uri())
+        .upload_file("C1", path.to_str().unwrap(), None, None)
+        .await
+        .expect_err("an empty file must be rejected locally");
+    assert!(
+        err.to_string().contains("empty"),
+        "error should name the empty file, got: {err}"
+    );
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        0,
+        "no Slack call must be made for an empty file"
+    );
+}
+
+/// Slack applies the channel share asynchronously: the immediate
+/// `completeUploadExternal` reply carries `shares: {}` even when the file does
+/// land in the channel (measured against a live workspace). So a send whose
+/// response has no share record must still succeed. This test locks that in,
+/// because tightening the check to require `shares` breaks every real send.
+#[tokio::test]
+async fn upload_file_succeeds_when_shares_not_yet_populated() {
+    let server = wiremock::MockServer::start().await;
+    let upload_path = "/upload-asyncshare";
+    let upload_url = mock_get_upload_url(&server, upload_path);
+
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path_regex(
+            r"^/files\.getUploadURLExternal",
+        ))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "upload_url": upload_url, "file_id": "F_ASYNC"
+            })),
+        )
+        .mount(&server)
+        .await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path(upload_path))
+        .respond_with(wiremock::ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    // Exactly what Slack returns immediately: acknowledged, but shares still empty.
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/files.completeUploadExternal"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "files": [{
+                    "id": "F_ASYNC",
+                    "title": "test.txt",
+                    "shares": {},
+                    "ims": [],
+                    "channels": []
+                }]
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let path = temp_upload_file("asyncshare", b"hello world");
+    let id = upload_test_connector(&server.uri())
+        .upload_file("D123", path.to_str().unwrap(), None, None)
+        .await
+        .expect("an empty shares map is normal and must not fail the send");
+    assert_eq!(id, "F_ASYNC");
+}
+
+/// The `shares` map is still parsed, so the message `ts` is available for logging
+/// when Slack does include it.
+#[test]
+fn share_ts_in_reads_the_live_response_shape() {
+    let f: crate::api::CompletedUploadFile = serde_json::from_value(serde_json::json!({
+        "id": "F1",
+        "shares": {"private": {"D03711FJA10": [{"ts": "1789437150.935529"}]}}
+    }))
+    .unwrap();
+    assert_eq!(f.share_ts_in("D03711FJA10"), Some("1789437150.935529"));
+    assert_eq!(f.share_ts_in("C_OTHER"), None);
+
+    let empty: crate::api::CompletedUploadFile =
+        serde_json::from_value(serde_json::json!({"id": "F2", "shares": {}})).unwrap();
+    assert_eq!(empty.share_ts_in("D03711FJA10"), None);
+
+    let absent: crate::api::CompletedUploadFile =
+        serde_json::from_value(serde_json::json!({"id": "F3"})).unwrap();
+    assert_eq!(absent.share_ts_in("D03711FJA10"), None);
 }

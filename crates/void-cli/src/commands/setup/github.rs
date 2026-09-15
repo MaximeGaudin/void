@@ -12,7 +12,8 @@ pub(crate) async fn setup_github(cfg: &mut VoidConfig, add_only: bool) -> anyhow
     eprintln!("  • Comments on your pull requests");
     eprintln!("  • @mentions of your handle");
     eprintln!();
-    eprintln!("Create a Personal Access Token with at least the `notifications` scope.");
+    eprintln!("Create a Personal Access Token with at least the `notifications` scope:");
+    eprintln!("  https://github.com/settings/tokens");
     eprintln!("For private repositories, also grant `repo` (classic) or Pull requests read access (fine-grained).");
 
     let gh_type = ConnectorType::from_static(void_github::CONNECTOR_ID);

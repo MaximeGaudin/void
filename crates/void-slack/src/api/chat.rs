@@ -170,6 +170,8 @@ impl SlackApiClient {
         Ok(resp.bytes().await?.to_vec())
     }
 
+    /// Finish an upload and share the file. Returns the files Slack confirms it
+    /// shared: an `ok: true` with an empty array means nothing reached the channel.
     pub async fn files_complete_upload_external(
         &self,
         file_id: &str,
@@ -177,7 +179,7 @@ impl SlackApiClient {
         channel_id: Option<&str>,
         initial_comment: Option<&str>,
         thread_ts: Option<&str>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<FilesCompleteUploadResponse> {
         debug!(
             file_id,
             title, channel_id, "slack: files.completeUploadExternal"
@@ -194,14 +196,17 @@ impl SlackApiClient {
         if let Some(ts) = thread_ts {
             body["thread_ts"] = serde_json::Value::String(ts.to_string());
         }
-        let _: serde_json::Value = self
+        let result: FilesCompleteUploadResponse = self
             .post_with_retry(
                 &format!("{}/files.completeUploadExternal", self.base_url),
                 &body,
                 "files.completeUploadExternal",
             )
             .await?;
-        debug!("slack: files.completeUploadExternal success");
-        Ok(())
+        debug!(
+            shared = result.files.len(),
+            "slack: files.completeUploadExternal success"
+        );
+        Ok(result)
     }
 }
