@@ -1,6 +1,7 @@
 //! Compile-time connector plugin registry (`inventory`).
 
 mod calendar;
+mod circleback;
 mod github;
 mod gmail;
 mod googlenews;
