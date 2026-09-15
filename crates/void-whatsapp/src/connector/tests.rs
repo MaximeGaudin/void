@@ -1180,8 +1180,20 @@ fn prepare_image_rejects_bytes_that_are_not_an_image() {
 
 #[test]
 fn prepare_image_transcodes_heic_to_jpeg() {
-    // 16x12 HEVC-still HEIC produced with `sips -s format heic` from a PNG.
-    // Kept tiny so the suite stays offline and dependency-free beyond libheif.
+    // 16x12 HEIC produced with `heif-enc -q 50` from a 16x12 PNG.
+    //
+    // The fixture's HEVC *coded* size matters more than its display size.
+    // libheif enforces `max_image_size_pixels` against the coded frame, and a
+    // source build of libheif (what CI compiles, since Ubuntu LTS only ships
+    // 1.17) defaults that limit to 6080 pixels, far below the 1073741824 of
+    // the Homebrew build used on macOS. The previous fixture displayed 16x12
+    // but carried a 160x64 coded frame (10240 pixels), so it decoded on macOS
+    // and failed everywhere else with "Security limit exceeded: Image size
+    // 160x64 exceeds the maximum image size 6080". This one codes at 64x64
+    // (4096 pixels), which is under the limit on every build.
+    //
+    // If this fixture is ever regenerated, check the coded size in the SPS,
+    // not just `heif-info`'s reported dimensions.
     let heic = include_bytes!("fixtures/tiny.heic").to_vec();
 
     let prepared = media::prepare_image(heic.clone(), "image/heic")
