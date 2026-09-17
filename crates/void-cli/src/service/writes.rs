@@ -278,13 +278,20 @@ pub async fn edit(
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
 
-    // Prefer an explicit connection filter; otherwise use the message's own
-    // connection so multi-workspace configs edit with the right token.
-    let connection_filter = params.connection.or(Some(msg.connection_id.as_str()));
+    let connection_filter = resolve_edit_connection_filter(params.connection, &msg.connection_id);
     let connector = connector_factory::build_slack_connector(connection_filter, cfg)?;
     connector
         .edit_message(&conv.external_id, &msg.external_id, params.message)
         .await
+}
+
+/// Prefers an explicit connection filter; otherwise falls back to the
+/// message's own connection so multi-workspace configs edit with the right token.
+fn resolve_edit_connection_filter<'a>(
+    explicit: Option<&'a str>,
+    message_connection_id: &'a str,
+) -> Option<&'a str> {
+    explicit.or(Some(message_connection_id))
 }
 
 pub async fn forward(
@@ -790,6 +797,22 @@ mod tests {
         let mut msg = make_message(id, conversation_id, "test-slack", "body", 0);
         msg.external_id = external_id.into();
         msg
+    }
+
+    #[test]
+    fn resolve_edit_connection_filter_falls_back_to_message_connection() {
+        assert_eq!(
+            resolve_edit_connection_filter(None, "workspace-b"),
+            Some("workspace-b")
+        );
+    }
+
+    #[test]
+    fn resolve_edit_connection_filter_prefers_explicit_connection() {
+        assert_eq!(
+            resolve_edit_connection_filter(Some("workspace-a"), "workspace-b"),
+            Some("workspace-a")
+        );
     }
 
     #[tokio::test]
