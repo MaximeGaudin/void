@@ -52,7 +52,7 @@ image = { version = "0.25", default-features = false, features = [
 # the system libheif C library and its `image` feature registers decoding hooks
 # into the `image` crate. Optional: enable the `heic` feature (and install
 # libheif >= 1.21) to opt into LGPL linking.
-libheif-rs = { version = "2.7.0", optional = true, default-features = false, features = [
+libheif-rs = { version = "3.0.0", optional = true, default-features = false, features = [
     "v1_21",
     "image",
 ] }
