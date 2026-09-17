@@ -914,6 +914,21 @@ fn compose_rfc2822_encodes_bare_non_ascii_address_with_no_name() {
 }
 
 #[test]
+fn compose_rfc2822_display_name_comma_not_split_when_quoted() {
+    // A comma inside a quoted display name must not be mistaken for the
+    // address-list separator, even when the name is also non-ASCII.
+    let to = "\"Le Maître, Juliette\" <jlemaitre@gladia.io>, Bob <bob@example.com>";
+    let raw = compose_rfc2822(to, "Subject", "body", None, None).unwrap();
+    let to_line = raw.lines().find(|l| l.starts_with("To:")).expect("To line");
+    assert!(to_line.contains("=?UTF-8?B?"));
+    assert!(to_line.contains("<jlemaitre@gladia.io>"));
+    assert!(to_line.contains("Bob <bob@example.com>"));
+    assert!(!to_line.contains("Maître"));
+    // Exactly two recipients: the quoted comma didn't create a bogus third entry.
+    assert_eq!(to_line.matches('<').count(), 2);
+}
+
+#[test]
 fn build_forward_body_uses_html_when_available() {
     let html = "<div><p>Hello <b>world</b></p></div>";
     let (body, is_html) = build_forward_body(
