@@ -4705,7 +4705,7 @@ checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 
 [[package]]
 name = "void-calendar"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4726,7 +4726,7 @@ dependencies = [
 
 [[package]]
 name = "void-circleback"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4745,7 +4745,7 @@ dependencies = [
 
 [[package]]
 name = "void-cli"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -4791,7 +4791,7 @@ dependencies = [
 
 [[package]]
 name = "void-core"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4814,7 +4814,7 @@ dependencies = [
 
 [[package]]
 name = "void-github"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4832,7 +4832,7 @@ dependencies = [
 
 [[package]]
 name = "void-gmail"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4858,7 +4858,7 @@ dependencies = [
 
 [[package]]
 name = "void-googlenews"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4879,7 +4879,7 @@ dependencies = [
 
 [[package]]
 name = "void-hackernews"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4898,7 +4898,7 @@ dependencies = [
 
 [[package]]
 name = "void-imessage"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4916,7 +4916,7 @@ dependencies = [
 
 [[package]]
 name = "void-linkedin"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4936,7 +4936,7 @@ dependencies = [
 
 [[package]]
 name = "void-reddit"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4957,7 +4957,7 @@ dependencies = [
 
 [[package]]
 name = "void-slack"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4978,7 +4978,7 @@ dependencies = [
 
 [[package]]
 name = "void-telegram"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5001,7 +5001,7 @@ dependencies = [
 
 [[package]]
 name = "void-whatsapp"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "async-trait",
