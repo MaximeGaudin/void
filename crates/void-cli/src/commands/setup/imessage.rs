@@ -8,7 +8,8 @@ pub(crate) fn setup_imessage(cfg: &mut VoidConfig, add_only: bool) -> anyhow::Re
     eprintln!("💬  iMESSAGE (macOS)");
     eprintln!();
     eprintln!("Indexes the local Messages history (iMessage and SMS) for search.");
-    eprintln!("Read-only: void never writes to the Messages database and cannot send.");
+    eprintln!("Can also send: void never writes to the Messages database directly,");
+    eprintln!("but drives Messages.app via AppleScript and confirms sends against it.");
 
     if !cfg!(target_os = "macos") {
         eprintln!();
