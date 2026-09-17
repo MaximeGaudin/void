@@ -1,7 +1,7 @@
-//! iMessage adapter for Void: reads the local macOS Messages store.
+//! iMessage adapter for Void: reads and sends messages via macOS Messages.
 //!
-//! Read-only by design. See `connector::ImessageConnector::send_message` for
-//! why sending is not part of this connector.
+//! Supports reading local history from `chat.db` and sending via AppleScript
+//! with SQLite receipt confirmation.
 
 pub mod connector;
 
