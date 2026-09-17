@@ -55,6 +55,13 @@ pub struct ForwardParams<'a> {
     pub bcc: Option<&'a str>,
 }
 
+/// Slack-only edit (`chat.update`). Accepts void message IDs or Slack permalinks.
+pub struct EditParams<'a> {
+    pub message_id: &'a str,
+    pub message: &'a str,
+    pub connection: Option<&'a str>,
+}
+
 pub struct ArchiveParams<'a> {
     pub message_ids: &'a [String],
     pub before: Option<&'a str>,
@@ -246,6 +253,45 @@ pub async fn reply(
         conn.reply(&reply_id, content, params.in_thread).await?
     };
     Ok(OutboundResult::immediate(sent_id))
+}
+
+/// Edit a Slack message body via `chat.update`.
+///
+/// Resolves `message_id` the same way as `reply` / `forward` (void internal ID or
+/// Slack permalink). Returns the Slack message `ts` from the update response.
+pub async fn edit(
+    db: &Database,
+    cfg: &VoidConfig,
+    params: EditParams<'_>,
+) -> anyhow::Result<String> {
+    let msg = resolve_message(db, params.message_id)?;
+
+    if msg.connector != "slack" {
+        anyhow::bail!(
+            "Message {} is from connector '{}', not slack.",
+            params.message_id,
+            msg.connector
+        );
+    }
+
+    let conv = db
+        .get_conversation(&msg.conversation_id)?
+        .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
+
+    let connection_filter = resolve_edit_connection_filter(params.connection, &msg.connection_id);
+    let connector = connector_factory::build_slack_connector(connection_filter, cfg)?;
+    connector
+        .edit_message(&conv.external_id, &msg.external_id, params.message)
+        .await
+}
+
+/// Prefers an explicit connection filter; otherwise falls back to the
+/// message's own connection so multi-workspace configs edit with the right token.
+fn resolve_edit_connection_filter<'a>(
+    explicit: Option<&'a str>,
+    message_connection_id: &'a str,
+) -> Option<&'a str> {
+    explicit.or(Some(message_connection_id))
 }
 
 pub async fn forward(
@@ -751,6 +797,22 @@ mod tests {
         let mut msg = make_message(id, conversation_id, "test-slack", "body", 0);
         msg.external_id = external_id.into();
         msg
+    }
+
+    #[test]
+    fn resolve_edit_connection_filter_falls_back_to_message_connection() {
+        assert_eq!(
+            resolve_edit_connection_filter(None, "workspace-b"),
+            Some("workspace-b")
+        );
+    }
+
+    #[test]
+    fn resolve_edit_connection_filter_prefers_explicit_connection() {
+        assert_eq!(
+            resolve_edit_connection_filter(Some("workspace-a"), "workspace-b"),
+            Some("workspace-a")
+        );
     }
 
     #[tokio::test]

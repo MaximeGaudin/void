@@ -12,12 +12,15 @@ pub enum RemoteCommand {
     Status,
     /// Force-refresh cached remote config and database snapshot
     Refresh,
+    /// Update the remote host's void binary to the latest release over SSH
+    Update,
 }
 
 pub fn run(args: &RemoteArgs, config: Option<&str>, store: Option<&str>) -> anyhow::Result<()> {
     match args.command {
         RemoteCommand::Status => run_status(),
         RemoteCommand::Refresh => run_refresh(config, store),
+        RemoteCommand::Update => run_update(),
     }
 }
 
@@ -27,6 +30,17 @@ fn run_status() -> anyhow::Result<()> {
     }
     let status = crate::context::get().remote_status()?;
     println!("{}", serde_json::to_string_pretty(&status)?);
+    Ok(())
+}
+
+fn run_update() -> anyhow::Result<()> {
+    if !crate::context::is_remote() {
+        anyhow::bail!("store.mode is not \"remote\" — nothing to update");
+    }
+    let code = crate::context::run_remote_update()?;
+    if code != 0 {
+        std::process::exit(code);
+    }
     Ok(())
 }
 

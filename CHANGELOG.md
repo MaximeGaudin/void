@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Doctor** — `void doctor` now always prints the local and (in remote mode) the remote host's version, instead of only when they differ from the latest GitHub release.
+
+## [0.13.0] - 2026-09-17
+
+### Added
+
+- **Circleback** — new read-only connector for [Circleback](https://circleback.ai) meeting notes and transcripts. Each meeting becomes a conversation carrying its notes, action items and (optionally) every transcript turn, searchable alongside messages. Configure with `api_key`, `backfill_days` (default 365) and `include_transcript` (default true); `void setup` has a wizard for it.
+- **iMessage** — new read-only connector for the macOS Messages store (iMessage and SMS), indexed into the same store and search index as other connectors. Requires Full Disk Access; `health_check` reports a clear message when it is missing.
+- **iMessage** — `void send` / `void reply` now work, driving Messages.app over AppleScript and confirming delivery against `chat.db` (`is_from_me = 1`) before reporting success, instead of trusting AppleScript's immediate (pre-delivery) acknowledgment.
+- **Slack** — `void mcp` exposes an `edit` tool for `chat.update`, alongside CLI support, reusing the same shared write service as `send`/`reply`.
+- **Update** — `void update` checks GitHub for a newer release, downloads and sha256-verifies the matching platform binary, and installs it atomically (stopping and restarting the sync daemon if one is running). `void remote update` runs the same thing on the SSH-configured remote host. `void doctor` now notes when a newer version is available.
+
+### Changed
+
+- **GitHub** — `void setup` links directly to https://github.com/settings/tokens when adding an account, to help create a PAT.
+
+### Fixed
+
+- **Slack** — File sends (`void send` with an attachment) no longer report success without server confirmation. The upload flow now types Slack's response and requires a non-empty `files` array before printing "Message sent", instead of trusting the upload ticket obtained before the share happened.
+- **Gmail** — Recipient display names with non-ASCII characters (e.g. "Maître") are now RFC 2047-encoded when composing an outgoing `To`/`Cc`/`Bcc` header, matching what void already did for `Subject`. A raw UTF-8 name written straight into a header is only valid by convention; a strict mail client can reinterpret those bytes as Latin-1 and mangle the name (e.g. "Maître" rendered as "MaÃ®tre").
+
 ## [0.12.1] - 2026-09-15
 
 ### Fixed

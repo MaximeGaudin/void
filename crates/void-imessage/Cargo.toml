@@ -1,0 +1,31 @@
+[package]
+name = "void-imessage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "iMessage (macOS Messages) adapter for Void CLI"
+
+[dependencies]
+void-core = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio-util = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+
+# macOS only: the Messages store is a local SQLite file that exists nowhere
+# else. Off macOS the crate still compiles, but the connector refuses to
+# build at runtime with a clear message instead of silently not existing.
+[target.'cfg(target_os = "macos")'.dependencies]
+rusqlite = { workspace = true }
+# Home directory lookup for the default store path, consistent with
+# void_core::config::paths rather than reading HOME directly.
+dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rusqlite = { workspace = true }

@@ -323,6 +323,45 @@ impl ResolvedContext {
         }))
     }
 
+    /// Run `void update --yes` on the remote host over SSH, streaming its
+    /// output back. Unlike `proxy_command`, this never stages/uploads files:
+    /// an update replaces the binary itself, not the store. Always passes
+    /// `--yes`: the SSH exec has no attached TTY, so an interactive
+    /// confirmation prompt on the remote side can't be answered.
+    pub fn run_remote_update(&self) -> Result<i32, ConfigError> {
+        let remote = self.remote.as_ref().ok_or_else(|| {
+            ConfigError::Remote("remote update requires store.mode = \"remote\"".into())
+        })?;
+        if !remote.proxy_writes {
+            return Err(ConfigError::Remote(
+                "remote write proxy is disabled (store.remote.proxy_writes = false)".into(),
+            ));
+        }
+
+        let targets = remote
+            .ssh
+            .resolve_proxy_targets(&remote.remote_config_path)?;
+        let parts = [
+            targets.void_bin.clone(),
+            "update".to_string(),
+            "--yes".to_string(),
+        ];
+        let escaped = parts
+            .iter()
+            .map(|part| shell_escape(part))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let remote_command = format!("{REMOTE_PATH_PREFIX} {escaped}");
+        let output = remote.ssh.run_remote(&remote_command)?;
+        if !output.stdout.is_empty() {
+            print!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        if !output.stderr.is_empty() {
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        }
+        Ok(output.status.code().unwrap_or(1))
+    }
+
     pub fn proxy_command(&self, args: &[String]) -> Result<i32, ConfigError> {
         let remote = self.remote.as_ref().ok_or_else(|| {
             ConfigError::Remote("cannot proxy commands in local store mode".into())

@@ -82,10 +82,12 @@ pub(crate) enum Command {
     Calendar(commands::calendar::CalendarArgs),
     /// Manage hooks — LLM prompts triggered by events or schedules
     Hook(commands::hook::HookArgs),
-    /// Remote store utilities (status, cache refresh)
+    /// Remote store utilities (status, cache refresh, remote self-update)
     Remote(commands::remote::RemoteArgs),
     /// Model Context Protocol server (stdio) for AI agents
     Mcp(commands::mcp::McpArgs),
+    /// Download and install the latest release binary (always runs locally)
+    Update(commands::update::UpdateArgs),
 }
 
 fn refresh_policy_for_cli(cli: &Cli) -> void_core::store::RefreshPolicy {
@@ -202,6 +204,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
             commands::remote::run(args, cli.config.as_deref(), cli.store.as_deref())
         }
         Some(Command::Mcp(args)) => commands::mcp::run(args).await,
+        Some(Command::Update(args)) => commands::update::run(args).await,
         None => {
             commands::status::run();
             Ok(())
@@ -477,6 +480,64 @@ mod tests {
     #[test]
     fn parse_slack_forward_requires_message_id() {
         parse_err(&["void", "slack", "forward", "--to", "C12345"]);
+    }
+
+    // --- Slack edit parsing ---
+
+    #[test]
+    fn parse_slack_edit_minimal() {
+        let cli = parse(&[
+            "void",
+            "slack",
+            "edit",
+            "gladiaio-1789613206.915689",
+            "--message",
+            "updated text",
+        ]);
+        match cli.command {
+            Some(Command::Slack(ref s)) => match &s.command {
+                commands::slack::SlackCommand::Edit(e) => {
+                    assert_eq!(e.message_id, "gladiaio-1789613206.915689");
+                    assert_eq!(e.message, "updated text");
+                    assert!(e.connection.is_none());
+                }
+                other => panic!("expected Edit, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_edit_with_connection() {
+        let cli = parse(&[
+            "void",
+            "slack",
+            "edit",
+            "msg1",
+            "--message",
+            "hi",
+            "--connection",
+            "gladiaio",
+        ]);
+        match cli.command {
+            Some(Command::Slack(ref s)) => match &s.command {
+                commands::slack::SlackCommand::Edit(e) => {
+                    assert_eq!(e.connection.as_deref(), Some("gladiaio"));
+                }
+                other => panic!("expected Edit, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_edit_requires_message_flag() {
+        parse_err(&["void", "slack", "edit", "msg1"]);
+    }
+
+    #[test]
+    fn parse_slack_edit_requires_message_id() {
+        parse_err(&["void", "slack", "edit", "--message", "hi"]);
     }
 
     // --- Telegram forward parsing ---

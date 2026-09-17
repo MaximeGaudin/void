@@ -4705,7 +4705,7 @@ checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 
 [[package]]
 name = "void-calendar"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4726,7 +4726,7 @@ dependencies = [
 
 [[package]]
 name = "void-circleback"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4745,7 +4745,7 @@ dependencies = [
 
 [[package]]
 name = "void-cli"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -4753,15 +4753,18 @@ dependencies = [
  "chrono",
  "clap",
  "croner",
+ "dirs",
  "insta",
  "inventory",
  "libc",
  "open",
  "predicates",
+ "reqwest",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sysinfo",
  "tempfile",
  "tokio",
@@ -4778,6 +4781,7 @@ dependencies = [
  "void-gmail",
  "void-googlenews",
  "void-hackernews",
+ "void-imessage",
  "void-linkedin",
  "void-reddit",
  "void-slack",
@@ -4787,7 +4791,7 @@ dependencies = [
 
 [[package]]
 name = "void-core"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4810,7 +4814,7 @@ dependencies = [
 
 [[package]]
 name = "void-github"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4828,7 +4832,7 @@ dependencies = [
 
 [[package]]
 name = "void-gmail"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4854,7 +4858,7 @@ dependencies = [
 
 [[package]]
 name = "void-googlenews"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4875,7 +4879,7 @@ dependencies = [
 
 [[package]]
 name = "void-hackernews"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4893,8 +4897,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "void-imessage"
+version = "0.13.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "void-core",
+]
+
+[[package]]
 name = "void-linkedin"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4914,7 +4936,7 @@ dependencies = [
 
 [[package]]
 name = "void-reddit"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4935,7 +4957,7 @@ dependencies = [
 
 [[package]]
 name = "void-slack"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4956,7 +4978,7 @@ dependencies = [
 
 [[package]]
 name = "void-telegram"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4979,7 +5001,7 @@ dependencies = [
 
 [[package]]
 name = "void-whatsapp"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "async-trait",

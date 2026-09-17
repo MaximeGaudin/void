@@ -107,6 +107,13 @@ jobs:
       - name: List artifacts
         run: ls -lhR artifacts/
 
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums.txt
+          cat checksums.txt
+          cd ..
+
       - name: Create or update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
