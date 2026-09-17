@@ -33,7 +33,17 @@ pub(crate) fn determine_media_type(
     }
 
     match ext.as_str() {
-        "jpg" | "jpeg" | "png" | "gif" | "webp" => (WaMediaType::Image, "image/jpeg"),
+        "jpg" | "jpeg" => (WaMediaType::Image, "image/jpeg"),
+        // HEIC/HEIF (the iPhone default) is uploaded byte-for-byte on this
+        // path: nothing transcodes it yet. Announcing image/jpeg here would
+        // ship JPEG-labelled HEIC bytes, which receiving clients cannot
+        // render -- the same lie this function fixes for PNG/GIF/WebP. Keep
+        // the real MIME until transcoding actually lands.
+        "heic" => (WaMediaType::Image, "image/heic"),
+        "heif" => (WaMediaType::Image, "image/heif"),
+        "png" => (WaMediaType::Image, "image/png"),
+        "gif" => (WaMediaType::Image, "image/gif"),
+        "webp" => (WaMediaType::Image, "image/webp"),
         "mp4" | "mov" | "avi" => (WaMediaType::Video, "video/mp4"),
         "ogg" | "mp3" | "m4a" | "wav" | "opus" => (WaMediaType::Audio, "audio/ogg; codecs=opus"),
         _ => (WaMediaType::Document, "application/octet-stream"),
