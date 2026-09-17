@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Slack** — `void mcp` exposes an `edit` tool for `chat.update`, alongside CLI support, reusing the same shared write service as `send`/`reply`.
+
 ## [0.12.1] - 2026-09-15
 
 ### Fixed

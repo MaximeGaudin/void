@@ -238,6 +238,85 @@ async fn chat_post_message_retries_5xx_then_succeeds() {
     assert_eq!(resp.ts.as_deref(), Some("1700000000.000100"));
 }
 
+fn update_ok() -> serde_json::Value {
+    serde_json::json!({
+        "ok": true,
+        "channel": "C1",
+        "ts": "1700000000.000100",
+        "text": "updated"
+    })
+}
+
+#[tokio::test]
+async fn chat_update_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat.update"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(update_ok()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let resp = api
+        .chat_update("C1", "1700000000.000100", "updated")
+        .await
+        .unwrap();
+    assert_eq!(resp.ts.as_deref(), Some("1700000000.000100"));
+    assert_eq!(resp.text.as_deref(), Some("updated"));
+}
+
+#[tokio::test]
+async fn chat_update_retries_5xx_then_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat.update"))
+        .respond_with(
+            ResponseTemplate::new(500)
+                .insert_header("Retry-After", "0")
+                .set_body_string("boom"),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/chat.update"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(update_ok()))
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let resp = api
+        .chat_update("C1", "1700000000.000100", "updated")
+        .await
+        .unwrap();
+    assert_eq!(resp.channel.as_deref(), Some("C1"));
+}
+
+#[tokio::test]
+async fn chat_update_fails_fast_on_message_not_found() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat.update"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": false,
+            "error": "message_not_found"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = SlackApiClient::with_base_url("xoxp-test", &server.uri()).unwrap();
+    let err = api
+        .chat_update("C1", "1700000000.000100", "updated")
+        .await
+        .expect_err("expected error");
+    match err {
+        SlackError::Api(msg) => assert!(msg.contains("message_not_found"), "got {msg}"),
+        other => panic!("expected Api error, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn chat_post_message_retries_internal_error_then_succeeds() {
     let server = MockServer::start().await;

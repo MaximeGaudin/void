@@ -53,26 +53,18 @@ async fn run_edit(args: &EditArgs) -> anyhow::Result<()> {
     let cfg = load_config();
     let db = crate::context::open_db()?;
 
-    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
+    let ts = crate::service::writes::edit(
+        &db,
+        cfg,
+        crate::service::writes::EditParams {
+            message_id: &args.message_id,
+            message: &args.message,
+            connection: args.connection.as_deref(),
+        },
+    )
+    .await?;
 
-    if msg.connector != "slack" {
-        anyhow::bail!(
-            "Message {} is from connector '{}', not slack.",
-            args.message_id,
-            msg.connector
-        );
-    }
-
-    let conv = db
-        .get_conversation(&msg.conversation_id)?
-        .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
-
-    let connector = build_slack_connector(args.connection.as_deref(), cfg)?;
-    connector
-        .edit_message(&conv.external_id, &msg.external_id, &args.message)
-        .await?;
-
-    eprintln!("Message updated.");
+    eprintln!("Message updated (ts: {ts}).");
     Ok(())
 }
 
