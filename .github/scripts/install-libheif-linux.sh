@@ -5,6 +5,8 @@ set -euo pipefail
 
 VERSION="${LIBHEIF_VERSION:-1.23.1}"
 PREFIX="${LIBHEIF_PREFIX:-/usr/local}"
+# Pin the upstream tarball so a tag retarget / supply-chain swap fails the build.
+EXPECTED_SHA256="${LIBHEIF_SHA256:-0de0327f60fcd47de90d5654c6fe152232738d60d84fe084ec3e0f35e03b166a}"
 
 sudo apt-get update
 sudo apt-get install -y \
@@ -18,6 +20,7 @@ sudo apt-get install -y \
 curl -fsSL \
   "https://github.com/strukturag/libheif/releases/download/v${VERSION}/libheif-${VERSION}.tar.gz" \
   -o /tmp/libheif.tar.gz
+echo "${EXPECTED_SHA256}  /tmp/libheif.tar.gz" | sha256sum -c -
 tar -xzf /tmp/libheif.tar.gz -C /tmp
 
 cmake -S "/tmp/libheif-${VERSION}" -B /tmp/libheif-build -G Ninja \
