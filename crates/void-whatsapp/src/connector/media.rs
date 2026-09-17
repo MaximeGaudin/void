@@ -34,11 +34,9 @@ pub(crate) fn determine_media_type(
 
     match ext.as_str() {
         "jpg" | "jpeg" => (WaMediaType::Image, "image/jpeg"),
-        // HEIC/HEIF (the iPhone default) is uploaded byte-for-byte on this
-        // path: nothing transcodes it yet. Announcing image/jpeg here would
-        // ship JPEG-labelled HEIC bytes, which receiving clients cannot
-        // render -- the same lie this function fixes for PNG/GIF/WebP. Keep
-        // the real MIME until transcoding actually lands.
+        // HEIC/HEIF stay Image. Default MIME is honest here; `prepare_image`
+        // (always on in this PR) transcodes to JPEG and announces image/jpeg
+        // on the bytes that actually get uploaded.
         "heic" => (WaMediaType::Image, "image/heic"),
         "heif" => (WaMediaType::Image, "image/heif"),
         "png" => (WaMediaType::Image, "image/png"),
