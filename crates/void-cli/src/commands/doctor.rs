@@ -189,8 +189,13 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
     }
 
     if let Some(latest) = crate::commands::update::check_for_update().await {
+        let cmd = if crate::commands::update::current_exe_is_homebrew_managed() {
+            "brew upgrade void"
+        } else {
+            "void update"
+        };
         eprintln!(
-            "\n[note] void {latest} is available (you have {}). Run `void update`.",
+            "\n[note] void {latest} is available (you have {}). Run `{cmd}`.",
             env!("CARGO_PKG_VERSION")
         );
     }

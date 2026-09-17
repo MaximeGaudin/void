@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
+
 ## [0.14.0] - 2026-09-17
 
 ### Added

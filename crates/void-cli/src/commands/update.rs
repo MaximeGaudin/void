@@ -101,6 +101,24 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     }
 }
 
+/// Whether `exe_path` lives inside a Homebrew/Linuxbrew Cellar (i.e. this
+/// `void` was installed with `brew install` — the README's recommended macOS
+/// path). Homebrew tracks the exact bytes it put there; overwriting them in
+/// place leaves `brew` unaware of the swap, corrupting its bookkeeping on the
+/// next `brew upgrade`/`uninstall`. Detected generically via the `Cellar`
+/// path component so it also covers Linuxbrew, not just `/opt/homebrew`.
+fn is_homebrew_managed(exe_path: &std::path::Path) -> bool {
+    exe_path.components().any(|c| c.as_os_str() == "Cellar")
+}
+
+/// Best-effort Homebrew check for `void doctor`'s note, using this process's
+/// own executable rather than a hypothetical path.
+pub fn current_exe_is_homebrew_managed() -> bool {
+    std::env::current_exe()
+        .map(|p| is_homebrew_managed(&p))
+        .unwrap_or(false)
+}
+
 fn platform_asset_name() -> Option<&'static str> {
     asset_name_for(std::env::consts::OS, std::env::consts::ARCH)
 }
@@ -208,6 +226,16 @@ pub async fn run(args: &UpdateArgs) -> anyhow::Result<()> {
     }
 
     eprintln!("New version available: {latest}");
+
+    if is_homebrew_managed(&std::env::current_exe()?) {
+        eprintln!(
+            "This void was installed via Homebrew. Run `brew upgrade void` instead of `void update`: \
+             self-replacing a Homebrew-managed binary in place would leave `brew` thinking it still has \
+             {current} installed, corrupting its bookkeeping on the next `brew upgrade`/`uninstall`."
+        );
+        return Ok(());
+    }
+
     if args.check {
         eprintln!("Run `void update` to install it.");
         return Ok(());
@@ -342,6 +370,26 @@ mod tests {
     fn is_newer_treats_unparseable_versions_as_not_newer() {
         assert!(!is_newer("not-a-version", "0.12.1"));
         assert!(!is_newer("0.13.0", "not-a-version"));
+    }
+
+    #[test]
+    fn is_homebrew_managed_detects_cellar_on_macos_and_linuxbrew() {
+        assert!(is_homebrew_managed(std::path::Path::new(
+            "/opt/homebrew/Cellar/void/0.13.1/bin/void"
+        )));
+        assert!(is_homebrew_managed(std::path::Path::new(
+            "/home/linuxbrew/.linuxbrew/Cellar/void/0.13.1/bin/void"
+        )));
+    }
+
+    #[test]
+    fn is_homebrew_managed_false_for_plain_installs() {
+        assert!(!is_homebrew_managed(std::path::Path::new(
+            "/Users/mgaudin/bin/void"
+        )));
+        assert!(!is_homebrew_managed(std::path::Path::new(
+            "/usr/local/bin/void"
+        )));
     }
 
     #[test]
