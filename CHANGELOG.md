@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Doctor** — `void doctor` now always prints the local and (in remote mode) the remote host's version, instead of only when they differ from the latest GitHub release.
+
 ## [0.13.0] - 2026-09-17
 
 ### Added

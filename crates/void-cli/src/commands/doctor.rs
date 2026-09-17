@@ -33,6 +33,8 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
         return run_remote_doctor(args, &mut issues).await;
     }
 
+    eprintln!("[OK] Version: void {}", env!("CARGO_PKG_VERSION"));
+
     let cfg = match VoidConfig::load(&config_path) {
         Ok(c) => {
             eprintln!("[OK] Config file parses correctly");
@@ -199,6 +201,10 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
 async fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Result<()> {
     eprintln!("[OK] Store mode: remote");
     eprintln!(
+        "[OK] Local client version: void {}",
+        env!("CARGO_PKG_VERSION")
+    );
+    eprintln!(
         "[OK] Local client profile: {} (no [[connections]] here is expected)",
         crate::context::client_config_path().display()
     );
@@ -223,6 +229,11 @@ async fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Res
             } else {
                 eprintln!("[!!] Cannot reach remote host via SSH");
                 *issues += 1;
+            }
+
+            match &remote_version {
+                Some(v) => eprintln!("[OK] Remote host version: void {v}"),
+                None => eprintln!("[--] Remote host version: unknown (could not resolve `void --version` over SSH)"),
             }
 
             let daemon = status
