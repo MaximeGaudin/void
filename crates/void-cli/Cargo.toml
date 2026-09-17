@@ -11,6 +11,11 @@ description = "Unified communication CLI for WhatsApp, Telegram, Slack, Gmail, a
 name = "void"
 path = "src/main.rs"
 
+[features]
+default = []
+# Opt-in WhatsApp HEIC→JPEG (system libheif, LGPL). See void-whatsapp's `heic`.
+heic = ["void-whatsapp/heic"]
+
 [dependencies]
 dirs = { workspace = true }
 void-core = { workspace = true, features = ["test-fixtures"] }

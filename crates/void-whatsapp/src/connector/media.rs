@@ -34,12 +34,14 @@ pub(crate) fn determine_media_type(
 
     match ext.as_str() {
         "jpg" | "jpeg" => (WaMediaType::Image, "image/jpeg"),
-        // HEIC/HEIF (the iPhone default) is uploaded byte-for-byte on this
-        // path: nothing transcodes it yet. Announcing image/jpeg here would
-        // ship JPEG-labelled HEIC bytes, which receiving clients cannot
-        // render -- the same lie this function fixes for PNG/GIF/WebP. Keep
-        // the real MIME until transcoding actually lands.
+        // HEIC/HEIF: with the `heic` feature we transcode to JPEG before
+        // upload and announce image/jpeg. Without it, announce the real MIME
+        // so we never ship HEIC bytes labelled as JPEG (see #95).
+        #[cfg(feature = "heic")]
+        "heic" | "heif" => (WaMediaType::Image, "image/jpeg"),
+        #[cfg(not(feature = "heic"))]
         "heic" => (WaMediaType::Image, "image/heic"),
+        #[cfg(not(feature = "heic"))]
         "heif" => (WaMediaType::Image, "image/heif"),
         "png" => (WaMediaType::Image, "image/png"),
         "gif" => (WaMediaType::Image, "image/gif"),
@@ -63,15 +65,17 @@ pub(crate) struct PreparedImage {
     pub thumbnail: Option<Vec<u8>>,
 }
 
-/// Decodes an image, transcoding HEIC/HEIF to JPEG, and measures it.
+/// Decodes an image, optionally transcoding HEIC/HEIF to JPEG, and measures it.
 ///
 /// Pure: no network, no client, no filesystem. `declared_mime` is what
 /// `determine_media_type` announced for these bytes (or an extension-aware
 /// override such as `image/heic`).
 ///
-/// HEIC/HEIF cannot be rendered by WhatsApp clients, so those bytes are
-/// re-encoded as JPEG. Every other format is uploaded untouched: re-encoding
-/// a photo the user picked would silently lose quality.
+/// HEIC/HEIF cannot be rendered by WhatsApp clients. With the `heic` feature
+/// (system libheif, LGPL) those bytes are re-encoded as JPEG. Without it,
+/// callers should not invoke this on HEIC — upload with an honest MIME
+/// instead. Every other format is uploaded untouched: re-encoding a photo
+/// the user picked would silently lose quality.
 pub(crate) fn prepare_image(data: Vec<u8>, declared_mime: &str) -> anyhow::Result<PreparedImage> {
     register_heif_hooks();
 
@@ -79,14 +83,25 @@ pub(crate) fn prepare_image(data: Vec<u8>, declared_mime: &str) -> anyhow::Resul
         || declared_mime.eq_ignore_ascii_case("image/heic")
         || declared_mime.eq_ignore_ascii_case("image/heif");
 
-    // ImageReader (used by load_from_memory) consults the libheif hooks.
-    // The free-function guess_format does not: never use it to detect HEIC.
+    #[cfg(not(feature = "heic"))]
+    if source_is_heif {
+        anyhow::bail!(
+            "HEIC/HEIF send requires the `heic` Cargo feature \
+             (links system libheif under LGPL-3.0-or-later). \
+             Rebuild with `--features heic`, or convert the photo to JPEG/PNG first."
+        );
+    }
+
+    // ImageReader (used by load_from_memory) consults the libheif hooks when
+    // the `heic` feature is on. The free-function guess_format does not:
+    // never use it to detect HEIC.
     let decoded = image::load_from_memory(&data).context("failed to decode image data")?;
     let (width, height) = (decoded.width(), decoded.height());
 
-    // WhatsApp clients cannot decode HEIC, so transcode. Announcing image/jpeg
-    // over HEIC bytes would be worse than the Document fallback it replaces:
-    // a broken photo instead of an openable attachment.
+    // WhatsApp clients cannot decode HEIC, so transcode when the `heic`
+    // feature is on. Announcing image/jpeg over HEIC bytes would be worse
+    // than the Document fallback it replaces.
+    #[cfg(feature = "heic")]
     let (bytes, mime) = if source_is_heif {
         (
             encode_jpeg(&decoded, JPEG_QUALITY)?,
@@ -95,6 +110,8 @@ pub(crate) fn prepare_image(data: Vec<u8>, declared_mime: &str) -> anyhow::Resul
     } else {
         (data, declared_mime.to_string())
     };
+    #[cfg(not(feature = "heic"))]
+    let (bytes, mime) = (data, declared_mime.to_string());
 
     let thumbnail = build_thumbnail(&decoded);
 
@@ -107,7 +124,8 @@ pub(crate) fn prepare_image(data: Vec<u8>, declared_mime: &str) -> anyhow::Resul
     })
 }
 
-/// Quality used when we have to re-encode. 85 is the usual quality/size knee.
+/// Quality used when we have to re-encode HEIC→JPEG. 85 is the usual knee.
+#[cfg(feature = "heic")]
 const JPEG_QUALITY: u8 = 85;
 
 /// Longest edge of the inline preview, in pixels.
@@ -116,10 +134,14 @@ const THUMBNAIL_MAX_EDGE: u32 = 200;
 /// Registers libheif's decoders into the `image` crate, exactly once.
 ///
 /// The `image` crate does not decode HEIC on its own (image-rs/image#1375).
+#[cfg(feature = "heic")]
 fn register_heif_hooks() {
     static HOOKS: std::sync::Once = std::sync::Once::new();
     HOOKS.call_once(libheif_rs::integration::image::register_all_decoding_hooks);
 }
+
+#[cfg(not(feature = "heic"))]
+fn register_heif_hooks() {}
 
 /// ISO BMFF `ftyp` brands that mean "this is HEIF-family, not a plain JPEG".
 ///
@@ -188,19 +210,28 @@ pub(crate) async fn upload_and_build_media_message(
     let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     let (media_type, default_mime) = determine_media_type(mime_type, filename);
 
-    // Images go through prepare_image so HEIC is transcoded and the
-    // ImageMessage carries real dimensions + a jpeg_thumbnail.
+    // Images go through prepare_image so non-HEIC formats get dimensions +
+    // jpeg_thumbnail. HEIC is only prepared when the `heic` feature is on
+    // (libheif / LGPL); otherwise we upload bytes with an honest MIME.
     let (data, mime, width, height, thumbnail) = if media_type == WaMediaType::Image {
         let prepare_mime = heic_aware_declared_mime(filename, mime_type, default_mime);
-        let prepared = prepare_image(data, prepare_mime)
-            .with_context(|| format!("failed to prepare image {}", path.display()))?;
-        (
-            prepared.bytes,
-            prepared.mime,
-            Some(prepared.width),
-            Some(prepared.height),
-            prepared.thumbnail,
-        )
+        let source_is_heif = looks_like_heif(&data)
+            || prepare_mime.eq_ignore_ascii_case("image/heic")
+            || prepare_mime.eq_ignore_ascii_case("image/heif");
+
+        if source_is_heif && !cfg!(feature = "heic") {
+            (data, prepare_mime.to_string(), None, None, None)
+        } else {
+            let prepared = prepare_image(data, prepare_mime)
+                .with_context(|| format!("failed to prepare image {}", path.display()))?;
+            (
+                prepared.bytes,
+                prepared.mime,
+                Some(prepared.width),
+                Some(prepared.height),
+                prepared.thumbnail,
+            )
+        }
     } else {
         (
             data,

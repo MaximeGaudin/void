@@ -1078,12 +1078,28 @@ fn determine_media_type_heic_and_heif_are_images() {
     );
 }
 
+#[cfg(feature = "heic")]
 #[test]
-fn determine_media_type_does_not_lie_about_heic() {
-    // Nothing transcodes HEIC on this path: the bytes go up untouched, so
-    // announcing image/jpeg would hand receivers JPEG-labelled HEIC and break
-    // rendering. When transcoding lands, the transcoder -- not this mapping --
-    // is what may announce image/jpeg.
+fn determine_media_type_heic_declares_jpeg_because_we_transcode() {
+    // With the `heic` feature we transcode before upload, so MIME is JPEG.
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heic").1,
+        "image/jpeg"
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heif").1,
+        "image/jpeg"
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.HEIC").1,
+        "image/jpeg"
+    );
+}
+
+#[cfg(not(feature = "heic"))]
+#[test]
+fn determine_media_type_does_not_lie_about_heic_without_feature() {
+    // Without libheif we must not announce image/jpeg over raw HEIC bytes.
     assert_eq!(
         media::determine_media_type(None, "IMG_0042.heic").1,
         "image/heic"
@@ -1091,10 +1107,6 @@ fn determine_media_type_does_not_lie_about_heic() {
     assert_eq!(
         media::determine_media_type(None, "IMG_0042.heif").1,
         "image/heif"
-    );
-    assert_eq!(
-        media::determine_media_type(None, "IMG_0042.HEIC").1,
-        "image/heic"
     );
 }
 
@@ -1178,6 +1190,7 @@ fn prepare_image_rejects_bytes_that_are_not_an_image() {
     );
 }
 
+#[cfg(feature = "heic")]
 #[test]
 fn prepare_image_transcodes_heic_to_jpeg() {
     // 16x12 HEIC produced with `heif-enc -q 50` from a 16x12 PNG.
@@ -1217,6 +1230,7 @@ fn prepare_image_transcodes_heic_to_jpeg() {
         .expect("thumbnail must be JPEG");
 }
 
+#[cfg(feature = "heic")]
 #[test]
 fn prepare_image_detects_heic_even_when_announced_as_jpeg() {
     // determine_media_type announces image/jpeg for .heic (post-transcode MIME).
@@ -1230,4 +1244,17 @@ fn prepare_image_detects_heic_even_when_announced_as_jpeg() {
     assert_eq!(prepared.mime, "image/jpeg");
     image::load_from_memory_with_format(&prepared.bytes, image::ImageFormat::Jpeg)
         .expect("must be JPEG after sniff-triggered transcode");
+}
+
+#[cfg(not(feature = "heic"))]
+#[test]
+fn prepare_image_rejects_heic_without_feature() {
+    let heic = include_bytes!("fixtures/tiny.heic").to_vec();
+    let err = media::prepare_image(heic, "image/heic")
+        .expect_err("HEIC prepare must fail without the heic feature");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("heic") || msg.contains("HEIC"),
+        "error should mention the heic feature: {msg}"
+    );
 }
