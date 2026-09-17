@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Slack** — `void mcp` exposes an `edit` tool for `chat.update`, alongside CLI support, reusing the same shared write service as `send`/`reply`.
 
+### Fixed
+
+- **Gmail** — Recipient display names with non-ASCII characters (e.g. "Maître") are now RFC 2047-encoded when composing an outgoing `To`/`Cc`/`Bcc` header, matching what void already did for `Subject`. A raw UTF-8 name written straight into a header is only valid by convention; a strict mail client can reinterpret those bytes as Latin-1 and mangle the name (e.g. "Maître" rendered as "MaÃ®tre").
+
 ## [0.12.1] - 2026-09-15
 
 ### Fixed

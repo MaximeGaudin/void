@@ -50,19 +50,79 @@ fn reject_header_injection(field: &str, value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Splits a comma-separated RFC 5322 address list at top-level commas,
+/// treating commas inside a double-quoted display name as part of that name
+/// (e.g. `"Le Maître, Juliette" <j@x.com>, Bob <b@x.com>`).
+fn split_address_list(value: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut in_quotes = false;
+    let mut start = 0;
+    for (i, c) in value.char_indices() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                let part = value[start..i].trim();
+                if !part.is_empty() {
+                    parts.push(part);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = value[start..].trim();
+    if !tail.is_empty() {
+        parts.push(tail);
+    }
+    parts
+}
+
+/// RFC 2047-encodes the display-name portion of a single `"Name" <addr>` or
+/// `Name <addr>` address entry, leaving the `<addr>` untouched. A bare address
+/// with no display name, or a name that is already all-ASCII, passes through
+/// unchanged. Header values are otherwise limited to US-ASCII (RFC 2822), so a
+/// raw non-ASCII display name written straight into a header is only valid
+/// UTF-8 by convention: a strict receiver may reinterpret those bytes as
+/// Latin-1, mangling accented names (e.g. "Maître" -> "MaÃ®tre").
+fn encode_address_entry(entry: &str) -> String {
+    let entry = entry.trim();
+    match entry.find('<') {
+        Some(lt) => {
+            let name = entry[..lt].trim().trim_matches('"');
+            let addr_and_rest = &entry[lt..];
+            if name.is_empty() || name.is_ascii() {
+                entry.to_string()
+            } else {
+                format!("{} {addr_and_rest}", encode_rfc2047(name))
+            }
+        }
+        None if !entry.is_ascii() => encode_rfc2047(entry),
+        None => entry.to_string(),
+    }
+}
+
+/// RFC 2047-encodes every display name in a comma-separated address list.
+fn encode_address_list(value: &str) -> String {
+    split_address_list(value)
+        .into_iter()
+        .map(encode_address_entry)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn push_address_headers(
     headers: &mut String,
     recipients: ComposeRecipients<'_>,
 ) -> anyhow::Result<()> {
     reject_header_injection("To", recipients.to)?;
-    headers.push_str(&format!("To: {}\r\n", recipients.to));
+    headers.push_str(&format!("To: {}\r\n", encode_address_list(recipients.to)));
     if let Some(cc) = recipients.cc.map(str::trim).filter(|s| !s.is_empty()) {
         reject_header_injection("Cc", cc)?;
-        headers.push_str(&format!("Cc: {cc}\r\n"));
+        headers.push_str(&format!("Cc: {}\r\n", encode_address_list(cc)));
     }
     if let Some(bcc) = recipients.bcc.map(str::trim).filter(|s| !s.is_empty()) {
         reject_header_injection("Bcc", bcc)?;
-        headers.push_str(&format!("Bcc: {bcc}\r\n"));
+        headers.push_str(&format!("Bcc: {}\r\n", encode_address_list(bcc)));
     }
     Ok(())
 }
