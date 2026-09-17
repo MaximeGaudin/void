@@ -15,7 +15,7 @@ use crate::service::reads::{
     MessagesQuery, SearchQuery, SlackSavedQuery,
 };
 use crate::service::writes::{
-    self, ArchiveParams, ForwardParams, MuteParams, ReplyParams, SendParams,
+    self, ArchiveParams, EditParams, ForwardParams, MuteParams, ReplyParams, SendParams,
 };
 
 #[derive(Clone)]
@@ -77,6 +77,16 @@ struct ForwardToolParams {
     signature_from: Option<String>,
     cc: Option<String>,
     bcc: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EditToolParams {
+    /// Void message ID (`{connection}-{ts}`) or Slack permalink
+    message_id: String,
+    /// Replacement message text
+    message: String,
+    /// Slack connection id (defaults to the message's connection)
+    connection: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -600,6 +610,35 @@ impl VoidMcpServer {
         }
     }
 
+    #[tool(
+        description = "Edit a Slack message you sent (chat.update). Accepts void message IDs or Slack permalinks. Slack-only."
+    )]
+    async fn edit(&self, params: Parameters<EditToolParams>) -> Result<CallToolResult, McpError> {
+        if let Some(err) = require_local_store_for_writes() {
+            return Ok(err);
+        }
+        let cfg = crate::context::void_config();
+        let db = match open_db() {
+            Ok(db) => db,
+            Err(err) => return Ok(err),
+        };
+        let p = params.0;
+        match writes::edit(
+            &db,
+            cfg,
+            EditParams {
+                message_id: &p.message_id,
+                message: &p.message,
+                connection: p.connection.as_deref(),
+            },
+        )
+        .await
+        {
+            Ok(ts) => Ok(tool_ok(serde_json::json!({ "message_id": ts }))),
+            Err(e) => Ok(tool_err(e)),
+        }
+    }
+
     #[tool(description = "Forward a message to another recipient")]
     async fn forward(
         &self,
@@ -735,6 +774,7 @@ mod tests {
             "run",
             "send",
             "reply",
+            "edit",
             "forward",
             "archive",
             "mute",

@@ -55,6 +55,13 @@ pub struct ForwardParams<'a> {
     pub bcc: Option<&'a str>,
 }
 
+/// Slack-only edit (`chat.update`). Accepts void message IDs or Slack permalinks.
+pub struct EditParams<'a> {
+    pub message_id: &'a str,
+    pub message: &'a str,
+    pub connection: Option<&'a str>,
+}
+
 pub struct ArchiveParams<'a> {
     pub message_ids: &'a [String],
     pub before: Option<&'a str>,
@@ -246,6 +253,38 @@ pub async fn reply(
         conn.reply(&reply_id, content, params.in_thread).await?
     };
     Ok(OutboundResult::immediate(sent_id))
+}
+
+/// Edit a Slack message body via `chat.update`.
+///
+/// Resolves `message_id` the same way as `reply` / `forward` (void internal ID or
+/// Slack permalink). Returns the Slack message `ts` from the update response.
+pub async fn edit(
+    db: &Database,
+    cfg: &VoidConfig,
+    params: EditParams<'_>,
+) -> anyhow::Result<String> {
+    let msg = resolve_message(db, params.message_id)?;
+
+    if msg.connector != "slack" {
+        anyhow::bail!(
+            "Message {} is from connector '{}', not slack.",
+            params.message_id,
+            msg.connector
+        );
+    }
+
+    let conv = db
+        .get_conversation(&msg.conversation_id)?
+        .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
+
+    // Prefer an explicit connection filter; otherwise use the message's own
+    // connection so multi-workspace configs edit with the right token.
+    let connection_filter = params.connection.or(Some(msg.connection_id.as_str()));
+    let connector = connector_factory::build_slack_connector(connection_filter, cfg)?;
+    connector
+        .edit_message(&conv.external_id, &msg.external_id, params.message)
+        .await
 }
 
 pub async fn forward(

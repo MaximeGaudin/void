@@ -57,9 +57,10 @@ Calendar, LinkedIn, GitHub, HN, Google News, Reddit, …) into one local inbox.
    `connector`/`connection`, or use `search` for a topic.
 2. **Understand** — call `messages` with the conversation id when you need
    thread context; use `conversations` / `contacts` / `channels` to orient.
-3. **Act** — `reply`, `send`, or `forward` when a response is needed.
+3. **Act** — `reply`, `send`, `edit`, or `forward` when a response is needed.
    Draft email or Slack react via `run` (e.g. `["gmail","draft","create",...]`
-   or `["slack","react",...]`).
+   or `["slack","react",...]`). Use named `edit` to revise a Slack message you
+   already sent (void ID or Slack permalink).
 4. **Archive** — after handling, `archive` so the item leaves the inbox.
    Use `mute` for noisy channels you never want to see.
 5. **Done** — when `inbox` returns nothing, you are at Inbox Zero.
@@ -126,13 +127,14 @@ These call the shared service layer in-process (faster, typed schemas). Prefer *
 |------|----------------|-------------|
 | `send` | `void send` | Send a message. Optional Gmail-only `cc` / `bcc` (comma-separated) and `signature` / `signature_from` (append the account HTML send-as signature) |
 | `reply` | `void reply` | Reply to a message. Same optional Gmail `cc` / `bcc` and `signature` / `signature_from` |
+| `edit` | `void slack edit` | Edit a Slack message you sent (`chat.update`). Accepts void message IDs (`{connection}-{ts}`) or Slack permalinks. Slack-only. |
 | `forward` | `void forward` | Forward a message. Same optional Gmail `cc` / `bcc` and `signature` / `signature_from` (signature sits between comment and quote) |
 | `archive` | `void archive` | Archive by IDs or bulk `--before` |
 | `mute` | `void mute` | Mute/unmute conversations |
 
 `cc` / `bcc` and `signature` / `signature_from` on `send` / `reply` / `forward` match the CLI `--cc` / `--bcc` and `--signature` / `--signature-from` flags (Gmail only). Signature requires a prior interactive grant of `gmail.settings.basic` (run one terminal command with `--signature`); the MCP server will not open a browser. Pass a body/comment without an existing signature — append is not idempotent.
 
-In-process write tools (`send`, `reply`, `forward`, `archive`) require **local store mode**. Use **`run`** instead when on a remote client — it follows the same SSH proxy path as the CLI.
+In-process write tools (`send`, `reply`, `edit`, `forward`, `archive`) require **local store mode**. Use **`run`** instead when on a remote client — it follows the same SSH proxy path as the CLI.
 
 ## Architecture
 

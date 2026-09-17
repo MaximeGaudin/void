@@ -479,6 +479,64 @@ mod tests {
         parse_err(&["void", "slack", "forward", "--to", "C12345"]);
     }
 
+    // --- Slack edit parsing ---
+
+    #[test]
+    fn parse_slack_edit_minimal() {
+        let cli = parse(&[
+            "void",
+            "slack",
+            "edit",
+            "gladiaio-1789613206.915689",
+            "--message",
+            "updated text",
+        ]);
+        match cli.command {
+            Some(Command::Slack(ref s)) => match &s.command {
+                commands::slack::SlackCommand::Edit(e) => {
+                    assert_eq!(e.message_id, "gladiaio-1789613206.915689");
+                    assert_eq!(e.message, "updated text");
+                    assert!(e.connection.is_none());
+                }
+                other => panic!("expected Edit, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_edit_with_connection() {
+        let cli = parse(&[
+            "void",
+            "slack",
+            "edit",
+            "msg1",
+            "--message",
+            "hi",
+            "--connection",
+            "gladiaio",
+        ]);
+        match cli.command {
+            Some(Command::Slack(ref s)) => match &s.command {
+                commands::slack::SlackCommand::Edit(e) => {
+                    assert_eq!(e.connection.as_deref(), Some("gladiaio"));
+                }
+                other => panic!("expected Edit, got {other:?}"),
+            },
+            other => panic!("expected Slack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_slack_edit_requires_message_flag() {
+        parse_err(&["void", "slack", "edit", "msg1"]);
+    }
+
+    #[test]
+    fn parse_slack_edit_requires_message_id() {
+        parse_err(&["void", "slack", "edit", "--message", "hi"]);
+    }
+
     // --- Telegram forward parsing ---
 
     #[test]
