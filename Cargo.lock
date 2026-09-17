@@ -4753,6 +4753,7 @@ dependencies = [
  "chrono",
  "clap",
  "croner",
+ "dirs",
  "insta",
  "inventory",
  "libc",
@@ -4778,6 +4779,7 @@ dependencies = [
  "void-gmail",
  "void-googlenews",
  "void-hackernews",
+ "void-imessage",
  "void-linkedin",
  "void-reddit",
  "void-slack",
@@ -4890,6 +4892,24 @@ dependencies = [
  "tracing",
  "void-core",
  "wiremock",
+]
+
+[[package]]
+name = "void-imessage"
+version = "0.12.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "void-core",
 ]
 
 [[package]]

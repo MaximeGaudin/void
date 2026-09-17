@@ -11,6 +11,7 @@ name = "void"
 path = "src/main.rs"
 
 [dependencies]
+dirs = { workspace = true }
 void-core = { workspace = true, features = ["test-fixtures"] }
 void-slack = { workspace = true }
 void-gmail = { workspace = true }
@@ -18,6 +19,7 @@ void-calendar = { workspace = true }
 void-whatsapp = { workspace = true }
 void-telegram = { workspace = true }
 void-hackernews = { workspace = true }
+void-imessage = { workspace = true }
 void-googlenews = { workspace = true }
 void-linkedin = { workspace = true }
 void-reddit = { workspace = true }
