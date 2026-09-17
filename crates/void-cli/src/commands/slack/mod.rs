@@ -19,7 +19,73 @@ pub async fn run(args: &SlackArgs) -> anyhow::Result<()> {
         SlackCommand::Open(a) => run_open(a).await,
         SlackCommand::Forward(a) => run_forward(a).await,
         SlackCommand::Saved(a) => saved::run(a),
+        SlackCommand::Download(a) => run_download(a).await,
     }
+}
+
+async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
+    let cfg = load_config();
+    let db = crate::context::open_db()?;
+
+    let msg = super::resolve::resolve_message(&db, &args.message_id)?;
+
+    if msg.connector != "slack" {
+        anyhow::bail!(
+            "Message {} is from connector '{}', not slack.",
+            args.message_id,
+            msg.connector
+        );
+    }
+
+    let files: Vec<serde_json::Value> = msg
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("files"))
+        .and_then(|f| f.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if files.is_empty() {
+        anyhow::bail!("Message has no file attachments.");
+    }
+
+    let connector = build_slack_connector(args.connection.as_deref(), cfg)?;
+
+    if let Some(index) = args.file_index {
+        let file = files.get(index).ok_or_else(|| {
+            anyhow::anyhow!(
+                "No file at index {index} (message has {} file(s)).",
+                files.len()
+            )
+        })?;
+        let data = connector.download_file(file).await?;
+        crate::commands::write_download(&args.out, &data)?;
+        eprintln!("Saved to {} ({} bytes).", args.out, data.len());
+        return Ok(());
+    }
+
+    if files.len() == 1 {
+        let data = connector.download_file(&files[0]).await?;
+        crate::commands::write_download(&args.out, &data)?;
+        eprintln!("Saved to {} ({} bytes).", args.out, data.len());
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&args.out)?;
+    for (i, file) in files.iter().enumerate() {
+        let name = file.get("name").and_then(|v| v.as_str()).unwrap_or("file");
+        let dest = std::path::Path::new(&args.out).join(format!("{i}_{name}"));
+        match connector.download_file(file).await {
+            Ok(data) => {
+                crate::commands::write_download(dest.to_string_lossy().as_ref(), &data)?;
+                eprintln!("Saved to {} ({} bytes).", dest.display(), data.len());
+            }
+            Err(e) => {
+                eprintln!("Skipping file {i} ({name}): {e}");
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn run_react(args: &ReactArgs) -> anyhow::Result<()> {
