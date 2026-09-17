@@ -1079,11 +1079,22 @@ fn determine_media_type_heic_and_heif_are_images() {
 }
 
 #[test]
-fn determine_media_type_heic_declares_jpeg_because_we_transcode() {
-    // We transcode HEIC to JPEG before upload, so the announced MIME is JPEG.
+fn determine_media_type_does_not_lie_about_heic() {
+    // Nothing transcodes HEIC on this path: the bytes go up untouched, so
+    // announcing image/jpeg would hand receivers JPEG-labelled HEIC and break
+    // rendering. When transcoding lands, the transcoder -- not this mapping --
+    // is what may announce image/jpeg.
     assert_eq!(
         media::determine_media_type(None, "IMG_0042.heic").1,
-        "image/jpeg"
+        "image/heic"
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heif").1,
+        "image/heif"
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.HEIC").1,
+        "image/heic"
     );
 }
 
