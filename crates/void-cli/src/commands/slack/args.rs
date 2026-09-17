@@ -20,6 +20,8 @@ pub enum SlackCommand {
     Forward(ForwardArgs),
     /// Show messages saved for later (Slack Later view)
     Saved(super::saved::SavedArgs),
+    /// Download file attachment(s) from a message
+    Download(DownloadArgs),
 }
 
 #[derive(Debug, Args)]
@@ -85,6 +87,21 @@ pub struct OpenArgs {
     /// Comma-separated list of Slack user IDs to open a conversation with
     #[arg(long)]
     pub users: String,
+    /// Slack connection to use
+    #[arg(long)]
+    pub connection: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DownloadArgs {
+    /// Message ID (void internal ID or external ID)
+    pub message_id: String,
+    /// Output file path (single file), or output directory (multiple files)
+    #[arg(long)]
+    pub out: String,
+    /// Download only the file at this index (0-based) instead of all files
+    #[arg(long)]
+    pub file_index: Option<usize>,
     /// Slack connection to use
     #[arg(long)]
     pub connection: Option<String>,

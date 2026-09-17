@@ -288,6 +288,19 @@ impl SlackConnector {
         }
     }
 
+    /// Download a single file referenced in a message's `metadata.files[]` entry.
+    ///
+    /// Returns the raw bytes on success. Fails with a descriptive error when the
+    /// file has no Slack-hosted download URL (external file, thumbnail-only, etc.).
+    pub async fn download_file(&self, file: &serde_json::Value) -> anyhow::Result<Vec<u8>> {
+        if let Some(reason) = files::skip_download_reason(file) {
+            anyhow::bail!("file is not downloadable ({reason})");
+        }
+        let url = files::resolve_download_url(file)
+            .ok_or_else(|| anyhow::anyhow!("file has no downloadable URL"))?;
+        self.api.download_file(url).await
+    }
+
     /// Upload a file and share it in `channel`.
     ///
     /// Returns the file id **Slack confirms it shared**. An `ok: true` with an
