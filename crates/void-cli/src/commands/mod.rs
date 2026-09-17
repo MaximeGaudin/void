@@ -26,6 +26,7 @@ pub mod slack;
 pub mod status;
 pub mod sync;
 pub mod telegram;
+pub mod update;
 pub mod whatsapp;
 
 /// Write downloaded bytes to `path`, creating parent directories as needed.

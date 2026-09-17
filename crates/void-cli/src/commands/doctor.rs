@@ -30,7 +30,7 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
     }
 
     if crate::context::is_remote() {
-        return run_remote_doctor(args, &mut issues);
+        return run_remote_doctor(args, &mut issues).await;
     }
 
     let cfg = match VoidConfig::load(&config_path) {
@@ -186,10 +186,17 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
         );
     }
 
+    if let Some(latest) = crate::commands::update::check_for_update().await {
+        eprintln!(
+            "\n[note] void {latest} is available (you have {}). Run `void update`.",
+            env!("CARGO_PKG_VERSION")
+        );
+    }
+
     finish(args.non_interactive, issues)
 }
 
-fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Result<()> {
+async fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Result<()> {
     eprintln!("[OK] Store mode: remote");
     eprintln!(
         "[OK] Local client profile: {} (no [[connections]] here is expected)",
@@ -197,11 +204,16 @@ fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Result<()
     );
 
     let mut remote_host = "remote host".to_string();
+    let mut remote_version: Option<String> = None;
     match crate::context::get().remote_status() {
         Ok(status) => {
             if let Some(host) = status.get("host").and_then(|v| v.as_str()) {
                 remote_host = host.to_string();
             }
+            remote_version = status
+                .get("remote_version")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
             let ssh_ok = status
                 .get("ssh_reachable")
                 .and_then(|v| v.as_bool())
@@ -294,6 +306,14 @@ fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Result<()
             "[OK] {} connection(s) in cached server config (connector checks run on server)",
             cfg.connections.len()
         );
+    }
+
+    if let Some(remote_version) = remote_version {
+        if let Some(latest) = crate::commands::update::check_newer_than(&remote_version).await {
+            eprintln!(
+                "\n[note] void {latest} is available (remote host has {remote_version}). Run `void remote update`."
+            );
+        }
     }
 
     finish(args.non_interactive, *issues)

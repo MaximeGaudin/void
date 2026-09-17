@@ -82,10 +82,12 @@ pub(crate) enum Command {
     Calendar(commands::calendar::CalendarArgs),
     /// Manage hooks — LLM prompts triggered by events or schedules
     Hook(commands::hook::HookArgs),
-    /// Remote store utilities (status, cache refresh)
+    /// Remote store utilities (status, cache refresh, remote self-update)
     Remote(commands::remote::RemoteArgs),
     /// Model Context Protocol server (stdio) for AI agents
     Mcp(commands::mcp::McpArgs),
+    /// Download and install the latest release binary (always runs locally)
+    Update(commands::update::UpdateArgs),
 }
 
 fn refresh_policy_for_cli(cli: &Cli) -> void_core::store::RefreshPolicy {
@@ -202,6 +204,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
             commands::remote::run(args, cli.config.as_deref(), cli.store.as_deref())
         }
         Some(Command::Mcp(args)) => commands::mcp::run(args).await,
+        Some(Command::Update(args)) => commands::update::run(args).await,
         None => {
             commands::status::run();
             Ok(())

@@ -84,6 +84,12 @@ pub fn ensure_local_setup_allowed() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
+pub fn run_remote_update() -> anyhow::Result<i32> {
+    get()
+        .run_remote_update()
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
 pub fn proxy_current_command() -> anyhow::Result<()> {
     let raw_args = collect_proxy_args();
     let code = get()
@@ -134,7 +140,8 @@ pub(crate) fn runs_with_local_cache(command: &crate::Command) -> bool {
         | Command::Search(_)
         | Command::Doctor(_)
         | Command::Remote(_)
-        | Command::Mcp(_) => true,
+        | Command::Mcp(_)
+        | Command::Update(_) => true,
         Command::Calendar(args) => calendar_reads_local_cache(args),
         Command::Hn(args) => hackernews_reads_local_cache(args),
         Command::Reddit(args) => reddit_reads_local_cache(args),
