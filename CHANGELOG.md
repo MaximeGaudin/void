@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-17
+
 ### Changed
 
 - **Doctor** — `void doctor` now always prints the local and (in remote mode) the remote host's version, instead of only when they differ from the latest GitHub release.
+
+### Fixed
+
+- **WhatsApp** — `.heic`/`.heif` files (the iPhone default) now classify as images instead of falling through to `Document`, and announce their real MIME (`image/heic`/`image/heif`) rather than a false `image/jpeg`; PNG/GIF/WebP also announce their real MIME instead of `image/jpeg`. Nothing transcodes HEIC yet, so the previous `image/jpeg` claim shipped JPEG-labelled HEIC bytes that receiving clients couldn't render.
 
 ## [0.13.0] - 2026-09-17
 
