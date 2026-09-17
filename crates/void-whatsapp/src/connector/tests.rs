@@ -1078,12 +1078,28 @@ fn determine_media_type_heic_and_heif_are_images() {
     );
 }
 
+#[cfg(feature = "heic")]
 #[test]
-fn determine_media_type_does_not_lie_about_heic() {
-    // Nothing transcodes HEIC on this path: the bytes go up untouched, so
-    // announcing image/jpeg would hand receivers JPEG-labelled HEIC and break
-    // rendering. When transcoding lands, the transcoder -- not this mapping --
-    // is what may announce image/jpeg.
+fn determine_media_type_heic_declares_jpeg_because_we_transcode() {
+    // With the `heic` feature we transcode before upload, so MIME is JPEG.
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heic").1,
+        "image/jpeg"
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.heif").1,
+        "image/jpeg"
+    );
+    assert_eq!(
+        media::determine_media_type(None, "IMG_0042.HEIC").1,
+        "image/jpeg"
+    );
+}
+
+#[cfg(not(feature = "heic"))]
+#[test]
+fn determine_media_type_does_not_lie_about_heic_without_feature() {
+    // Without libheif we must not announce image/jpeg over raw HEIC bytes.
     assert_eq!(
         media::determine_media_type(None, "IMG_0042.heic").1,
         "image/heic"
@@ -1091,10 +1107,6 @@ fn determine_media_type_does_not_lie_about_heic() {
     assert_eq!(
         media::determine_media_type(None, "IMG_0042.heif").1,
         "image/heif"
-    );
-    assert_eq!(
-        media::determine_media_type(None, "IMG_0042.HEIC").1,
-        "image/heic"
     );
 }
 
@@ -1106,4 +1118,143 @@ fn determine_media_type_does_not_lie_about_png_gif_webp() {
     assert_eq!(media::determine_media_type(None, "a.webp").1, "image/webp");
     assert_eq!(media::determine_media_type(None, "a.jpg").1, "image/jpeg");
     assert_eq!(media::determine_media_type(None, "a.jpeg").1, "image/jpeg");
+}
+
+// --- prepare_image: dimensions, thumbnail, HEIC transcoding ---
+
+/// Builds a real PNG in memory, no fixture file on disk.
+fn png_bytes(w: u32, h: u32) -> Vec<u8> {
+    let mut buf = std::io::Cursor::new(Vec::new());
+    let img = image::RgbImage::from_fn(w, h, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, 128])
+    });
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .expect("encoding a PNG in memory must succeed");
+    buf.into_inner()
+}
+
+#[test]
+fn prepare_image_reports_the_real_dimensions() {
+    let prepared = media::prepare_image(png_bytes(640, 360), "image/png")
+        .expect("a valid PNG must prepare successfully");
+
+    assert_eq!(prepared.width, 640);
+    assert_eq!(prepared.height, 360);
+}
+
+#[test]
+fn prepare_image_keeps_png_bytes_and_mime_untouched() {
+    // Only HEIC/HEIF needs transcoding. A PNG must be uploaded as-is.
+    let original = png_bytes(32, 32);
+
+    let prepared = media::prepare_image(original.clone(), "image/png").unwrap();
+
+    assert_eq!(prepared.bytes, original, "PNG bytes must not be re-encoded");
+    assert_eq!(prepared.mime, "image/png");
+}
+
+#[test]
+fn prepare_image_thumbnail_is_a_decodable_jpeg() {
+    let prepared = media::prepare_image(png_bytes(800, 600), "image/png").unwrap();
+
+    let thumb = prepared
+        .thumbnail
+        .expect("an image must carry a jpeg_thumbnail");
+    let decoded = image::load_from_memory_with_format(&thumb, image::ImageFormat::Jpeg)
+        .expect("the thumbnail must re-decode as JPEG");
+
+    // Scaled down, aspect ratio preserved, and small enough to ride inline.
+    assert!(
+        decoded.width() <= 200 && decoded.height() <= 200,
+        "{decoded:?}"
+    );
+    assert!(
+        decoded.width() > decoded.height(),
+        "landscape must stay landscape"
+    );
+    assert!(
+        thumb.len() < 64 * 1024,
+        "thumbnail is {} bytes",
+        thumb.len()
+    );
+}
+
+#[test]
+fn prepare_image_rejects_bytes_that_are_not_an_image() {
+    let err = media::prepare_image(b"this is not an image".to_vec(), "image/png")
+        .expect_err("garbage bytes must not be reported as a valid image");
+    assert!(
+        err.to_string().to_lowercase().contains("image"),
+        "error should mention the image decode: {err}"
+    );
+}
+
+#[cfg(feature = "heic")]
+#[test]
+fn prepare_image_transcodes_heic_to_jpeg() {
+    // 16x12 HEIC produced with `heif-enc -q 50` from a 16x12 PNG.
+    //
+    // The fixture's HEVC *coded* size matters more than its display size.
+    // libheif enforces `max_image_size_pixels` against the coded frame, and a
+    // source build of libheif (what CI compiles, since Ubuntu LTS only ships
+    // 1.17) defaults that limit to 6080 pixels, far below the 1073741824 of
+    // the Homebrew build used on macOS. The previous fixture displayed 16x12
+    // but carried a 160x64 coded frame (10240 pixels), so it decoded on macOS
+    // and failed everywhere else with "Security limit exceeded: Image size
+    // 160x64 exceeds the maximum image size 6080". This one codes at 64x64
+    // (4096 pixels), which is under the limit on every build.
+    //
+    // If this fixture is ever regenerated, check the coded size in the SPS,
+    // not just `heif-info`'s reported dimensions.
+    let heic = include_bytes!("fixtures/tiny.heic").to_vec();
+
+    let prepared = media::prepare_image(heic.clone(), "image/heic")
+        .expect("libheif must decode the fixture HEIC");
+
+    assert_ne!(
+        prepared.bytes, heic,
+        "HEIC bytes must be replaced by a JPEG re-encode"
+    );
+    assert_eq!(prepared.mime, "image/jpeg");
+    assert_eq!((prepared.width, prepared.height), (16, 12));
+
+    let decoded = image::load_from_memory_with_format(&prepared.bytes, image::ImageFormat::Jpeg)
+        .expect("transcoded bytes must be a real JPEG");
+    assert_eq!((decoded.width(), decoded.height()), (16, 12));
+
+    let thumb = prepared
+        .thumbnail
+        .expect("HEIC send path must still carry a jpeg_thumbnail");
+    image::load_from_memory_with_format(&thumb, image::ImageFormat::Jpeg)
+        .expect("thumbnail must be JPEG");
+}
+
+#[cfg(feature = "heic")]
+#[test]
+fn prepare_image_detects_heic_even_when_announced_as_jpeg() {
+    // determine_media_type announces image/jpeg for .heic (post-transcode MIME).
+    // Sniffing must still force a re-encode, otherwise we upload HEIC labeled JPEG.
+    let heic = include_bytes!("fixtures/tiny.heic").to_vec();
+
+    let prepared = media::prepare_image(heic.clone(), "image/jpeg")
+        .expect("sniffed HEIC must decode via libheif hooks");
+
+    assert_ne!(prepared.bytes, heic);
+    assert_eq!(prepared.mime, "image/jpeg");
+    image::load_from_memory_with_format(&prepared.bytes, image::ImageFormat::Jpeg)
+        .expect("must be JPEG after sniff-triggered transcode");
+}
+
+#[cfg(not(feature = "heic"))]
+#[test]
+fn prepare_image_rejects_heic_without_feature() {
+    let heic = include_bytes!("fixtures/tiny.heic").to_vec();
+    let err = media::prepare_image(heic, "image/heic")
+        .expect_err("HEIC prepare must fail without the heic feature");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("heic") || msg.contains("HEIC"),
+        "error should mention the heic feature: {msg}"
+    );
 }

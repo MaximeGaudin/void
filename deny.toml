@@ -34,6 +34,13 @@ allow = [
     "Unicode-3.0",
     "CDLA-Permissive-2.0",
     "LGPL-2.1-or-later",
+    # LGPL-3.0-or-later is intentionally NOT listed here.
+    # The WhatsApp HEIC path (`libheif-rs` / system libheif) is behind the
+    # optional Cargo feature `heic` (off by default). With
+    # `[graph] all-features = false`, cargo-deny does not see that dependency
+    # on the default graph. Builds that enable `--features heic` accept LGPL
+    # linking for that binary (FFmpeg-style opt-in); owner sign-off for
+    # distributing those binaries is tracked on #85 / the heic feature PR.
     "AGPL-3.0-only",
 ]
 

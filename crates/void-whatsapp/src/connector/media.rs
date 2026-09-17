@@ -34,12 +34,14 @@ pub(crate) fn determine_media_type(
 
     match ext.as_str() {
         "jpg" | "jpeg" => (WaMediaType::Image, "image/jpeg"),
-        // HEIC/HEIF (the iPhone default) is uploaded byte-for-byte on this
-        // path: nothing transcodes it yet. Announcing image/jpeg here would
-        // ship JPEG-labelled HEIC bytes, which receiving clients cannot
-        // render -- the same lie this function fixes for PNG/GIF/WebP. Keep
-        // the real MIME until transcoding actually lands.
+        // HEIC/HEIF: with the `heic` feature we transcode to JPEG before
+        // upload and announce image/jpeg. Without it, announce the real MIME
+        // so we never ship HEIC bytes labelled as JPEG (see #95).
+        #[cfg(feature = "heic")]
+        "heic" | "heif" => (WaMediaType::Image, "image/jpeg"),
+        #[cfg(not(feature = "heic"))]
         "heic" => (WaMediaType::Image, "image/heic"),
+        #[cfg(not(feature = "heic"))]
         "heif" => (WaMediaType::Image, "image/heif"),
         "png" => (WaMediaType::Image, "image/png"),
         "gif" => (WaMediaType::Image, "image/gif"),
@@ -47,6 +49,150 @@ pub(crate) fn determine_media_type(
         "mp4" | "mov" | "avi" => (WaMediaType::Video, "video/mp4"),
         "ogg" | "mp3" | "m4a" | "wav" | "opus" => (WaMediaType::Audio, "audio/ogg; codecs=opus"),
         _ => (WaMediaType::Document, "application/octet-stream"),
+    }
+}
+
+/// An image ready to be uploaded: decoded, possibly transcoded, measured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PreparedImage {
+    /// Bytes to upload. Same as the input unless the source was transcoded.
+    pub bytes: Vec<u8>,
+    /// MIME string that honestly describes `bytes`.
+    pub mime: String,
+    pub width: u32,
+    pub height: u32,
+    /// Small JPEG preview shown before the full image is downloaded.
+    pub thumbnail: Option<Vec<u8>>,
+}
+
+/// Decodes an image, optionally transcoding HEIC/HEIF to JPEG, and measures it.
+///
+/// Pure: no network, no client, no filesystem. `declared_mime` is what
+/// `determine_media_type` announced for these bytes (or an extension-aware
+/// override such as `image/heic`).
+///
+/// HEIC/HEIF cannot be rendered by WhatsApp clients. With the `heic` feature
+/// (system libheif, LGPL) those bytes are re-encoded as JPEG. Without it,
+/// callers should not invoke this on HEIC — upload with an honest MIME
+/// instead. Every other format is uploaded untouched: re-encoding a photo
+/// the user picked would silently lose quality.
+pub(crate) fn prepare_image(data: Vec<u8>, declared_mime: &str) -> anyhow::Result<PreparedImage> {
+    register_heif_hooks();
+
+    let source_is_heif = looks_like_heif(&data)
+        || declared_mime.eq_ignore_ascii_case("image/heic")
+        || declared_mime.eq_ignore_ascii_case("image/heif");
+
+    #[cfg(not(feature = "heic"))]
+    if source_is_heif {
+        anyhow::bail!(
+            "HEIC/HEIF send requires the `heic` Cargo feature \
+             (links system libheif under LGPL-3.0-or-later). \
+             Rebuild with `--features heic`, or convert the photo to JPEG/PNG first."
+        );
+    }
+
+    // ImageReader (used by load_from_memory) consults the libheif hooks when
+    // the `heic` feature is on. The free-function guess_format does not:
+    // never use it to detect HEIC.
+    let decoded = image::load_from_memory(&data).context("failed to decode image data")?;
+    let (width, height) = (decoded.width(), decoded.height());
+
+    // WhatsApp clients cannot decode HEIC, so transcode when the `heic`
+    // feature is on. Announcing image/jpeg over HEIC bytes would be worse
+    // than the Document fallback it replaces.
+    #[cfg(feature = "heic")]
+    let (bytes, mime) = if source_is_heif {
+        (
+            encode_jpeg(&decoded, JPEG_QUALITY)?,
+            "image/jpeg".to_string(),
+        )
+    } else {
+        (data, declared_mime.to_string())
+    };
+    #[cfg(not(feature = "heic"))]
+    let (bytes, mime) = (data, declared_mime.to_string());
+
+    let thumbnail = build_thumbnail(&decoded);
+
+    Ok(PreparedImage {
+        bytes,
+        mime,
+        width,
+        height,
+        thumbnail,
+    })
+}
+
+/// Quality used when we have to re-encode HEIC→JPEG. 85 is the usual knee.
+#[cfg(feature = "heic")]
+const JPEG_QUALITY: u8 = 85;
+
+/// Longest edge of the inline preview, in pixels.
+const THUMBNAIL_MAX_EDGE: u32 = 200;
+
+/// Registers libheif's decoders into the `image` crate, exactly once.
+///
+/// The `image` crate does not decode HEIC on its own (image-rs/image#1375).
+#[cfg(feature = "heic")]
+fn register_heif_hooks() {
+    static HOOKS: std::sync::Once = std::sync::Once::new();
+    HOOKS.call_once(libheif_rs::integration::image::register_all_decoding_hooks);
+}
+
+#[cfg(not(feature = "heic"))]
+fn register_heif_hooks() {}
+
+/// ISO BMFF `ftyp` brands that mean "this is HEIF-family, not a plain JPEG".
+///
+/// iPhone camera output uses major brand `heic`. Structural brands `mif1` /
+/// `mif2` also appear. We deliberately omit `avif`: that is a different codec
+/// and must not be silently JPEG-transcoded.
+fn looks_like_heif(data: &[u8]) -> bool {
+    const BRANDS: &[&[u8; 4]] = &[
+        b"heic", b"heix", b"heif", b"hevc", b"hevx", b"mif1", b"mif2",
+    ];
+    if data.len() < 12 || &data[4..8] != b"ftyp" {
+        return false;
+    }
+    if BRANDS.iter().any(|b| &data[8..12] == *b) {
+        return true;
+    }
+    // Compatible brands start at offset 16, four bytes each.
+    let end = data.len().min(64);
+    let mut off = 16;
+    while off + 4 <= end {
+        if BRANDS.iter().any(|b| &data[off..off + 4] == *b) {
+            return true;
+        }
+        off += 4;
+    }
+    false
+}
+
+fn encode_jpeg(img: &image::DynamicImage, quality: u8) -> anyhow::Result<Vec<u8>> {
+    let mut out = std::io::Cursor::new(Vec::new());
+    // JPEG has no alpha channel; drop it rather than letting the encoder fail.
+    image::DynamicImage::ImageRgb8(img.to_rgb8())
+        .write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
+            &mut out, quality,
+        ))
+        .context("failed to encode JPEG")?;
+    Ok(out.into_inner())
+}
+
+/// Small JPEG preview shown by receiving clients before the full download.
+///
+/// Returns None rather than failing the send: a missing preview is a cosmetic
+/// loss, a failed send is not.
+fn build_thumbnail(img: &image::DynamicImage) -> Option<Vec<u8>> {
+    let thumb = img.thumbnail(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE);
+    match encode_jpeg(&thumb, 70) {
+        Ok(bytes) => Some(bytes),
+        Err(e) => {
+            tracing::warn!("could not build image thumbnail: {e}");
+            None
+        }
     }
 }
 
@@ -63,7 +209,38 @@ pub(crate) async fn upload_and_build_media_message(
         .with_context(|| format!("failed to read file {}", path.display()))?;
     let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     let (media_type, default_mime) = determine_media_type(mime_type, filename);
-    let mime = mime_type.unwrap_or(default_mime);
+
+    // Images go through prepare_image so non-HEIC formats get dimensions +
+    // jpeg_thumbnail. HEIC is only prepared when the `heic` feature is on
+    // (libheif / LGPL); otherwise we upload bytes with an honest MIME.
+    let (data, mime, width, height, thumbnail) = if media_type == WaMediaType::Image {
+        let prepare_mime = heic_aware_declared_mime(filename, mime_type, default_mime);
+        let source_is_heif = looks_like_heif(&data)
+            || prepare_mime.eq_ignore_ascii_case("image/heic")
+            || prepare_mime.eq_ignore_ascii_case("image/heif");
+
+        if source_is_heif && !cfg!(feature = "heic") {
+            (data, prepare_mime.to_string(), None, None, None)
+        } else {
+            let prepared = prepare_image(data, prepare_mime)
+                .with_context(|| format!("failed to prepare image {}", path.display()))?;
+            (
+                prepared.bytes,
+                prepared.mime,
+                Some(prepared.width),
+                Some(prepared.height),
+                prepared.thumbnail,
+            )
+        }
+    } else {
+        (
+            data,
+            mime_type.unwrap_or(default_mime).to_string(),
+            None,
+            None,
+            None,
+        )
+    };
 
     let upload = client
         .upload(data, media_type)
@@ -80,8 +257,11 @@ pub(crate) async fn upload_and_build_media_message(
                 file_sha256: Some(upload.file_sha256),
                 file_enc_sha256: Some(upload.file_enc_sha256),
                 file_length: Some(upload.file_length),
-                mimetype: Some(mime.to_string()),
+                mimetype: Some(mime),
                 caption: caption.map(|c| c.to_string()),
+                width,
+                height,
+                jpeg_thumbnail: thumbnail,
                 context_info: context_info.map(Box::new),
                 ..Default::default()
             })),
@@ -95,7 +275,7 @@ pub(crate) async fn upload_and_build_media_message(
                 file_sha256: Some(upload.file_sha256),
                 file_enc_sha256: Some(upload.file_enc_sha256),
                 file_length: Some(upload.file_length),
-                mimetype: Some(mime.to_string()),
+                mimetype: Some(mime),
                 caption: caption.map(|c| c.to_string()),
                 context_info: context_info.map(Box::new),
                 ..Default::default()
@@ -110,7 +290,7 @@ pub(crate) async fn upload_and_build_media_message(
                 file_sha256: Some(upload.file_sha256),
                 file_enc_sha256: Some(upload.file_enc_sha256),
                 file_length: Some(upload.file_length),
-                mimetype: Some(mime.to_string()),
+                mimetype: Some(mime),
                 context_info: context_info.map(Box::new),
                 ..Default::default()
             })),
@@ -124,7 +304,7 @@ pub(crate) async fn upload_and_build_media_message(
                 file_sha256: Some(upload.file_sha256),
                 file_enc_sha256: Some(upload.file_enc_sha256),
                 file_length: Some(upload.file_length),
-                mimetype: Some(mime.to_string()),
+                mimetype: Some(mime),
                 file_name: Some(filename.to_string()),
                 context_info: context_info.map(Box::new),
                 ..Default::default()
@@ -134,6 +314,32 @@ pub(crate) async fn upload_and_build_media_message(
     };
 
     Ok(msg)
+}
+
+/// MIME passed to `prepare_image` for HEIC/HEIF detection.
+///
+/// `determine_media_type` announces `image/jpeg` for `.heic` because we
+/// transcode before upload. That announcement alone cannot tell
+/// `prepare_image` the *source* is HEIC, so the extension fills the gap
+/// when the caller did not pass an explicit HEIC MIME.
+fn heic_aware_declared_mime<'a>(
+    filename: &str,
+    mime_type: Option<&'a str>,
+    default_mime: &'a str,
+) -> &'a str {
+    if let Some(m) = mime_type {
+        return m;
+    }
+    let ext = std::path::Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "heic" => "image/heic",
+        "heif" => "image/heif",
+        _ => default_mime,
+    }
 }
 
 pub(crate) async fn download_media_with_client(

@@ -6,6 +6,19 @@ license.workspace = true
 rust-version.workspace = true
 description = "WhatsApp adapter for Void CLI"
 
+[features]
+default = []
+# Opt-in HEIC/HEIF → JPEG via system libheif (LGPL-3.0-or-later).
+#
+# Off by default so the vanilla build does not link LGPL code and does not
+# require libheif on the build machine (same idea as FFmpeg's --enable-gpl:
+# you opt in explicitly before pulling the licensed dependency).
+#
+# Enable with:
+#   cargo build -p void-cli --features heic
+# Requires system libheif >= 1.21 (e.g. `brew install libheif`).
+heic = ["dep:libheif-rs"]
+
 [dependencies]
 void-core = { workspace = true }
 serde = { workspace = true }
@@ -26,6 +39,23 @@ wa-rs-proto = "0.2"
 qr2term = "0.3"
 base64 = { workspace = true }
 chrono = { workspace = true }
+# Image pipeline for outgoing photos: decode, resize a thumbnail, re-encode JPEG.
+# default-features = false keeps the codec list to what we actually send.
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+] }
+# HEIC/HEIF (the iPhone camera default) is not decodable by `image`
+# (image-rs/image#1375 was closed without an implementation). libheif-rs wraps
+# the system libheif C library and its `image` feature registers decoding hooks
+# into the `image` crate. Optional: enable the `heic` feature (and install
+# libheif >= 1.21) to opt into LGPL linking.
+libheif-rs = { version = "2.7.0", optional = true, default-features = false, features = [
+    "v1_21",
+    "image",
+] }
 
 [dev-dependencies]
 uuid = { workspace = true }
