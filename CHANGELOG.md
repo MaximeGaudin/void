@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-17
+
+### Added
+
+- **Slack** — new `void slack download <message-id> --out <path>` command to download file attachments, matching WhatsApp/Telegram/LinkedIn. Supports `--file-index` to pick a single attachment; with multiple files and no index, `--out` is treated as a directory and every downloadable file is saved into it.
+
 ## [0.13.1] - 2026-09-17
 
 ### Changed
