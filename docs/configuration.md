@@ -123,7 +123,7 @@ Each connection is one account on one service. Every connection has:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | yes | Unique name you choose — used by `--connection <id>` |
-| `type` | yes | One of `whatsapp`, `telegram`, `slack`, `gmail`, `calendar`, `hackernews`, `googlenews`, `linkedin`, `reddit`, `github`, `circleback` |
+| `type` | yes | One of `whatsapp`, `telegram`, `slack`, `gmail`, `calendar`, `hackernews`, `googlenews`, `linkedin`, `reddit`, `github`, `circleback`, `withings` |
 | `ignore_conversations` | no | List of conversations to auto-mute (see below) |
 
 Per-type fields:
@@ -141,6 +141,7 @@ Per-type fields:
 | `linkedin` | `api_key`, `dsn`, `account_id` (Unipile) | — |
 | `github` | `token`, `username` | — |
 | `circleback` | `api_key` | `backfill_days` (default: 365), `include_transcript` (default: `true`) |
+| `withings` | `client_id`, `client_secret` | `streams` (default: all of `measures`, `activity`, `sleep`, `workouts`, `heart`, `devices`), `backfill_days` (default: 365) |
 
 You can declare multiple connections of the same type (two Slack workspaces, several Gmail accounts, …) — give each a distinct `id`.
 

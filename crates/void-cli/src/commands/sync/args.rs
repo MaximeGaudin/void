@@ -2,7 +2,7 @@ use clap::Args;
 
 #[derive(Clone, Debug, Args)]
 pub struct SyncArgs {
-    /// Sync only specific connectors (comma-separated: whatsapp,telegram,slack,gmail,calendar,hackernews,googlenews,reddit,circleback)
+    /// Sync only specific connectors (comma-separated: whatsapp,telegram,slack,gmail,calendar,hackernews,googlenews,reddit,circleback,withings)
     #[arg(long)]
     pub connectors: Option<String>,
     /// Detach and run as a background daemon
