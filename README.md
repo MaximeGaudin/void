@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](Cargo.toml)
 
-**One inbox for everything.** `void` unifies WhatsApp, Telegram, Slack, Gmail, Google Calendar, LinkedIn, GitHub, Circleback, Hacker News, Google News, and Reddit into a single local-first command-line tool — one inbox, one search index, one set of commands.
+**One inbox for everything.** `void` unifies WhatsApp, Telegram, Slack, Gmail, Google Calendar, LinkedIn, GitHub, Circleback, Withings, Hacker News, Google News, and Reddit into a single local-first command-line tool — one inbox, one search index, one set of commands.
 
 It is built for terminals, shell scripts, and AI agents:
 
@@ -48,7 +48,7 @@ void reply <id> --message "On it — sending today."    # reply from where you a
 void archive <id>                                     # done; on to the next one
 ```
 
-WhatsApp and Telegram connect by scanning a QR code. Gmail and Calendar ship with built-in OAuth credentials — no Google Cloud project required. Per-service details: [Connector setup](docs/connectors.md).
+WhatsApp and Telegram connect by scanning a QR code. Gmail and Calendar ship with built-in OAuth credentials — no Google Cloud project required. Slack, Reddit, GitHub, Circleback and Withings need credentials you register once with that service, which takes a few minutes the first time. Step-by-step per service: [Connector setup](docs/connectors.md).
 
 ## The Inbox Zero loop
 
@@ -143,6 +143,16 @@ void search "pricing objection" --connector circleback
 void messages <conversation-id>
 ```
 
+### Withings
+
+Health data from [Withings](https://www.withings.com) scales, blood-pressure monitors and watches syncs read-only into the same inbox: one conversation per stream — body measurements, daily activity, sleep, workouts, heart/ECG, devices — and one message per measurement group, day, night, session or recording.
+
+```bash
+void inbox --connector withings
+void messages withings-sleep
+void search "weight" --connector withings
+```
+
 ### Google News
 
 Keyword-watched articles from the public Google News RSS feed land in your inbox — one search per keyword, filtered by recency:
@@ -184,7 +194,7 @@ A background daemon keeps a local SQLite database in sync with every connected s
 |-------|------|
 | `void-core` | Config, database, models, hooks, `Connector` trait, sync engine |
 | `void-cli` | The `void` binary: clap commands, output formatting |
-| `void-slack`, `void-gmail`, `void-calendar`, `void-whatsapp`, `void-telegram`, `void-hackernews`, `void-googlenews`, `void-linkedin`, `void-github`, `void-reddit`, `void-circleback` | One crate per connector |
+| `void-slack`, `void-gmail`, `void-calendar`, `void-whatsapp`, `void-telegram`, `void-hackernews`, `void-googlenews`, `void-linkedin`, `void-github`, `void-reddit`, `void-circleback`, `void-withings` | One crate per connector |
 
 All data stays on your machine in `~/.local/share/void` — no external database, no Docker, no cloud. Layout details: [Configuration](docs/configuration.md#data-storage-layout).
 

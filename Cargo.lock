@@ -4960,6 +4960,7 @@ dependencies = [
  "void-slack",
  "void-telegram",
  "void-whatsapp",
+ "void-withings",
 ]
 
 [[package]]
@@ -5199,6 +5200,29 @@ dependencies = [
  "wa-rs-sqlite-storage",
  "wa-rs-tokio-transport",
  "wa-rs-ureq-http",
+]
+
+[[package]]
+name = "void-withings"
+version = "0.14.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "libc",
+ "open",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "urlencoding",
+ "void-core",
+ "wiremock",
 ]
 
 [[package]]
