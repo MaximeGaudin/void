@@ -94,6 +94,7 @@ fn parse_empty_config() {
     assert_eq!(config.sync.gmail_poll_interval_secs(), 30);
     assert_eq!(config.sync.calendar_poll_interval_secs(), 60);
     assert_eq!(config.sync.hackernews_poll_interval_secs(), 3600);
+    assert_eq!(config.sync.retention_days(), 15);
 }
 
 #[test]
@@ -105,6 +106,28 @@ fn parse_defaults() {
     assert!(config.store.path.contains(".local/share/void"));
     assert_eq!(config.sync.gmail_poll_interval_secs(), 30);
     assert_eq!(config.sync.hackernews_poll_interval_secs(), 3600);
+    assert_eq!(config.sync.retention_days(), 15);
+}
+
+#[test]
+fn retention_days_reads_toml_and_zero_disables() {
+    let disabled: VoidConfig = toml::from_str(
+        r#"
+[sync]
+retention_days = 0
+"#,
+    )
+    .unwrap();
+    assert_eq!(disabled.sync.retention_days(), 0);
+
+    let custom: VoidConfig = toml::from_str(
+        r#"
+[sync]
+retention_days = 30
+"#,
+    )
+    .unwrap();
+    assert_eq!(custom.sync.retention_days(), 30);
 }
 
 #[test]

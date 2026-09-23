@@ -33,6 +33,7 @@ hackernews_poll_interval_secs = 3600
 reddit_poll_interval_secs = 3600
 linkedin_poll_interval_secs = 1800
 linkedin_backfill_days = 15
+retention_days = 15
 github_poll_interval_secs = 120
 circleback_poll_interval_secs = 900
 
@@ -105,6 +106,8 @@ ignore_conversations = ["facebook/react"]
 
 Polling intervals for connectors that poll (push-based connectors — WhatsApp, Telegram, Slack — receive events over persistent connections and don't poll).
 
+`retention_days` is how long a message stays in the local database. On each sync start, and once a day after that, void deletes messages older than this and removes their cached files. Saved messages are kept. `0` disables the cutoff. The database file shrinks on the next sync start.
+
 | Field | Default |
 |-------|---------|
 | `gmail_poll_interval_secs` | 30 |
@@ -113,6 +116,7 @@ Polling intervals for connectors that poll (push-based connectors — WhatsApp, 
 | `reddit_poll_interval_secs` | 3600 |
 | `linkedin_poll_interval_secs` | 1800 |
 | `linkedin_backfill_days` | 15 |
+| `retention_days` | 15 |
 | `github_poll_interval_secs` | 120 |
 | `circleback_poll_interval_secs` | 900 |
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use void_core::connector::Connector;
 use void_core::db::Database;
 use void_core::hooks::{self, HookRunner};
@@ -208,6 +208,22 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
 
     apply_ignore_rules(&db, &ignore_rules);
 
+    let retention_days = cfg.sync.retention_days();
+    apply_retention(&db, retention_days, true);
+
+    let db_retention = Arc::clone(&db);
+    let cancel_retention = cancel.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                _ = cancel_retention.cancelled() => break,
+                _ = interval.tick() => apply_retention(&db_retention, retention_days, false),
+            }
+        }
+    });
+
     let db_bg = Arc::clone(&db);
     let cancel_bg = cancel.clone();
     tokio::spawn(async move {
@@ -263,6 +279,50 @@ async fn supervise_rpc(server: &WhatsAppRpcServer, cancel: CancellationToken) {
 fn backoff_delay(attempt: u32) -> Duration {
     Duration::from_secs(5u64.saturating_mul(2u64.saturating_pow(attempt.saturating_sub(1).min(6))))
         .min(MAX_BACKOFF)
+}
+
+fn apply_retention(db: &Database, retention_days: u64, vacuum: bool) {
+    if retention_days == 0 {
+        return;
+    }
+    let cutoff = chrono::Utc::now().timestamp() - (retention_days as i64) * 86_400;
+    let pruned = match db.prune_messages_before(cutoff) {
+        Ok(pruned) => pruned,
+        Err(e) => {
+            warn!(error = %e, "message retention prune failed");
+            void_core::status!("retention prune failed: {e}");
+            return;
+        }
+    };
+    let mut files_removed = 0usize;
+    for path in &pruned.file_paths {
+        match std::fs::remove_file(path) {
+            Ok(()) => files_removed += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => warn!(path, error = %e, "failed to delete cached file past retention"),
+        }
+    }
+    if pruned.messages_deleted == 0 {
+        return;
+    }
+    void_core::status!(
+        "retention: dropped {} message(s) older than {retention_days}d ({} conversation(s), {files_removed} file(s))",
+        pruned.messages_deleted,
+        pruned.conversations_deleted,
+    );
+    info!(
+        messages = pruned.messages_deleted,
+        conversations = pruned.conversations_deleted,
+        files = files_removed,
+        retention_days,
+        "pruned messages past retention"
+    );
+    if !vacuum {
+        return;
+    }
+    if let Err(e) = db.vacuum() {
+        warn!(error = %e, "vacuum after retention prune failed");
+    }
 }
 
 fn apply_ignore_rules(db: &Database, rules: &[(String, Vec<String>)]) {

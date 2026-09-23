@@ -6,7 +6,8 @@ use crate::error::DbError;
 use crate::models::{CalendarEvent, Contact, Conversation, Message};
 
 use super::{
-    conversations, directory, events, hook_logs, messages, mute_sync, rate_limit, Database,
+    conversations, directory, events, hook_logs, messages, messages::PruneResult, mute_sync,
+    rate_limit, Database,
 };
 
 impl Database {
@@ -379,6 +380,19 @@ impl Database {
 
     pub fn delete_event(&self, connection_id: &str, external_id: &str) -> Result<bool, DbError> {
         events::delete(&*self.conn()?, connection_id, external_id)
+    }
+
+    /// Delete messages older than `before_ts`. Saved messages are kept.
+    ///
+    /// Returns cached file paths from the deleted rows so the caller can remove them.
+    pub fn prune_messages_before(&self, before_ts: i64) -> Result<PruneResult, DbError> {
+        messages::prune_before(&*self.conn()?, before_ts)
+    }
+
+    /// Rewrite the database file so deleted pages are returned to the OS.
+    pub fn vacuum(&self) -> Result<(), DbError> {
+        self.conn()?.execute_batch("VACUUM")?;
+        Ok(())
     }
 
     /// Delete all data (messages, conversations, events, sync_state) for a given connector type.
