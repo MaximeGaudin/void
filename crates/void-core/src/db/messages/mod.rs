@@ -29,7 +29,7 @@ pub use archive::{
 };
 pub use inbox::{
     backfill_avatar_urls, enrich_with_context, messages_pending_file_download, reconcile_inbox,
-    senders_missing_avatar,
+    reconcile_inbox_conversations, senders_missing_avatar, set_conversation_archived,
 };
 pub use lookup::{
     find_by_connector_external_id, find_by_external_id, find_by_slack_link,

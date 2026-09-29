@@ -253,6 +253,33 @@ impl Database {
         messages::reconcile_inbox(&*self.conn()?, connection_id, connector, inbox_external_ids)
     }
 
+    /// Reconcile `is_archived` per conversation: messages of conversations in
+    /// `inbox_conversation_ids` are unarchived, all others archived.
+    /// Returns (unarchived_count, archived_count).
+    pub fn reconcile_inbox_conversations(
+        &self,
+        connection_id: &str,
+        connector: &str,
+        inbox_conversation_ids: &std::collections::HashSet<String>,
+    ) -> Result<(usize, usize), DbError> {
+        messages::reconcile_inbox_conversations(
+            &*self.conn()?,
+            connection_id,
+            connector,
+            inbox_conversation_ids,
+        )
+    }
+
+    /// Set `is_archived` on every message of a conversation. Returns the
+    /// number of rows whose state changed.
+    pub fn set_conversation_archived(
+        &self,
+        conversation_id: &str,
+        archived: bool,
+    ) -> Result<usize, DbError> {
+        messages::set_conversation_archived(&*self.conn()?, conversation_id, archived)
+    }
+
     /// Reconcile `is_saved` for all messages of a connection to match the given saved set.
     /// Returns (newly_saved_count, newly_unsaved_count).
     pub fn reconcile_saved(

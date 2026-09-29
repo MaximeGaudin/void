@@ -273,7 +273,20 @@ impl GmailApiClient {
     }
 
     pub async fn get_thread(&self, thread_id: &str) -> Result<GmailThread, GmailError> {
-        debug!(thread_id, "gmail: get_thread");
+        self.get_thread_with_format(thread_id, "full").await
+    }
+
+    /// Fetch a thread with only ids, labels and dates (`format=minimal`).
+    pub async fn get_thread_minimal(&self, thread_id: &str) -> Result<GmailThread, GmailError> {
+        self.get_thread_with_format(thread_id, "minimal").await
+    }
+
+    async fn get_thread_with_format(
+        &self,
+        thread_id: &str,
+        format: &str,
+    ) -> Result<GmailThread, GmailError> {
+        debug!(thread_id, format, "gmail: get_thread");
         let resp: GmailThread = self
             .http
             .get(format!(
@@ -281,7 +294,7 @@ impl GmailApiClient {
                 self.base_url
             ))
             .bearer_auth(&self.access_token)
-            .query(&[("format", "full")])
+            .query(&[("format", format)])
             .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?

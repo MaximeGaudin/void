@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gmail** — inbox state now follows Gmail's thread model: a thread stays in the inbox while any of its messages carries `INBOX`, and all its stored messages are unarchived with it. Previously, a thread put back in the inbox (un-archived in the web UI, or a new reply) could stay `is_archived` in void because upserts never touch `is_archived` on existing rows, and a message that gained `INBOX` without being stored first (e.g. a sent message filed back into the inbox) was never ingested. A full INBOX reconciliation now also runs every hour, not only at startup or after an idle period.
+- **Gmail** — archiving a message now removes `INBOX` from the older messages of its thread too, so the thread actually leaves Gmail's inbox. Messages newer than the archived one are left alone.
+- **Gmail** — `void gmail thread <id>` accepts a message id: on a 404 it resolves the message's thread and retries, instead of failing.
 - **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
 
 ## [0.14.0] - 2026-09-17

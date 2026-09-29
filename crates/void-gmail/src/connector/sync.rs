@@ -50,6 +50,10 @@ impl GmailConnector {
     /// it mirrors Gmail exactly. Also fetches full bodies for any INBOX
     /// messages not yet in the local DB, so `void inbox` matches
     /// `gmail search 'in:inbox'`.
+    ///
+    /// Archive state is reconciled per thread, like Gmail itself: a thread is
+    /// in the inbox while any of its messages carries `INBOX`, and every
+    /// stored message of that thread is then unarchived.
     pub(crate) async fn refresh_inbox(&self, db: &Database) -> anyhow::Result<()> {
         let api = self.get_client().await?;
         self.refresh_inbox_with_api(db, &api).await
@@ -63,6 +67,7 @@ impl GmailConnector {
         let connection_id = self.display_connection_id();
 
         let mut inbox_ids: HashSet<String> = HashSet::new();
+        let mut inbox_conversations: HashSet<String> = HashSet::new();
         let mut new_msg_ids: Vec<String> = Vec::new();
         let mut page_token: Option<String> = None;
         let mut truncated = false;
@@ -82,6 +87,7 @@ impl GmailConnector {
             if let Some(msgs) = &resp.messages {
                 for msg_ref in msgs {
                     inbox_ids.insert(msg_ref.id.clone());
+                    inbox_conversations.insert(format!("{connection_id}-{}", msg_ref.thread_id));
                     if !db.message_exists(&connection_id, &msg_ref.id)? {
                         new_msg_ids.push(msg_ref.id.clone());
                     }
@@ -119,7 +125,7 @@ impl GmailConnector {
         let (unarchived, archived) = if truncated {
             (0, 0)
         } else {
-            db.reconcile_inbox(&connection_id, "gmail", &inbox_ids)?
+            db.reconcile_inbox_conversations(&connection_id, "gmail", &inbox_conversations)?
         };
 
         if unarchived > 0 || archived > 0 || !new_msg_ids.is_empty() {
@@ -172,6 +178,10 @@ impl GmailConnector {
             Err(e) => return Err(e.into()),
         };
 
+        // Threads that lost `INBOX` on some message: whether the thread left
+        // the inbox depends on its other messages, checked once at the end.
+        let mut threads_to_check: HashSet<String> = HashSet::new();
+
         if let Some(records) = resp.history {
             for record in &records {
                 if let Some(added) = &record.messages_added {
@@ -215,28 +225,25 @@ impl GmailConnector {
                     }
                 }
 
-                // INBOX label removed → mark as archived locally
+                // INBOX label removed → the thread may have left the inbox
                 if let Some(removed) = &record.labels_removed {
                     for item in removed {
                         if item.label_ids.iter().any(|l| l == "INBOX") {
-                            let msg_id = format!("{}-{}", connection_id, item.message.id);
-                            if db.mark_message_archived(&msg_id)? {
-                                debug!(message_id = %msg_id, "marked archived (INBOX label removed)");
-                            }
+                            threads_to_check.insert(item.message.thread_id.clone());
                         }
                     }
                 }
 
-                // INBOX label added to existing message → re-fetch to update is_archived
+                // INBOX label added → (re)fetch the message, even when it was
+                // never stored (e.g. a sent message later filed into INBOX),
+                // and bring its thread back into the inbox.
                 if let Some(added) = &record.labels_added {
                     for item in added {
-                        if item.label_ids.iter().any(|l| l == "INBOX")
-                            && db.message_exists(&connection_id, &item.message.id)?
-                        {
+                        if item.label_ids.iter().any(|l| l == "INBOX") {
                             match api.get_message(&item.message.id).await {
                                 Ok(msg) => {
                                     self.store_message(db, &msg)?;
-                                    debug!(message_id = %item.message.id, "updated (INBOX label added)");
+                                    debug!(message_id = %item.message.id, "stored (INBOX label added)");
                                 }
                                 Err(e) => {
                                     warn!(message_id = %item.message.id, "failed to re-fetch: {e}");
@@ -244,6 +251,24 @@ impl GmailConnector {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        for thread_id in &threads_to_check {
+            let conv_id = format!("{connection_id}-{thread_id}");
+            match api.get_thread_minimal(thread_id).await {
+                Ok(thread) => {
+                    let in_inbox = thread.messages.iter().flatten().any(has_inbox_label);
+                    let changed = db.set_conversation_archived(&conv_id, !in_inbox)?;
+                    debug!(thread_id = %thread_id, in_inbox, changed, "thread inbox state updated");
+                }
+                // Deleted thread: nothing left to show in the inbox.
+                Err(GmailError::Http(e)) if e.status() == Some(reqwest::StatusCode::NOT_FOUND) => {
+                    db.set_conversation_archived(&conv_id, true)?;
+                }
+                Err(e) => {
+                    warn!(thread_id = %thread_id, "failed to check thread labels: {e}");
                 }
             }
         }
@@ -331,10 +356,7 @@ impl GmailConnector {
                 .map(|ms: i64| ms / 1000)
                 .unwrap_or(0),
             synced_at: None,
-            is_archived: !msg
-                .label_ids
-                .as_ref()
-                .is_some_and(|labels| labels.iter().any(|l| l == "INBOX")),
+            is_archived: !has_inbox_label(msg),
             is_saved: false,
             reply_to_id: msg
                 .get_header("In-Reply-To")
@@ -345,6 +367,17 @@ impl GmailConnector {
             context: None,
         };
         db.upsert_message(&message)?;
+        // Upserts never touch `is_archived` on existing rows, and Gmail keeps
+        // the whole thread in the inbox once one message carries INBOX.
+        if has_inbox_label(msg) {
+            db.set_conversation_archived(&message.conversation_id, false)?;
+        }
         Ok(())
     }
+}
+
+fn has_inbox_label(msg: &GmailMessage) -> bool {
+    msg.label_ids
+        .as_ref()
+        .is_some_and(|labels| labels.iter().any(|l| l == "INBOX"))
 }

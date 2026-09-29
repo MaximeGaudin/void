@@ -65,7 +65,57 @@ impl GmailConnector {
             }
         }
         let api = self.get_client().await?;
-        api.get_thread(thread_id).await.map_err(Into::into)
+        get_thread_resolving_message_id(&api, thread_id).await
+    }
+
+    /// Messages to un-INBOX so archiving `external_ids` takes their thread out
+    /// of the Gmail inbox: the requested ids plus every thread message still
+    /// labelled INBOX that is not newer than the newest requested one. Newer
+    /// messages (arrived after the caller looked) stay in the inbox.
+    ///
+    /// Falls back to the requested ids alone when the thread cannot be read.
+    pub(crate) async fn thread_archive_ids(
+        &self,
+        api: &GmailApiClient,
+        external_ids: &[&str],
+        thread_id: &str,
+    ) -> Vec<String> {
+        let mut ids: Vec<String> = external_ids.iter().map(|id| id.to_string()).collect();
+        let thread = match api.get_thread_minimal(thread_id).await {
+            Ok(thread) => thread,
+            Err(e) => {
+                warn!(
+                    thread_id,
+                    "gmail: cannot read thread for archive, archiving ids only: {e}"
+                );
+                return ids;
+            }
+        };
+        let messages = thread.messages.unwrap_or_default();
+        let date = |m: &crate::api::GmailMessage| {
+            m.internal_date
+                .as_deref()
+                .and_then(|d| d.parse::<i64>().ok())
+        };
+        let cutoff = messages
+            .iter()
+            .filter(|m| m.id.as_deref().is_some_and(|id| external_ids.contains(&id)))
+            .filter_map(date)
+            .max();
+        let Some(cutoff) = cutoff else {
+            return ids;
+        };
+        for m in &messages {
+            let Some(id) = m.id.as_deref() else { continue };
+            let in_inbox = m
+                .label_ids
+                .as_ref()
+                .is_some_and(|l| l.iter().any(|l| l == "INBOX"));
+            if in_inbox && date(m).is_some_and(|d| d <= cutoff) && !ids.iter().any(|i| i == id) {
+                ids.push(id.to_string());
+            }
+        }
+        ids
     }
 
     pub async fn get_attachment_data(
@@ -408,4 +458,26 @@ pub(super) async fn search_with_api(
         }
     }
     Ok(messages)
+}
+
+/// Fetch a thread; when Gmail 404s, treat `thread_id` as a message id (what
+/// `inbox` and `search` print), resolve its thread and retry once.
+pub(crate) async fn get_thread_resolving_message_id(
+    api: &GmailApiClient,
+    thread_id: &str,
+) -> anyhow::Result<crate::api::GmailThread> {
+    match api.get_thread(thread_id).await {
+        Err(crate::error::GmailError::Http(e))
+            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) =>
+        {
+            let msg = api.get_message(thread_id).await.map_err(|_| e)?;
+            let resolved = msg
+                .thread_id
+                .filter(|t| t != thread_id)
+                .ok_or_else(|| anyhow::anyhow!("gmail thread {thread_id} not found"))?;
+            debug!(message_id = thread_id, thread_id = %resolved, "gmail: resolved message id to thread");
+            api.get_thread(&resolved).await.map_err(Into::into)
+        }
+        other => other.map_err(Into::into),
+    }
 }

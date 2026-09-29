@@ -417,13 +417,13 @@ fn full_inbox_message(id: &str) -> serde_json::Value {
     })
 }
 
-fn seed_gmail_message(db: &Database, ext_id: &str, is_archived: bool) {
+fn seed_gmail_message_in(db: &Database, ext_id: &str, thread_id: &str, is_archived: bool) {
     let connection_id = "test-gmail";
     let conversation = Conversation {
-        id: format!("{connection_id}-t0"),
+        id: format!("{connection_id}-{thread_id}"),
         connection_id: connection_id.into(),
         connector: "gmail".into(),
-        external_id: "t0".into(),
+        external_id: thread_id.into(),
         name: Some("Seed thread".into()),
         kind: ConversationKind::Thread,
         last_message_at: None,
@@ -435,7 +435,7 @@ fn seed_gmail_message(db: &Database, ext_id: &str, is_archived: bool) {
 
     let msg = Message {
         id: format!("{connection_id}-{ext_id}"),
-        conversation_id: format!("{connection_id}-t0"),
+        conversation_id: format!("{connection_id}-{thread_id}"),
         connection_id: connection_id.into(),
         connector: "gmail".into(),
         external_id: ext_id.into(),
@@ -450,7 +450,7 @@ fn seed_gmail_message(db: &Database, ext_id: &str, is_archived: bool) {
         reply_to_id: None,
         media_type: None,
         metadata: None,
-        context_id: Some(format!("{connection_id}-thread-t0")),
+        context_id: Some(format!("{connection_id}-thread-{thread_id}")),
         context: None,
     };
     db.upsert_message(&msg).unwrap();
@@ -498,8 +498,8 @@ async fn refresh_inbox_reconciles_complete_inbox_without_date_filter() {
     let db = Database::open_in_memory().unwrap();
     // Simulated drift: `old1` is still in Gmail INBOX but locally archived
     // (the old 7d-window reconcile did this); `gone1` lost its INBOX label.
-    seed_gmail_message(&db, "old1", true);
-    seed_gmail_message(&db, "gone1", false);
+    seed_gmail_message_in(&db, "old1", "t1", true);
+    seed_gmail_message_in(&db, "gone1", "t9", false);
 
     let connector = test_connector();
     connector.refresh_inbox_with_api(&db, &api).await.unwrap();
@@ -554,8 +554,8 @@ async fn incremental_sync_history_expired_falls_back_to_inbox_refresh() {
     let db = Database::open_in_memory().unwrap();
     db.set_sync_state("test-gmail", "history_id", "12345")
         .unwrap();
-    seed_gmail_message(&db, "gone1", false);
-    seed_gmail_message(&db, "still1", true);
+    seed_gmail_message_in(&db, "gone1", "t9", false);
+    seed_gmail_message_in(&db, "still1", "t1", true);
 
     let connector = test_connector();
     connector
@@ -571,6 +571,237 @@ async fn incremental_sync_history_expired_falls_back_to_inbox_refresh() {
 
     let history_id = db.get_sync_state("test-gmail", "history_id").unwrap();
     assert_eq!(history_id, Some("99999".to_string()));
+}
+
+fn history_response(record: serde_json::Value) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        "history": [record],
+        "historyId": "200"
+    }))
+}
+
+fn archived(db: &Database, id: &str) -> bool {
+    db.get_message(id).unwrap().expect(id).is_archived
+}
+
+async fn run_incremental(server: &MockServer, db: &Database) {
+    db.set_sync_state("test-gmail", "history_id", "100")
+        .unwrap();
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    test_connector()
+        .incremental_sync_with_api(db, &api)
+        .await
+        .unwrap();
+}
+
+/// Gmail archives per thread: a thread stays in the inbox while one of its
+/// messages is labelled INBOX. The refresh must unarchive every stored
+/// message of such a thread, not only the ids listed.
+#[tokio::test]
+async fn refresh_inbox_unarchives_whole_thread() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [{"id": "reply", "threadId": "t1"}]
+        })))
+        .mount(&server)
+        .await;
+
+    let db = Database::open_in_memory().unwrap();
+    seed_gmail_message_in(&db, "first", "t1", true);
+    seed_gmail_message_in(&db, "reply", "t1", true);
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    test_connector()
+        .refresh_inbox_with_api(&db, &api)
+        .await
+        .unwrap();
+
+    for id in ["test-gmail-first", "test-gmail-reply"] {
+        assert!(!archived(&db, id), "{id}");
+    }
+}
+
+/// Bug 2: a message that gets INBOX after being added (e.g. a sent message
+/// filed back into the inbox) was skipped because it was not in the store.
+#[tokio::test]
+async fn incremental_sync_stores_unknown_message_on_inbox_label_added() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/history"))
+        .respond_with(history_response(serde_json::json!({
+            "labelsAdded": [{"message": {"id": "fwd1", "threadId": "t1"}, "labelIds": ["INBOX"]}]
+        })))
+        .mount(&server)
+        .await;
+    let mut msg = full_inbox_message("fwd1");
+    msg["labelIds"] = serde_json::json!(["SENT", "INBOX"]);
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/fwd1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(msg))
+        .mount(&server)
+        .await;
+
+    let db = Database::open_in_memory().unwrap();
+    run_incremental(&server, &db).await;
+
+    let stored = db.get_message("test-gmail-fwd1").unwrap().expect("stored");
+    assert!(!stored.is_archived);
+    assert_eq!(stored.conversation_id, "test-gmail-t1");
+}
+
+/// Bug 1: an INBOX label added back to a known, locally archived message
+/// (un-archive in the Gmail UI) must unarchive it and its thread. Upserts
+/// alone never touch `is_archived` on existing rows.
+#[tokio::test]
+async fn incremental_sync_inbox_label_added_unarchives_thread() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/history"))
+        .respond_with(history_response(serde_json::json!({
+            "labelsAdded": [{"message": {"id": "m1", "threadId": "t1"}, "labelIds": ["INBOX"]}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(full_inbox_message("m1")))
+        .mount(&server)
+        .await;
+
+    let db = Database::open_in_memory().unwrap();
+    seed_gmail_message_in(&db, "m1", "t1", true);
+    seed_gmail_message_in(&db, "m0", "t1", true);
+    run_incremental(&server, &db).await;
+
+    assert!(!archived(&db, "test-gmail-m1"));
+    assert!(!archived(&db, "test-gmail-m0"));
+}
+
+/// Losing INBOX on one message archives the thread only once no message of
+/// the thread carries INBOX any more.
+#[tokio::test]
+async fn incremental_sync_inbox_label_removed_checks_whole_thread() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/history"))
+        .respond_with(history_response(serde_json::json!({
+            "labelsRemoved": [
+                {"message": {"id": "a1", "threadId": "ta"}, "labelIds": ["INBOX"]},
+                {"message": {"id": "b1", "threadId": "tb"}, "labelIds": ["INBOX"]}
+            ]
+        })))
+        .mount(&server)
+        .await;
+    // Thread `ta` still has a newer INBOX message; `tb` is fully archived.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/threads/ta"))
+        .and(query_param("format", "minimal"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "ta",
+            "messages": [
+                {"id": "a1", "threadId": "ta", "labelIds": []},
+                {"id": "a2", "threadId": "ta", "labelIds": ["INBOX"]}
+            ]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/threads/tb"))
+        .and(query_param("format", "minimal"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "tb",
+            "messages": [{"id": "b1", "threadId": "tb", "labelIds": ["SENT"]}]
+        })))
+        .mount(&server)
+        .await;
+
+    let db = Database::open_in_memory().unwrap();
+    seed_gmail_message_in(&db, "a1", "ta", false);
+    seed_gmail_message_in(&db, "b1", "tb", false);
+    run_incremental(&server, &db).await;
+
+    assert!(!archived(&db, "test-gmail-a1"));
+    assert!(archived(&db, "test-gmail-b1"));
+}
+
+/// Archiving must take the thread out of Gmail's inbox (older INBOX siblings
+/// included) without archiving messages newer than the ones requested.
+#[tokio::test]
+async fn thread_archive_ids_include_older_inbox_siblings_only() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/threads/t1"))
+        .and(query_param("format", "minimal"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "t1",
+            "messages": [
+                {"id": "old", "internalDate": "1000", "labelIds": ["INBOX"]},
+                {"id": "sent", "internalDate": "1500", "labelIds": ["SENT"]},
+                {"id": "target", "internalDate": "2000", "labelIds": ["INBOX"]},
+                {"id": "newer", "internalDate": "3000", "labelIds": ["INBOX"]}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let mut ids = test_connector()
+        .thread_archive_ids(&api, &["target"], "t1")
+        .await;
+    ids.sort();
+    assert_eq!(ids, vec!["old".to_string(), "target".to_string()]);
+}
+
+#[tokio::test]
+async fn thread_archive_ids_fall_back_to_requested_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/threads/t1"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let ids = test_connector()
+        .thread_archive_ids(&api, &["target"], "t1")
+        .await;
+    assert_eq!(ids, vec!["target".to_string()]);
+}
+
+/// `void gmail thread <message id>` used to 404: the message id was sent
+/// as-is to `threads.get`.
+#[tokio::test]
+async fn get_thread_resolves_message_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/threads/msg2"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let mut msg = full_inbox_message("msg2");
+    msg["threadId"] = serde_json::json!("t1");
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/msg2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(msg))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/threads/t1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "t1",
+            "messages": [full_inbox_message("msg1"), full_inbox_message("msg2")]
+        })))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let thread = super::api_methods::get_thread_resolving_message_id(&api, "msg2")
+        .await
+        .unwrap();
+    assert_eq!(thread.id.as_deref(), Some("t1"));
+    assert_eq!(thread.messages.map(|m| m.len()), Some(2));
 }
 
 #[test]

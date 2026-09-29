@@ -82,6 +82,64 @@ pub fn reconcile_inbox(
     Ok((unarchived, archived))
 }
 
+/// Reconcile `is_archived` at conversation level: every message of a
+/// conversation in `inbox_conversation_ids` gets `is_archived = 0`, every other
+/// message of the connection gets `is_archived = 1`.
+///
+/// Gmail keeps a thread in the inbox as long as one of its messages carries
+/// the `INBOX` label, so archive state follows the thread, not the message.
+pub fn reconcile_inbox_conversations(
+    conn: &Connection,
+    connection_id: &str,
+    connector: &str,
+    inbox_conversation_ids: &HashSet<String>,
+) -> Result<(usize, usize), DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, conversation_id, is_archived FROM messages WHERE connection_id = ?1 AND connector = ?2",
+    )?;
+    let rows: Vec<(String, String, bool)> = stmt
+        .query_map(params![connection_id, connector], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get::<_, i32>(2)? != 0))
+        })?
+        .collect::<Result<_, _>>()?;
+
+    let mut unarchived = 0usize;
+    let mut archived = 0usize;
+    let mut mark_stmt = conn.prepare("UPDATE messages SET is_archived = ?2 WHERE id = ?1")?;
+
+    for (id, conv_id, was_archived) in &rows {
+        let should_archive = !inbox_conversation_ids.contains(conv_id);
+        if should_archive != *was_archived {
+            mark_stmt.execute(params![id, should_archive as i32])?;
+            if should_archive {
+                archived += 1;
+            } else {
+                unarchived += 1;
+            }
+        }
+    }
+
+    Ok((unarchived, archived))
+}
+
+/// Set `is_archived` on every message of a conversation. Returns the number of
+/// rows whose state changed.
+pub fn set_conversation_archived(
+    conn: &Connection,
+    conversation_id: &str,
+    archived: bool,
+) -> Result<usize, DbError> {
+    let updated = conn.execute(
+        "UPDATE messages SET is_archived = ?2 WHERE conversation_id = ?1 AND is_archived != ?2",
+        params![conversation_id, archived as i32],
+    )?;
+    debug!(
+        conversation_id,
+        archived, updated, "set conversation archive state"
+    );
+    Ok(updated)
+}
+
 /// Find messages that have files with `url_private` but no `local_path` yet.
 pub fn messages_pending_file_download(
     conn: &Connection,
