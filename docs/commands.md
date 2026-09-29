@@ -41,6 +41,8 @@ Most read commands accept:
 | `--page <N>` | Page through results |
 | `--include-muted` | Include muted conversations |
 
+Paginated commands (`inbox`, `conversations`, `messages`, …) return a `pagination` object next to `data`: `current_page`, `page_size`, `total_elements`, `total_pages` and `has_more`. When `has_more` is `true`, more results wait on `--page <N+1>` — the default page holds only 50 items.
+
 ## Reading
 
 | Command | Description |

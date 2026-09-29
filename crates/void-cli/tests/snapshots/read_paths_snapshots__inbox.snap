@@ -46,6 +46,7 @@ expression: json
   "error": null,
   "pagination": {
     "current_page": 1,
+    "has_more": false,
     "page_size": 50,
     "total_elements": 2,
     "total_pages": 1

@@ -28,6 +28,25 @@ impl CacheMeta {
     }
 }
 
+/// Mark the cached database snapshot stale so the next local-cache read
+/// re-fetches it from the remote host instead of waiting out the TTL.
+///
+/// Called after every proxied command: the remote run may have written to
+/// the store (archive, mute, send…), and serving the pre-write snapshot would
+/// break read-after-write (`archive` then `inbox` still listing the items).
+/// The snapshot file is kept so a failed refresh can still fall back to it.
+pub fn invalidate_database_snapshot(cache_dir: &Path) -> Result<(), ConfigError> {
+    let Some(mut meta) = CacheMeta::load(cache_dir) else {
+        // No metadata yet: the next read already treats the snapshot as stale.
+        return Ok(());
+    };
+    if meta.database_fetched_at == 0 {
+        return Ok(());
+    }
+    meta.database_fetched_at = 0;
+    meta.save(cache_dir)
+}
+
 pub fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
