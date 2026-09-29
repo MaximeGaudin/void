@@ -16,6 +16,15 @@ pub struct HookLog {
     pub raw_output: Option<String>,
 }
 
+/// Latest execution of one hook, aggregated from `hook_logs`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HookRunSummary {
+    pub hook_name: String,
+    pub last_started_at: i64,
+    pub last_success: bool,
+    pub runs: i64,
+}
+
 /// Parameters for inserting a hook log entry. Used to avoid too many function arguments.
 #[derive(Debug)]
 pub struct HookLogInsert<'a> {

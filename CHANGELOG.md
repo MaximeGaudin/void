@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Gmail** — `void gmail draft create --reply-to` now sets `In-Reply-To` / `References` from the original's `Message-ID` header instead of the Gmail message id, so recipients' mail clients thread the reply.
 - **Gmail** — `void gmail search` and `void gmail thread` always fill `date` as an RFC 3339 UTC timestamp derived from Gmail's `internalDate` (it was `null` for messages served from the local store), and add a `timestamp` field matching `void inbox`.
 - **Calendar** — `void calendar respond` accepts the void event id (`<connection>-<event>`) as printed by `void calendar`, instead of forwarding it verbatim to Google (404). `calendar update` and `calendar delete` strip the prefix too. The RSVP now updates your own entry on the guest list (the attendee Google flags `self`, else your primary calendar's email) instead of the connection id: it no longer adds a bogus `<email>-calendar` attendee whose invite bounced. If you are not on the guest list, the command fails and leaves the event untouched.
+- **Hooks** — `void hook push [<name>...]` copies local hook files to the remote host in `store.mode = "remote"`, where the sync daemon actually runs them.
+- **Doctor** — new Hooks section: every configured hook with its last execution, flagged as an issue when an enabled hook stopped running while its trigger kept firing (new messages arriving, or a missed cron slot). In remote mode the hooks are listed on the remote host and executions read from the database snapshot.
+
+### Fixed
+
+- **Hooks (remote mode)** — hooks defined on the client (`~/.config/void/hooks/`) were silently ignored: the remote daemon only loads hooks from the server, so `void hook list` came back empty and triage hooks never ran. Every `void hook` command and `void doctor` now warn about ignored local hooks. `void hook create --prompt-file` now uploads the prompt file to the server instead of reading the path there.
+- **Hooks** — the hooks directory now follows the config file in use (`<config dir>/hooks/`, including with `--config`) instead of always the default config location, so the daemon and proxied `void hook` commands read the same hooks.
+
 - **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
 
 ## [0.14.0] - 2026-09-17

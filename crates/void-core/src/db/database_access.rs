@@ -19,6 +19,20 @@ impl Database {
         hook_logs::list(&*self.conn()?, limit)
     }
 
+    /// Latest execution of each hook that has run at least once.
+    pub fn hook_last_runs(&self) -> Result<Vec<crate::hooks::HookRunSummary>, DbError> {
+        hook_logs::last_runs(&*self.conn()?)
+    }
+
+    /// Count messages ingested after `since` (unix seconds), optionally for one connector.
+    pub fn count_messages_synced_since(
+        &self,
+        connector: Option<&str>,
+        since: i64,
+    ) -> Result<i64, DbError> {
+        hook_logs::count_messages_synced_since(&*self.conn()?, connector, since)
+    }
+
     // -- Conversations --
 
     pub fn upsert_conversation(&self, conv: &Conversation) -> Result<(), DbError> {

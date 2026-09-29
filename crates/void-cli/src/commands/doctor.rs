@@ -188,6 +188,13 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
         );
     }
 
+    let hooks_dir = crate::context::hooks_dir();
+    issues += super::doctor_hooks::report(
+        Ok(void_core::hooks::load_hooks(&hooks_dir)),
+        &hooks_dir.display().to_string(),
+        db.as_ref(),
+    );
+
     if let Some(latest) = crate::commands::update::check_for_update().await {
         let cmd = if crate::commands::update::current_exe_is_homebrew_managed() {
             "brew upgrade void"
@@ -263,7 +270,7 @@ async fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Res
     }
 
     let mut conv_count = 0usize;
-    match crate::context::open_db() {
+    let snapshot = match crate::context::open_db() {
         Ok(db) => {
             eprintln!(
                 "[OK] Local database snapshot: {}",
@@ -274,12 +281,28 @@ async fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Res
                 .map(|c| c.len())
                 .unwrap_or(0);
             eprintln!("  Conversations: {conv_count}");
+            Some(db)
         }
         Err(e) => {
             eprintln!("[!!] Database snapshot error: {e}");
             *issues += 1;
+            None
         }
-    }
+    };
+
+    // Hooks run in the remote daemon: list them on the remote host and read
+    // their executions from the snapshot of the remote database.
+    let ctx = crate::context::get();
+    let remote_hooks_source = ctx
+        .remote_hooks_dir()
+        .map(|dir| format!("{remote_host}:{dir}"))
+        .unwrap_or_else(|_| format!("{remote_host} hooks directory"));
+    *issues += super::doctor_hooks::report(
+        ctx.remote_hook_list().map_err(|e| e.to_string()),
+        &remote_hooks_source,
+        snapshot.as_ref(),
+    );
+    super::hook::warn_local_hooks_ignored(&crate::context::hooks_dir());
 
     let cache_config = crate::context::store_path().join("config.toml");
     eprintln!("[--] Cached server config: {}", cache_config.display());

@@ -1,5 +1,6 @@
 mod proxy_files;
 mod remote;
+mod remote_hooks;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -384,21 +385,7 @@ impl ResolvedContext {
             proxy_files::ensure_remote_staging(&remote.ssh, &remote.remote_store_path)?;
         }
 
-        let targets = {
-            let mut cache = remote
-                .proxy_targets
-                .lock()
-                .map_err(|e| ConfigError::Remote(format!("proxy cache lock poisoned: {e}")))?;
-            if let Some(targets) = cache.as_ref() {
-                targets.clone()
-            } else {
-                let targets = remote
-                    .ssh
-                    .resolve_proxy_targets(&remote.remote_config_path)?;
-                *cache = Some(targets.clone());
-                targets
-            }
-        };
+        let targets = remote.cached_proxy_targets()?;
 
         if let Some(warning) =
             version_skew_message(targets.void_version.as_deref(), env!("CARGO_PKG_VERSION"))
@@ -486,6 +473,22 @@ impl ResolvedContext {
         } else {
             Ok(())
         }
+    }
+}
+
+impl RemoteHandle {
+    /// Resolve (once per process) the remote config path and `void` binary.
+    fn cached_proxy_targets(&self) -> Result<RemoteProxyTargets, ConfigError> {
+        let mut cache = self
+            .proxy_targets
+            .lock()
+            .map_err(|e| ConfigError::Remote(format!("proxy cache lock poisoned: {e}")))?;
+        if let Some(targets) = cache.as_ref() {
+            return Ok(targets.clone());
+        }
+        let targets = self.ssh.resolve_proxy_targets(&self.remote_config_path)?;
+        *cache = Some(targets.clone());
+        Ok(targets)
     }
 }
 
