@@ -215,30 +215,32 @@ impl GmailConnector {
     /// Replace a draft. When `signature` is not [`ComposeSignature::None`], the HTML
     /// signature is appended to `body` (same non-idempotent append as
     /// [`Self::create_draft`] — pass a body without an existing signature).
+    ///
+    /// See [`update_draft_with_api`] for what is carried over from the
+    /// existing draft.
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_draft(
         &self,
         draft_id: &str,
         recipients: super::compose::ComposeRecipients<'_>,
         subject: &str,
         body: &str,
+        reply_to_message_id: Option<&str>,
         file: Option<&std::path::Path>,
         signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let body = maybe_append_signature(self, body, signature).await?;
         let api = self.get_client().await?;
-
-        let raw = if let Some(file_path) = file {
-            super::compose::compose_rfc2822_with_attachment(
-                recipients, subject, &body, file_path, None, None, None,
-            )?
-        } else {
-            super::compose::compose_rfc2822_ex(recipients, subject, &body, None, None, None)?
-        };
-
-        let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-        api.update_draft(draft_id, &encoded)
-            .await
-            .map_err(Into::into)
+        update_draft_with_api(
+            &api,
+            draft_id,
+            recipients,
+            subject,
+            &body,
+            reply_to_message_id,
+            file,
+        )
+        .await
     }
 
     pub async fn delete_draft(&self, draft_id: &str) -> anyhow::Result<()> {
@@ -324,6 +326,42 @@ pub(crate) async fn maybe_append_signature(
     }
 }
 
+/// Reply association for an outgoing draft: the Gmail thread plus the RFC
+/// 5322 `In-Reply-To` / `References` headers other mail clients thread on.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(super) struct ReplyContext {
+    pub thread_id: Option<String>,
+    pub in_reply_to: Option<String>,
+    pub references: Option<String>,
+}
+
+impl ReplyContext {
+    /// Headers for a reply to `msg`. Falls back to the Gmail id when the
+    /// message has no `Message-ID` header (only seen on mocked messages).
+    pub(super) fn replying_to(msg: &crate::api::GmailMessage) -> Self {
+        let message_id = msg.get_header("Message-ID").or_else(|| msg.id.clone());
+        let references = match (msg.get_header("References"), &message_id) {
+            (Some(refs), Some(mid)) => Some(format!("{refs} {mid}")),
+            (None, mid) => mid.clone(),
+            (refs, None) => refs,
+        };
+        Self {
+            thread_id: msg.thread_id.clone(),
+            in_reply_to: message_id,
+            references,
+        }
+    }
+
+    /// What an existing draft already carries, so a rewrite keeps it.
+    pub(super) fn of_draft(msg: &crate::api::GmailMessage) -> Self {
+        Self {
+            thread_id: msg.thread_id.clone(),
+            in_reply_to: msg.get_header("In-Reply-To"),
+            references: msg.get_header("References"),
+        }
+    }
+}
+
 /// Core draft-creation logic, decoupled from token acquisition so that tests
 /// can pass a pre-configured `GmailApiClient` (e.g. pointed at a wiremock server).
 pub(super) async fn create_draft_with_api(
@@ -338,7 +376,7 @@ pub(super) async fn create_draft_with_api(
     // When replying, fetch the original message once to derive both the
     // thread ID (for Gmail API association) and reply-all recipients (when
     // --to is omitted). A single fetch avoids two round-trips.
-    let (reply_all_recipients, thread_id) = if let Some(msg_id) = reply_to_message_id {
+    let (reply_all_recipients, reply) = if let Some(msg_id) = reply_to_message_id {
         let msg = api
             .get_message(msg_id)
             .await
@@ -357,9 +395,9 @@ pub(super) async fn create_draft_with_api(
             None
         };
 
-        (derived, msg.thread_id.clone())
+        (derived, ReplyContext::replying_to(&msg))
     } else {
-        (None, None)
+        (None, ReplyContext::default())
     };
 
     let to_str: &str = if let Some(t) = recipients.to {
@@ -376,31 +414,114 @@ pub(super) async fn create_draft_with_api(
         bcc: recipients.bcc,
     };
 
-    let raw = if let Some(file_path) = file {
-        super::compose::compose_rfc2822_with_attachment(
-            recipients,
-            subject,
-            body,
-            file_path,
-            None,
-            reply_to_message_id,
-            reply_to_message_id,
-        )?
-    } else {
-        super::compose::compose_rfc2822_ex(
-            recipients,
-            subject,
-            body,
-            reply_to_message_id,
-            reply_to_message_id,
-            None,
-        )?
+    let attachments = match file {
+        Some(path) => vec![super::compose::OutgoingAttachment::from_path(path, None)?],
+        None => Vec::new(),
     };
+    let raw = super::compose::compose_rfc2822_with_attachments(
+        recipients,
+        subject,
+        body,
+        &attachments,
+        reply.in_reply_to.as_deref(),
+        reply.references.as_deref(),
+    )?;
 
     let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
-    api.create_draft(&encoded, thread_id.as_deref())
+    api.create_draft(&encoded, reply.thread_id.as_deref())
         .await
         .map_err(Into::into)
+}
+
+/// Core draft-update logic (see [`create_draft_with_api`] for why it is split out).
+///
+/// Gmail's `drafts.update` replaces the whole message, so anything not resent
+/// is lost. The existing draft is fetched first and, unless overridden:
+/// - its `threadId`, `In-Reply-To` and `References` are kept, so a reply
+///   draft stays in its conversation (`reply_to_message_id` re-targets it);
+/// - its attachments are downloaded and re-attached when `file` is `None`.
+///   Passing `file` replaces them with that single file.
+pub(super) async fn update_draft_with_api(
+    api: &GmailApiClient,
+    draft_id: &str,
+    recipients: super::compose::ComposeRecipients<'_>,
+    subject: &str,
+    body: &str,
+    reply_to_message_id: Option<&str>,
+    file: Option<&std::path::Path>,
+) -> anyhow::Result<crate::api::GmailDraft> {
+    let existing = api
+        .get_draft(draft_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to fetch draft {draft_id}: {e}"))?;
+    let existing_msg = existing.message.as_ref();
+
+    let reply = match reply_to_message_id {
+        Some(msg_id) => {
+            let msg = api
+                .get_message(msg_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to fetch reply-to message: {e}"))?;
+            ReplyContext::replying_to(&msg)
+        }
+        None => existing_msg.map(ReplyContext::of_draft).unwrap_or_default(),
+    };
+
+    let attachments = match (file, existing_msg) {
+        (Some(path), _) => vec![super::compose::OutgoingAttachment::from_path(path, None)?],
+        (None, Some(msg)) => download_attachments(api, msg).await?,
+        (None, None) => Vec::new(),
+    };
+
+    let raw = super::compose::compose_rfc2822_with_attachments(
+        recipients,
+        subject,
+        body,
+        &attachments,
+        reply.in_reply_to.as_deref(),
+        reply.references.as_deref(),
+    )?;
+
+    let encoded = URL_SAFE_NO_PAD.encode(raw.as_bytes());
+    api.update_draft(draft_id, &encoded, reply.thread_id.as_deref())
+        .await
+        .map_err(Into::into)
+}
+
+/// Fetch every file attachment of `msg` so it can be re-embedded.
+async fn download_attachments(
+    api: &GmailApiClient,
+    msg: &crate::api::GmailMessage,
+) -> anyhow::Result<Vec<super::compose::OutgoingAttachment>> {
+    let files = msg.file_attachments();
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let msg_id = msg
+        .id
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("draft message has no id; cannot keep attachments"))?;
+    let mut out = Vec::with_capacity(files.len());
+    for att in files {
+        let resp = api
+            .get_attachment(msg_id, &att.attachment_id)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("failed to fetch draft attachment {}: {e}", att.filename)
+            })?;
+        let data = resp.data.unwrap_or_default();
+        let data = URL_SAFE_NO_PAD
+            .decode(data.trim_end_matches('='))
+            .map_err(|e| anyhow::anyhow!("invalid attachment data for {}: {e}", att.filename))?;
+        out.push(super::compose::OutgoingAttachment {
+            filename: att.filename,
+            mime_type: att
+                .mime_type
+                .unwrap_or_else(|| "application/octet-stream".into()),
+            data,
+        });
+    }
+    Ok(out)
 }
 
 /// Build a reply-all recipient string from From + To + CC headers, excluding `own_email`.

@@ -11,6 +11,26 @@ impl GmailMessage {
             .map(|h| h.value.clone())
     }
 
+    /// When the message was received, as RFC 3339 UTC.
+    ///
+    /// Uses Gmail's `internalDate` (always present on API responses and on
+    /// messages served from the local store), falling back to parsing the
+    /// RFC 2822 `Date` header.
+    pub fn timestamp_rfc3339(&self) -> Option<String> {
+        let from_internal = self
+            .internal_date
+            .as_deref()
+            .and_then(|d| d.parse::<i64>().ok())
+            .and_then(chrono::DateTime::from_timestamp_millis);
+        let dt = from_internal.or_else(|| {
+            let header = self.get_header("Date")?;
+            chrono::DateTime::parse_from_rfc2822(header.trim())
+                .ok()
+                .map(|d| d.with_timezone(&chrono::Utc))
+        })?;
+        Some(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    }
+
     /// Extract the plain text body by walking the MIME tree.
     pub fn text_body(&self) -> Option<String> {
         self.payload
