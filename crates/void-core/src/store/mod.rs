@@ -12,8 +12,9 @@ use crate::error::ConfigError;
 
 pub use proxy_files::plan_proxy_file_transfer;
 pub use remote::{
-    cache_is_fresh, default_cache_dir, fetch_remote_file, fetch_remote_files_if_present, now_secs,
-    CacheMeta, RemoteProxyTargets, SshTarget, REMOTE_PATH_PREFIX,
+    cache_is_fresh, default_cache_dir, fetch_remote_file, fetch_remote_files_if_present,
+    invalidate_database_snapshot, now_secs, CacheMeta, RemoteProxyTargets, SshTarget,
+    REMOTE_PATH_PREFIX,
 };
 
 #[derive(Debug, Clone)]
@@ -421,6 +422,16 @@ impl ResolvedContext {
             .join(" ");
         let remote_command = format!("{REMOTE_PATH_PREFIX} {escaped}");
         let output = remote.ssh.run_remote(&remote_command)?;
+        // The remote run may have written to the store, even on a non-zero
+        // exit (partial batch). Drop the snapshot's freshness so the next
+        // local read (`inbox`, `messages`…) sees the write.
+        if let Err(e) = invalidate_database_snapshot(&remote.cache_dir) {
+            warn!(
+                cache = %remote.cache_dir.display(),
+                error = %e,
+                "failed to invalidate remote database snapshot after proxied command"
+            );
+        }
         if !output.stdout.is_empty() {
             print!("{}", String::from_utf8_lossy(&output.stdout));
         }

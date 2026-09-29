@@ -1,4 +1,34 @@
-use super::{cache_is_fresh, format_remote_scp_path, now_secs, SshTarget};
+use super::{
+    cache_is_fresh, format_remote_scp_path, invalidate_database_snapshot, now_secs, CacheMeta,
+    SshTarget,
+};
+
+#[test]
+fn invalidate_snapshot_marks_database_stale_but_keeps_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let now = now_secs();
+    CacheMeta {
+        config_fetched_at: now,
+        database_fetched_at: now,
+    }
+    .save(dir.path())
+    .unwrap();
+    assert!(cache_is_fresh(now, 60));
+
+    invalidate_database_snapshot(dir.path()).unwrap();
+
+    let meta = CacheMeta::load(dir.path()).unwrap();
+    assert_eq!(meta.database_fetched_at, 0);
+    assert_eq!(meta.config_fetched_at, now);
+    assert!(!cache_is_fresh(meta.database_fetched_at, 60));
+}
+
+#[test]
+fn invalidate_snapshot_without_meta_is_noop() {
+    let dir = tempfile::tempdir().unwrap();
+    invalidate_database_snapshot(dir.path()).unwrap();
+    assert!(CacheMeta::load(dir.path()).is_none());
+}
 
 #[test]
 fn scp_path_keeps_tilde_unquoted() {

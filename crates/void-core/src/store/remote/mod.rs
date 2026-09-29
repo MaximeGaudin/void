@@ -5,7 +5,9 @@ mod ssh;
 #[cfg(test)]
 mod tests;
 
-pub use cache::{cache_is_fresh, default_cache_dir, now_secs, CacheMeta};
+pub use cache::{
+    cache_is_fresh, default_cache_dir, invalidate_database_snapshot, now_secs, CacheMeta,
+};
 pub use fetch::{fetch_remote_file, fetch_remote_files_if_present};
 pub use ssh::{RemoteProxyTargets, SshTarget};
 
