@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Pagination** — paginated JSON output (`inbox`, `conversations`, `messages`, …) now includes `pagination.has_more`, so agents looping "fetch → process → fetch" can tell the default 50-item page is not the whole backlog without computing it from `total_pages`.
+
 ### Fixed
 
+- **Remote store** — read-after-write in `store.mode = "remote"`: a proxied write (`archive`, `mute`, `send`, …) now marks the local database snapshot stale, so an immediate `void inbox` re-fetches it instead of serving the pre-write copy for up to `database_ttl_secs` (archived items used to reappear).
 - **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
 
 ## [0.14.0] - 2026-09-17
