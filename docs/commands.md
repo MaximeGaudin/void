@@ -188,6 +188,7 @@ LLM automations triggered by new messages or cron schedules. See the full [Hooks
 | `void hook delete <name>` | Delete a hook |
 | `void hook test <name>` | Dry-run a hook. `--message-id <id>` to test `new_message` hooks against a real message |
 | `void hook log` | Execution logs. `-n/--limit`, `--hook <name>`, `--id <log-id>` |
+| `void hook push [<name>...]` | Remote store mode only: copy local hook files to the remote host (all when no name is given). Restart the remote daemon afterwards |
 
 ## System
 

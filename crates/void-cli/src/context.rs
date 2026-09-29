@@ -59,6 +59,14 @@ pub fn client_config_path() -> PathBuf {
     get().client_config_path().to_path_buf()
 }
 
+/// Hooks directory for the config in use (`<config dir>/hooks`).
+///
+/// In remote mode this is the *client* directory: the daemon on the remote
+/// host never reads it.
+pub fn hooks_dir() -> PathBuf {
+    void_core::hooks::hooks_dir_for(get().client_config_path())
+}
+
 pub fn refresh_cache() -> anyhow::Result<()> {
     // OnceLock doesn't allow mutation; reload by replacing via new init isn't possible.
     // Force refresh by loading fresh context into a temp and copying...
@@ -146,6 +154,7 @@ pub(crate) fn runs_with_local_cache(command: &crate::Command) -> bool {
         Command::Hn(args) => hackernews_reads_local_cache(args),
         Command::Reddit(args) => reddit_reads_local_cache(args),
         Command::Slack(args) => slack_reads_local_cache(args),
+        Command::Hook(args) => hook_runs_locally(args),
         Command::Sync(args) => args.status,
         Command::Setup => false,
         _ => false,
@@ -157,6 +166,14 @@ fn calendar_reads_local_cache(args: &crate::commands::calendar::CalendarArgs) ->
     use crate::commands::calendar::CalendarCommand;
 
     matches!(args.command, None | Some(CalendarCommand::Week))
+}
+
+/// `hook push` copies client files to the remote host itself; every other
+/// hook subcommand is proxied so it sees the hooks the remote daemon runs.
+fn hook_runs_locally(args: &crate::commands::hook::HookArgs) -> bool {
+    use crate::commands::hook::HookCommand;
+
+    matches!(args.command, HookCommand::Push { .. })
 }
 
 fn slack_reads_local_cache(args: &crate::commands::slack::SlackArgs) -> bool {

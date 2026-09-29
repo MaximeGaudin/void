@@ -1,5 +1,7 @@
 mod handlers;
 
+pub(crate) use handlers::warn_local_hooks_ignored;
+
 use clap::{Args, Subcommand};
 
 #[derive(Debug, Args)]
@@ -80,6 +82,14 @@ pub enum HookCommand {
         #[arg(long)]
         message_id: Option<String>,
     },
+    /// Copy local hook files to the remote host (store.mode = "remote" only)
+    ///
+    /// The remote sync daemon loads hooks from its own config directory and
+    /// never reads this machine's hooks. Restart the remote daemon afterwards.
+    Push {
+        /// Hook names (or slugs) to push; all local hooks when omitted
+        names: Vec<String>,
+    },
     /// Show recent hook execution logs
     Log {
         /// Number of log entries to show
@@ -95,9 +105,11 @@ pub enum HookCommand {
 }
 
 pub fn run(args: &HookArgs) -> anyhow::Result<()> {
-    use handlers::{cmd_create, cmd_delete, cmd_list, cmd_log, cmd_show, cmd_test, cmd_toggle};
+    use handlers::{
+        cmd_create, cmd_delete, cmd_list, cmd_log, cmd_push, cmd_show, cmd_test, cmd_toggle,
+    };
 
-    let dir = void_core::hooks::hooks_dir();
+    let dir = crate::context::hooks_dir();
 
     match &args.command {
         HookCommand::List => cmd_list(&dir),
@@ -134,6 +146,7 @@ pub fn run(args: &HookArgs) -> anyhow::Result<()> {
         HookCommand::Enable { name } => cmd_toggle(&dir, name, true),
         HookCommand::Disable { name } => cmd_toggle(&dir, name, false),
         HookCommand::Test { name, message_id } => cmd_test(&dir, name, message_id.as_deref()),
+        HookCommand::Push { names } => cmd_push(&dir, names),
         HookCommand::Log { limit, hook, id } => cmd_log(*limit, hook.as_deref(), *id),
     }
 }

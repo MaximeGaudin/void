@@ -1,6 +1,82 @@
 use crate::output::resolve_connector_filter;
 use void_core::hooks::{self, ActiveWindow, Hook, PromptConfig, Trigger, Weekday};
 
+/// Remote mode: the daemon on the remote host never reads this machine's
+/// hooks. Say so on stderr, since `hook list` shows the remote set.
+pub(crate) fn warn_local_hooks_ignored(local_dir: &std::path::Path) {
+    let files = hooks::hook_files(local_dir);
+    if let Some(message) = local_hooks_ignored_message(local_dir, &files) {
+        eprintln!("{message}");
+    }
+}
+
+fn local_hooks_ignored_message(
+    local_dir: &std::path::Path,
+    files: &[std::path::PathBuf],
+) -> Option<String> {
+    if files.is_empty() {
+        return None;
+    }
+    let names = files
+        .iter()
+        .filter_map(|f| f.file_stem().and_then(|s| s.to_str()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "[warn] store.mode = \"remote\": {} local hook(s) in {} are ignored ({names}).\n       \
+         The remote sync daemon only loads hooks from the remote host. \
+         Copy them with `void hook push`, then restart the remote daemon.",
+        files.len(),
+        local_dir.display()
+    ))
+}
+
+pub(crate) fn cmd_push(dir: &std::path::Path, names: &[String]) -> anyhow::Result<()> {
+    if !crate::context::is_remote() {
+        anyhow::bail!(
+            "`void hook push` only applies to store.mode = \"remote\"; hooks in {} are already used by the local daemon",
+            dir.display()
+        );
+    }
+    let files = select_hook_files(dir, names)?;
+    if files.is_empty() {
+        anyhow::bail!("No hook files (*.toml) in {}", dir.display());
+    }
+    let remote_dir = crate::context::get()
+        .push_hooks(&files)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    for file in &files {
+        eprintln!("Pushed {} -> {remote_dir}/", file.display());
+    }
+    eprintln!(
+        "The remote daemon loads hooks at startup only: restart it on the remote host \
+         (`void sync --stop && void sync --daemon`), then check `void hook list`."
+    );
+    Ok(())
+}
+
+/// Hook files to push: every `*.toml` in `dir`, or those matching `names` by slug.
+fn select_hook_files(
+    dir: &std::path::Path,
+    names: &[String],
+) -> anyhow::Result<Vec<std::path::PathBuf>> {
+    let files = hooks::hook_files(dir);
+    if names.is_empty() {
+        return Ok(files);
+    }
+    names
+        .iter()
+        .map(|name| {
+            let slug = hooks::slugify(name);
+            files
+                .iter()
+                .find(|f| f.file_stem().and_then(|s| s.to_str()) == Some(slug.as_str()))
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("Hook '{name}' not found in {}", dir.display()))
+        })
+        .collect()
+}
+
 pub(crate) fn cmd_list(dir: &std::path::Path) -> anyhow::Result<()> {
     let hooks = hooks::load_hooks(dir);
     let output = serde_json::json!({ "data": hooks });
@@ -223,4 +299,43 @@ pub(crate) fn cmd_log(
 fn print_log_detail(log: &hooks::HookLog) -> anyhow::Result<()> {
     println!("{}", serde_json::to_string_pretty(log)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_hooks_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("void-hooks-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn select_hook_files_all_or_by_name() {
+        let dir = temp_hooks_dir();
+        std::fs::write(dir.join("slack-triage.toml"), "").unwrap();
+        std::fs::write(dir.join("digest.toml"), "").unwrap();
+        std::fs::write(dir.join("slack-triage.md"), "").unwrap();
+
+        let all = select_hook_files(&dir, &[]).unwrap();
+        assert_eq!(all.len(), 2);
+
+        let one = select_hook_files(&dir, &["Slack Triage".into()]).unwrap();
+        assert_eq!(one, vec![dir.join("slack-triage.toml")]);
+
+        assert!(select_hook_files(&dir, &["missing".into()]).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ignored_message_lists_local_hooks() {
+        let dir = std::path::Path::new("/tmp/hooks");
+        assert!(local_hooks_ignored_message(dir, &[]).is_none());
+        let msg =
+            local_hooks_ignored_message(dir, &[dir.join("slack-triage.toml")]).expect("message");
+        assert!(msg.contains("1 local hook(s)"));
+        assert!(msg.contains("slack-triage"));
+        assert!(msg.contains("void hook push"));
+    }
 }

@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hooks** — `void hook push [<name>...]` copies local hook files to the remote host in `store.mode = "remote"`, where the sync daemon actually runs them.
+- **Doctor** — new Hooks section: every configured hook with its last execution, flagged as an issue when an enabled hook stopped running while its trigger kept firing (new messages arriving, or a missed cron slot). In remote mode the hooks are listed on the remote host and executions read from the database snapshot.
+
 ### Fixed
+
+- **Hooks (remote mode)** — hooks defined on the client (`~/.config/void/hooks/`) were silently ignored: the remote daemon only loads hooks from the server, so `void hook list` came back empty and triage hooks never ran. Every `void hook` command and `void doctor` now warn about ignored local hooks. `void hook create --prompt-file` now uploads the prompt file to the server instead of reading the path there.
+- **Hooks** — the hooks directory now follows the config file in use (`<config dir>/hooks/`, including with `--config`) instead of always the default config location, so the daemon and proxied `void hook` commands read the same hooks.
 
 - **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
 

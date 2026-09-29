@@ -4,6 +4,7 @@ pub mod channels;
 pub mod connector_factory;
 pub mod contacts;
 pub mod doctor;
+mod doctor_hooks;
 pub mod forward;
 pub mod gmail;
 pub mod googlenews;

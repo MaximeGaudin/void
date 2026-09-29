@@ -179,7 +179,7 @@ pub async fn run(args: &SyncArgs) -> anyhow::Result<()> {
         connectors.len()
     );
 
-    let hooks_dir = hooks::hooks_dir();
+    let hooks_dir = crate::context::hooks_dir();
     let loaded_hooks = hooks::load_hooks(&hooks_dir);
     let hook_runner = if loaded_hooks.is_empty() {
         None

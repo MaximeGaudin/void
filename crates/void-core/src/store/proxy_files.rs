@@ -7,7 +7,7 @@ use crate::error::ConfigError;
 
 use super::remote::{fetch_remote_file, SshTarget};
 
-/// Upload local paths referenced by `--file` before SSH proxy; pull `--out` / `--output`
+/// Upload local paths referenced by `--file` / `--prompt-file` before SSH proxy; pull `--out` / `--output`
 /// downloads back to the local machine after a successful proxied command.
 #[derive(Debug, Clone)]
 pub struct ProxyFileTransferPlan {
@@ -28,6 +28,9 @@ pub struct StagedDownload {
     pub local_out: PathBuf,
 }
 
+/// Flags whose value is a local file uploaded to the remote staging dir.
+const UPLOAD_FLAGS: [&str; 2] = ["--file", "--prompt-file"];
+
 pub fn plan_proxy_file_transfer(
     remote_store_path: &str,
     args: &[String],
@@ -40,12 +43,12 @@ pub fn plan_proxy_file_transfer(
     let mut i = 0;
     while i < rewritten.len() {
         match rewritten[i].as_str() {
-            "--file" => {
+            flag @ ("--file" | "--prompt-file") => {
                 if let Some(path) = take_flag_value(&rewritten, i) {
                     let local_path = expand_tilde(path);
                     if !local_path.is_file() {
                         return Err(ConfigError::Remote(format!(
-                            "local file not found for --file: {}",
+                            "local file not found for {flag}: {}",
                             local_path.display()
                         )));
                     }
@@ -91,7 +94,9 @@ pub fn resolve_staged_paths_for_remote(
 ) -> Result<(), ConfigError> {
     for upload in &plan.uploads {
         let resolved = resolve_remote_path(ssh, &upload.remote_path)?;
-        replace_flag_value(&mut plan.args, "--file", &upload.remote_path, &resolved);
+        for flag in UPLOAD_FLAGS {
+            replace_flag_value(&mut plan.args, flag, &upload.remote_path, &resolved);
+        }
     }
     if let Some(download) = &plan.download {
         let resolved = resolve_remote_path(ssh, &download.remote_path)?;
@@ -257,6 +262,37 @@ mod tests {
             "--file".into(),
             "/tmp/x".into(),
         ]));
+    }
+
+    #[test]
+    fn plan_rewrites_hook_prompt_file_for_upload() {
+        let tmp = std::env::temp_dir().join(format!("void-proxy-prompt-{}", Uuid::new_v4()));
+        std::fs::write(&tmp, b"triage slack").unwrap();
+
+        let plan = plan_proxy_file_transfer(
+            "~/.local/share/void",
+            &[
+                "hook".into(),
+                "create".into(),
+                "--name".into(),
+                "slack-triage".into(),
+                "--prompt-file".into(),
+                tmp.to_string_lossy().into_owned(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(plan.uploads.len(), 1);
+        assert_eq!(plan.uploads[0].local_path, tmp);
+        let prompt_arg = plan
+            .args
+            .windows(2)
+            .find(|w| w[0] == "--prompt-file")
+            .map(|w| w[1].clone())
+            .unwrap();
+        assert_eq!(prompt_arg, plan.uploads[0].remote_path);
+
+        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]

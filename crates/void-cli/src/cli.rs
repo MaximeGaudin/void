@@ -155,6 +155,9 @@ pub fn run() -> anyhow::Result<()> {
             context::ensure_local_sync_allowed()?;
         } else if let Some(ref cmd) = cli.command {
             if !context::runs_with_local_cache(cmd) {
+                if matches!(cmd, Command::Hook(_)) {
+                    commands::hook::warn_local_hooks_ignored(&context::hooks_dir());
+                }
                 context::proxy_current_command()?;
             }
         }
