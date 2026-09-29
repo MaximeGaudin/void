@@ -7,28 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-29
+
 ### Added
 
 - **Pagination** — paginated JSON output (`inbox`, `conversations`, `messages`, …) now includes `pagination.has_more`, so agents looping "fetch → process → fetch" can tell the default 50-item page is not the whole backlog without computing it from `total_pages`.
+- **Sync** — configurable `retention_days` in `[sync]` (default 15) prunes stored messages older than the cutoff, bounding database growth instead of keeping every message since the first sync forever.
+- **Hooks** — `void hook push [<name>...]` copies local hook files to the remote host in `store.mode = "remote"`, where the sync daemon actually runs them.
+- **Doctor** — new Hooks section: every configured hook with its last execution, flagged as an issue when an enabled hook stopped running while its trigger kept firing (new messages arriving, or a missed cron slot). In remote mode the hooks are listed on the remote host and executions read from the database snapshot.
+- **WhatsApp** — optional `heic` Cargo feature (`--features heic`) transcodes outgoing `.heic`/`.heif` images to JPEG (with thumbnail) via the system `libheif`, announcing `image/jpeg` once transcoded. Off by default (LGPL opt-in, FFmpeg-style): default builds keep announcing the honest `image/heic`/`image/heif` MIME from the 0.13.1 fix.
 
 ### Fixed
 
 - **Gmail** — inbox state now follows Gmail's thread model: a thread stays in the inbox while any of its messages carries `INBOX`, and all its stored messages are unarchived with it. Previously, a thread put back in the inbox (un-archived in the web UI, or a new reply) could stay `is_archived` in void because upserts never touch `is_archived` on existing rows, and a message that gained `INBOX` without being stored first (e.g. a sent message filed back into the inbox) was never ingested. A full INBOX reconciliation now also runs every hour, not only at startup or after an idle period.
 - **Gmail** — archiving a message now removes `INBOX` from the older messages of its thread too, so the thread actually leaves Gmail's inbox. Messages newer than the archived one are left alone.
 - **Gmail** — `void gmail thread <id>` accepts a message id: on a 404 it resolves the message's thread and retries, instead of failing.
-- **Remote store** — read-after-write in `store.mode = "remote"`: a proxied write (`archive`, `mute`, `send`, …) now marks the local database snapshot stale, so an immediate `void inbox` re-fetches it instead of serving the pre-write copy for up to `database_ttl_secs` (archived items used to reappear).
 - **Gmail** — `void gmail draft update` no longer detaches a reply draft from its conversation. It now fetches the draft first and resends its `threadId`, `In-Reply-To` and `References`, and re-attaches its existing attachments unless `--file` is passed (which replaces them). New `--reply-to <id>` re-targets the draft to another message.
 - **Gmail** — `void gmail draft create --reply-to` now sets `In-Reply-To` / `References` from the original's `Message-ID` header instead of the Gmail message id, so recipients' mail clients thread the reply.
 - **Gmail** — `void gmail search` and `void gmail thread` always fill `date` as an RFC 3339 UTC timestamp derived from Gmail's `internalDate` (it was `null` for messages served from the local store), and add a `timestamp` field matching `void inbox`.
+- **Remote store** — read-after-write in `store.mode = "remote"`: a proxied write (`archive`, `mute`, `send`, …) now marks the local database snapshot stale, so an immediate `void inbox` re-fetches it instead of serving the pre-write copy for up to `database_ttl_secs` (archived items used to reappear).
 - **Calendar** — `void calendar respond` accepts the void event id (`<connection>-<event>`) as printed by `void calendar`, instead of forwarding it verbatim to Google (404). `calendar update` and `calendar delete` strip the prefix too. The RSVP now updates your own entry on the guest list (the attendee Google flags `self`, else your primary calendar's email) instead of the connection id: it no longer adds a bogus `<email>-calendar` attendee whose invite bounced. If you are not on the guest list, the command fails and leaves the event untouched.
-- **Hooks** — `void hook push [<name>...]` copies local hook files to the remote host in `store.mode = "remote"`, where the sync daemon actually runs them.
-- **Doctor** — new Hooks section: every configured hook with its last execution, flagged as an issue when an enabled hook stopped running while its trigger kept firing (new messages arriving, or a missed cron slot). In remote mode the hooks are listed on the remote host and executions read from the database snapshot.
-
-### Fixed
-
 - **Hooks (remote mode)** — hooks defined on the client (`~/.config/void/hooks/`) were silently ignored: the remote daemon only loads hooks from the server, so `void hook list` came back empty and triage hooks never ran. Every `void hook` command and `void doctor` now warn about ignored local hooks. `void hook create --prompt-file` now uploads the prompt file to the server instead of reading the path there.
 - **Hooks** — the hooks directory now follows the config file in use (`<config dir>/hooks/`, including with `--config`) instead of always the default config location, so the daemon and proxied `void hook` commands read the same hooks.
-
 - **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
 
 ## [0.14.0] - 2026-09-17
