@@ -1,5 +1,3 @@
-use void_core::connector::Connector;
-
 use super::args::{
     AvailabilityArgs, CreateEventArgs, DeleteEventArgs, RespondEventArgs, SearchEventArgs,
     UpdateEventArgs,
@@ -117,15 +115,10 @@ pub(super) async fn run_respond(args: &RespondEventArgs) -> anyhow::Result<()> {
     let (connector, _cfg) = build_calendar_connector(args.connection.as_deref())?;
     let db = crate::context::open_db()?;
 
-    let email = args
-        .email
-        .clone()
-        .unwrap_or_else(|| connector.connection_id().to_string());
-
     let event = connector
         .respond_to_event(
             &args.event_id,
-            &email,
+            args.email.as_deref(),
             &args.status,
             args.comment.as_deref(),
             &db,

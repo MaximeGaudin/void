@@ -2,6 +2,16 @@ use void_core::models::CalendarEvent;
 
 use crate::api::GoogleCalendarEvent;
 
+/// Turn a void event id (`{connection_id}-{google_id}`, as printed by
+/// `void calendar`) into the Google event id. Bare Google ids pass through.
+pub(crate) fn external_event_id<'a>(connection_id: &str, event_id: &'a str) -> &'a str {
+    event_id
+        .strip_prefix(connection_id)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(event_id)
+}
+
 pub(crate) fn map_event(
     event: &GoogleCalendarEvent,
     connection_id: &str,

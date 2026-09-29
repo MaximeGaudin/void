@@ -113,7 +113,7 @@ pub struct RespondEventArgs {
     /// Optional note/comment with your response
     #[arg(long)]
     pub comment: Option<String>,
-    /// Your email address (defaults to connection ID)
+    /// Your attendee email (defaults to the account's own entry on the guest list)
     #[arg(long)]
     pub email: Option<String>,
     /// Calendar connection to use

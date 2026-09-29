@@ -4,8 +4,9 @@ use void_core::models::CalendarEvent;
 use wiremock::matchers::{body_string_contains, method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::attendees::build_attendee_list;
-use super::mapping::{map_event, parse_date, parse_rfc3339};
+use super::attendees::{build_attendee_list, find_self_attendee};
+use super::events::respond_with_client;
+use super::mapping::{external_event_id, map_event, parse_date, parse_rfc3339};
 
 /// Runs the initial sync pagination loop using a pre-built API client (for testing without tokens).
 async fn run_initial_sync_with_client(
@@ -177,6 +178,7 @@ fn map_event_with_meet() {
         attendees: Some(vec![EventAttendee {
             email: Some("alice@example.com".into()),
             response_status: Some("accepted".into()),
+            is_self: None,
         }]),
         conference_data: Some(ConferenceData {
             entry_points: Some(vec![EntryPoint {
@@ -554,4 +556,192 @@ async fn insert_event_request_includes_connection_owner() {
             "alice@example.com".to_string()
         ]
     );
+}
+
+#[test]
+fn external_event_id_strips_void_prefix() {
+    let conn = "mgaudin@gladia.io-calendar";
+    assert_eq!(
+        external_event_id(
+            conn,
+            "mgaudin@gladia.io-calendar-2k5hbff0r6uinr8p1d4g8bmt6g"
+        ),
+        "2k5hbff0r6uinr8p1d4g8bmt6g"
+    );
+    assert_eq!(
+        external_event_id(conn, "2k5hbff0r6uinr8p1d4g8bmt6g"),
+        "2k5hbff0r6uinr8p1d4g8bmt6g"
+    );
+    assert_eq!(
+        external_event_id(conn, "other@x.io-calendar-abc"),
+        "other@x.io-calendar-abc"
+    );
+    assert_eq!(external_event_id(conn, conn), conn);
+}
+
+fn attendee(email: &str, is_self: Option<bool>) -> EventAttendee {
+    EventAttendee {
+        email: Some(email.into()),
+        response_status: Some("needsAction".into()),
+        is_self,
+    }
+}
+
+#[test]
+fn find_self_attendee_priority() {
+    let atts = vec![
+        attendee("jl@gladia.io", None),
+        attendee("MGaudin@gladia.io", Some(true)),
+    ];
+    assert_eq!(
+        find_self_attendee(&atts, None, None).as_deref(),
+        Some("MGaudin@gladia.io")
+    );
+    assert_eq!(
+        find_self_attendee(&atts, Some("JL@gladia.io"), None).as_deref(),
+        Some("jl@gladia.io")
+    );
+    assert_eq!(find_self_attendee(&atts, Some("nobody@x.io"), None), None);
+
+    let no_flag = vec![attendee("mgaudin@gladia.io", None)];
+    assert_eq!(find_self_attendee(&no_flag, None, None), None);
+    assert_eq!(
+        find_self_attendee(&no_flag, None, Some("mgaudin@gladia.io")).as_deref(),
+        Some("mgaudin@gladia.io")
+    );
+}
+
+const RSVP_EVENT: &str = r#"{
+    "id": "2k5hbff0r6uinr8p1d4g8bmt6g",
+    "summary": "Alignement Max // JL // Thib",
+    "start": {"dateTime": "2026-09-30T07:00:00Z"},
+    "end": {"dateTime": "2026-09-30T07:30:00Z"},
+    "attendees": [
+        {"email": "jl@gladia.io", "responseStatus": "accepted", "organizer": true},
+        {"email": "mgaudin@gladia.io", "responseStatus": "needsAction"SELF}
+    ]
+}"#;
+
+async fn patched_attendees(server: &MockServer) -> Vec<serde_json::Value> {
+    let reqs = server.received_requests().await.unwrap();
+    let patch = reqs
+        .iter()
+        .find(|r| r.method.as_str() == "PATCH")
+        .expect("PATCH sent");
+    let body: serde_json::Value = serde_json::from_slice(&patch.body).unwrap();
+    body["attendees"].as_array().unwrap().clone()
+}
+
+async fn mount_event(server: &MockServer, body: String) {
+    let event_path = "/calendar/v3/calendars/primary/events/2k5hbff0r6uinr8p1d4g8bmt6g";
+    Mock::given(method("GET"))
+        .and(path(event_path))
+        .respond_with(ResponseTemplate::new(200).set_body_string(body.clone()))
+        .mount(server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path(event_path))
+        .and(query_param("sendUpdates", "all"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(body))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn respond_updates_self_attendee_only() {
+    let server = MockServer::start().await;
+    mount_event(&server, RSVP_EVENT.replace("SELF", r#", "self": true"#)).await;
+
+    let api = CalendarApiClient::with_base_url("t", &server.uri());
+    respond_with_client(
+        &api,
+        "primary",
+        "2k5hbff0r6uinr8p1d4g8bmt6g",
+        None,
+        "accepted",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let atts = patched_attendees(&server).await;
+    assert_eq!(atts.len(), 2, "no attendee added: {atts:?}");
+    assert_eq!(atts[0]["email"], "jl@gladia.io");
+    assert_eq!(atts[0]["responseStatus"], "accepted");
+    assert_eq!(atts[1]["email"], "mgaudin@gladia.io");
+    assert_eq!(atts[1]["responseStatus"], "accepted");
+}
+
+#[tokio::test]
+async fn respond_falls_back_to_primary_calendar_email() {
+    let server = MockServer::start().await;
+    mount_event(&server, RSVP_EVENT.replace("SELF", "")).await;
+    Mock::given(method("GET"))
+        .and(path("/calendar/v3/users/me/calendarList"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"items": [
+                {"id": "team@group.calendar.google.com", "primary": false},
+                {"id": "mgaudin@gladia.io", "primary": true}
+            ]}"#,
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = CalendarApiClient::with_base_url("t", &server.uri());
+    respond_with_client(
+        &api,
+        "primary",
+        "2k5hbff0r6uinr8p1d4g8bmt6g",
+        None,
+        "declined",
+        Some("conflict"),
+    )
+    .await
+    .unwrap();
+
+    let atts = patched_attendees(&server).await;
+    assert_eq!(atts.len(), 2);
+    assert_eq!(atts[1]["email"], "mgaudin@gladia.io");
+    assert_eq!(atts[1]["responseStatus"], "declined");
+    assert_eq!(atts[1]["comment"], "conflict");
+}
+
+#[tokio::test]
+async fn respond_errors_instead_of_adding_unknown_attendee() {
+    let server = MockServer::start().await;
+    mount_event(&server, RSVP_EVENT.replace("SELF", "")).await;
+    Mock::given(method("GET"))
+        .and(path("/calendar/v3/users/me/calendarList"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"items": []}"#))
+        .mount(&server)
+        .await;
+
+    let api = CalendarApiClient::with_base_url("t", &server.uri());
+    let err = respond_with_client(
+        &api,
+        "primary",
+        "2k5hbff0r6uinr8p1d4g8bmt6g",
+        None,
+        "accepted",
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("not an attendee"), "{err}");
+
+    let err = respond_with_client(
+        &api,
+        "primary",
+        "2k5hbff0r6uinr8p1d4g8bmt6g",
+        Some("mgaudin@gladia.io-calendar"),
+        "accepted",
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("not an attendee"), "{err}");
+
+    let reqs = server.received_requests().await.unwrap();
+    assert!(reqs.iter().all(|r| r.method.as_str() != "PATCH"));
 }
