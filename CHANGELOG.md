@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gmail** — `void gmail draft update` no longer detaches a reply draft from its conversation. It now fetches the draft first and resends its `threadId`, `In-Reply-To` and `References`, and re-attaches its existing attachments unless `--file` is passed (which replaces them). New `--reply-to <id>` re-targets the draft to another message.
+- **Gmail** — `void gmail draft create --reply-to` now sets `In-Reply-To` / `References` from the original's `Message-ID` header instead of the Gmail message id, so recipients' mail clients thread the reply.
+- **Gmail** — `void gmail search` and `void gmail thread` always fill `date` as an RFC 3339 UTC timestamp derived from Gmail's `internalDate` (it was `null` for messages served from the local store), and add a `timestamp` field matching `void inbox`.
 - **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
 
 ## [0.14.0] - 2026-09-17

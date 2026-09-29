@@ -455,11 +455,21 @@ impl GmailApiClient {
         Ok(resp)
     }
 
-    pub async fn update_draft(&self, draft_id: &str, raw: &str) -> Result<GmailDraft, GmailError> {
-        debug!(draft_id, "gmail: update_draft");
-        let body = serde_json::json!({
-            "message": { "raw": raw }
-        });
+    /// Replace a draft's message. Gmail drops the thread association unless
+    /// `threadId` is sent again, so pass the draft's current thread to keep a
+    /// reply draft in its conversation.
+    pub async fn update_draft(
+        &self,
+        draft_id: &str,
+        raw: &str,
+        thread_id: Option<&str>,
+    ) -> Result<GmailDraft, GmailError> {
+        debug!(draft_id, ?thread_id, "gmail: update_draft");
+        let mut message = serde_json::json!({ "raw": raw });
+        if let Some(tid) = thread_id {
+            message["threadId"] = serde_json::Value::String(tid.to_string());
+        }
+        let body = serde_json::json!({ "message": message });
         let resp: GmailDraft = self
             .http
             .put(format!(

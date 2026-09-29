@@ -43,7 +43,8 @@ async fn run_search(args: &SearchArgs) -> anyhow::Result<()> {
                 "from": m.get_header("From"),
                 "to": m.get_header("To"),
                 "subject": m.get_header("Subject"),
-                "date": m.get_header("Date"),
+                "date": m.timestamp_rfc3339(),
+                "timestamp": m.timestamp_rfc3339(),
                 "snippet": m.snippet,
                 "labels": m.label_ids,
                 "attachments": attachments,
@@ -77,7 +78,8 @@ async fn run_thread(args: &ThreadArgs) -> anyhow::Result<()> {
                         "from": m.get_header("From"),
                         "to": m.get_header("To"),
                         "subject": m.get_header("Subject"),
-                        "date": m.get_header("Date"),
+                        "date": m.timestamp_rfc3339(),
+                        "timestamp": m.timestamp_rfc3339(),
                         "snippet": m.snippet,
                         "labels": m.label_ids,
                         "body": m.text_body(),
@@ -252,6 +254,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
         DraftAction::Update(a) => {
             let connector = build_gmail_connector(a.connection.as_deref())?;
             let file_path = a.file.as_deref().map(std::path::Path::new);
+            let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
             let draft = connector
                 .update_draft(
                     &a.draft_id,
@@ -262,6 +265,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                     },
                     &a.subject,
                     &a.body,
+                    reply_to,
                     file_path,
                     void_gmail::connector::ComposeSignature::from_flags(
                         a.signature,
@@ -271,10 +275,11 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                 .await?;
 
             let draft_id = draft.id.as_deref().unwrap_or("?");
+            let thread_id = draft.message.as_ref().and_then(|m| m.thread_id.as_deref());
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
-                    "data": { "draftId": draft_id },
+                    "data": { "draftId": draft_id, "threadId": thread_id },
                     "error": null,
                 }))?
             );
