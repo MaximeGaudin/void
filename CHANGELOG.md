@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Calendar** — `void calendar respond` accepts the void event id (`<connection>-<event>`) as printed by `void calendar`, instead of forwarding it verbatim to Google (404). `calendar update` and `calendar delete` strip the prefix too. The RSVP now updates your own entry on the guest list (the attendee Google flags `self`, else your primary calendar's email) instead of the connection id: it no longer adds a bogus `<email>-calendar` attendee whose invite bounced. If you are not on the guest list, the command fails and leaves the event untouched.
 - **Update** — `void update` now detects a Homebrew-managed install (`Cellar` in the executable's path) and refuses to self-replace it, pointing to `brew upgrade void` instead. Overwriting a Homebrew-installed binary in place would leave `brew`'s bookkeeping out of sync with the actual file, corrupting future `brew upgrade`/`uninstall`. `void doctor`'s update note also suggests the right command for a Homebrew install.
 
 ## [0.14.0] - 2026-09-17

@@ -3,12 +3,12 @@ use tracing::{debug, info};
 use void_core::db::Database;
 use void_core::models::CalendarEvent;
 
-use super::attendees::build_attendee_list;
-use super::mapping::map_event;
+use super::attendees::{build_attendee_list, build_response_attendees, find_self_attendee};
+use super::mapping::{external_event_id, map_event};
 use super::types::{CalendarConnector, CreateEventParams, UpdateEventParams};
 use crate::api::{
-    AttendeeResponseRequest, ConferenceDataRequest, ConferenceSolutionKey, CreateConferenceRequest,
-    EventDateTimeRequest, InsertEventRequest, UpdateEventRequest,
+    CalendarApiClient, ConferenceDataRequest, ConferenceSolutionKey, CreateConferenceRequest,
+    EventDateTimeRequest, GoogleCalendarEvent, InsertEventRequest, UpdateEventRequest,
 };
 
 impl CalendarConnector {
@@ -108,7 +108,8 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
-        info!(connection_id = %self.connection_id, event_id = %params.event_id, "updating Calendar event");
+        let event_id = external_event_id(&self.connection_id, params.event_id);
+        info!(connection_id = %self.connection_id, event_id, "updating Calendar event");
 
         let timezone = "UTC".to_string();
         let update = UpdateEventRequest {
@@ -127,14 +128,14 @@ impl CalendarConnector {
         };
 
         let resp = api
-            .update_event(cal_id, params.event_id, &update, params.send_updates)
+            .update_event(cal_id, event_id, &update, params.send_updates)
             .await?;
         let cal_event =
             map_event(&resp, &self.connection_id, cal_id).unwrap_or_else(|| CalendarEvent {
-                id: format!("{}-{}", self.connection_id, params.event_id),
+                id: format!("{}-{}", self.connection_id, event_id),
                 connection_id: self.connection_id.clone(),
                 connector: "calendar".into(),
-                external_id: params.event_id.to_string(),
+                external_id: event_id.to_string(),
                 title: params.title.unwrap_or("(updated)").to_string(),
                 description: params.description.map(|s| s.to_string()),
                 location: None,
@@ -162,16 +163,22 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
+        let event_id = external_event_id(&self.connection_id, event_id);
         info!(connection_id = %self.connection_id, event_id, "deleting Calendar event");
         api.delete_event(cal_id, event_id, send_updates)
             .await
             .map_err(Into::into)
     }
 
+    /// RSVP to an event as the calendar owner.
+    ///
+    /// `event_id` may be the void id or the Google id. The owner is found on
+    /// the guest list (`email` override, else `self: true`, else the primary
+    /// calendar id); the call fails rather than adding a new attendee.
     pub async fn respond_to_event(
         &self,
         event_id: &str,
-        email: &str,
+        email: Option<&str>,
         status: &str,
         comment: Option<&str>,
         db: &Database,
@@ -182,50 +189,11 @@ impl CalendarConnector {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("primary");
+        let event_id = external_event_id(&self.connection_id, event_id);
         info!(connection_id = %self.connection_id, event_id, status, "responding to Calendar event");
 
-        let event = api.get_event(cal_id, event_id).await?;
-        let mut attendees_req: Vec<AttendeeResponseRequest> = event
-            .attendees
-            .as_ref()
-            .map(|atts| {
-                atts.iter()
-                    .map(|a| {
-                        let is_me = a.email.as_deref() == Some(email);
-                        AttendeeResponseRequest {
-                            email: a.email.clone().unwrap_or_default(),
-                            response_status: if is_me {
-                                Some(status.to_string())
-                            } else {
-                                a.response_status.clone()
-                            },
-                            comment: if is_me {
-                                comment.map(|c| c.to_string())
-                            } else {
-                                None
-                            },
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        if !attendees_req.iter().any(|a| a.email == email) {
-            attendees_req.push(AttendeeResponseRequest {
-                email: email.to_string(),
-                response_status: Some(status.to_string()),
-                comment: comment.map(|c| c.to_string()),
-            });
-        }
-
-        let update = UpdateEventRequest {
-            attendees: Some(attendees_req),
-            ..Default::default()
-        };
-
-        let resp = api
-            .update_event(cal_id, event_id, &update, Some("all"))
-            .await?;
+        let (event, resp) =
+            respond_with_client(&api, cal_id, event_id, email, status, comment).await?;
         let cal_event =
             map_event(&resp, &self.connection_id, cal_id).unwrap_or_else(|| CalendarEvent {
                 id: format!("{}-{}", self.connection_id, event_id),
@@ -290,4 +258,50 @@ impl CalendarConnector {
             .await
             .map_err(Into::into)
     }
+}
+
+/// Fetch `event_id`, set the owner's response and PATCH the attendee list.
+/// Returns the event as fetched and the updated event.
+pub(crate) async fn respond_with_client(
+    api: &CalendarApiClient,
+    cal_id: &str,
+    event_id: &str,
+    email: Option<&str>,
+    status: &str,
+    comment: Option<&str>,
+) -> anyhow::Result<(GoogleCalendarEvent, GoogleCalendarEvent)> {
+    let event = api.get_event(cal_id, event_id).await?;
+    let attendees = event.attendees.as_deref().unwrap_or_default();
+
+    let mut me = find_self_attendee(attendees, email, None);
+    if me.is_none() && email.is_none() {
+        // No `self` flag on the guest list: fall back to the account email,
+        // which is the primary calendar's id.
+        let account = api
+            .list_calendars()
+            .await?
+            .items
+            .unwrap_or_default()
+            .into_iter()
+            .find(|c| c.primary == Some(true))
+            .map(|c| c.id);
+        me = find_self_attendee(attendees, None, account.as_deref());
+    }
+    let Some(me) = me else {
+        anyhow::bail!(
+            "not an attendee of event \"{}\"{}: nothing to respond to",
+            event.summary.as_deref().unwrap_or(event_id),
+            email.map(|e| format!(" as {e}")).unwrap_or_default(),
+        );
+    };
+    debug!(event_id, attendee = %me, status, "calendar: responding as attendee");
+
+    let update = UpdateEventRequest {
+        attendees: Some(build_response_attendees(attendees, &me, status, comment)),
+        ..Default::default()
+    };
+    let resp = api
+        .update_event(cal_id, event_id, &update, Some("all"))
+        .await?;
+    Ok((event, resp))
 }
