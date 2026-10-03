@@ -13,6 +13,7 @@ test-fixtures = []
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+toml_edit = { workspace = true }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -25,6 +26,10 @@ tokio-util = { workspace = true }
 croner = { workspace = true }
 dirs = { workspace = true }
 sysinfo = { workspace = true }
+aes-gcm = { workspace = true }
+base64 = { workspace = true }
+keyring = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

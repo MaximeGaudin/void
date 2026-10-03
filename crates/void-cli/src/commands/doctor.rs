@@ -49,6 +49,8 @@ pub async fn run(args: &DoctorArgs) -> anyhow::Result<()> {
 
     let mut cfg = cfg;
 
+    issues += check_secrets(&config_path, &cfg.store_path());
+
     if let Err(e) = connectors::validate_all_connections(&cfg) {
         eprintln!("[!!] Connection settings invalid: {e}");
         issues += 1;
@@ -356,6 +358,103 @@ async fn run_remote_doctor(args: &DoctorArgs, issues: &mut usize) -> anyhow::Res
     }
 
     finish(args.non_interactive, *issues)
+}
+
+/// Report how credentials are stored at rest. Returns the number of issues.
+fn check_secrets(config_path: &std::path::Path, store_path: &std::path::Path) -> usize {
+    use void_core::secrets;
+
+    let mut issues = 0;
+    let report = std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|content| VoidConfig::parse(&content).ok())
+        .map(|raw| raw.secrets_report())
+        .unwrap_or_default();
+
+    let mut sealed_files = 0usize;
+    let mut plaintext_files = Vec::new();
+    let mut session_dbs = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(store_path) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_secret_file = name.ends_with("-token.json")
+                || (name.starts_with("telegram-") && name.ends_with(".json"));
+            if is_secret_file {
+                match std::fs::read(entry.path()) {
+                    Ok(data) if secrets::is_encrypted_file(&data) => sealed_files += 1,
+                    Ok(_) => plaintext_files.push(name),
+                    Err(_) => {}
+                }
+            } else if name.starts_with("whatsapp-") && name.ends_with(".db") {
+                session_dbs.push(name);
+            }
+        }
+    }
+
+    let has_credentials = report.encrypted > 0
+        || !report.plaintext.is_empty()
+        || !report.undecryptable.is_empty()
+        || sealed_files > 0
+        || !plaintext_files.is_empty();
+    if !has_credentials {
+        eprintln!("[--] No stored credentials to encrypt");
+    } else {
+        match secrets::master_key() {
+            Ok(key) => {
+                eprintln!(
+                    "[OK] Credentials encrypted at rest: {} config field(s), {} file(s) — master key: {}",
+                    report.encrypted,
+                    sealed_files,
+                    key.source()
+                );
+                if matches!(key.source(), secrets::KeySource::File(_)) {
+                    eprintln!(
+                        "[WARN] No OS credential store reachable: the master key is a file on the same disk."
+                    );
+                    eprintln!(
+                        "     Prefer VOID_MASTER_KEY (e.g. systemd LoadCredential=) on headless hosts."
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("[!!] Cannot access the void master key: {e}");
+                issues += 1;
+            }
+        }
+    }
+
+    if !report.plaintext.is_empty() || !plaintext_files.is_empty() {
+        let mut items: Vec<String> = report
+            .plaintext
+            .iter()
+            .map(|(conn, field)| format!("{conn}.{field}"))
+            .collect();
+        items.extend(plaintext_files);
+        eprintln!(
+            "[!!] Credentials still stored in plaintext: {}",
+            items.join(", ")
+        );
+        issues += 1;
+    }
+    if !report.undecryptable.is_empty() {
+        let items: Vec<String> = report
+            .undecryptable
+            .iter()
+            .map(|(conn, field)| format!("{conn}.{field}"))
+            .collect();
+        eprintln!(
+            "[!!] Credentials encrypted with a different master key: {} — re-run `void setup` for these connections",
+            items.join(", ")
+        );
+        issues += 1;
+    }
+    if !session_dbs.is_empty() {
+        eprintln!(
+            "[--] WhatsApp session store ({}) is protected by file permissions only",
+            session_dbs.join(", ")
+        );
+    }
+    issues
 }
 
 fn finish(non_interactive: bool, issues: usize) -> anyhow::Result<()> {

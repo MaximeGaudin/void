@@ -53,6 +53,11 @@ fn default_store_path_template() -> String {
     format!("~/{LEGACY_STORE_DIR}")
 }
 
+/// Directory holding `config.toml` (and the fallback master key file).
+pub fn config_dir() -> PathBuf {
+    preferred_config_dir()
+}
+
 pub fn default_config_path() -> PathBuf {
     preferred_config_dir().join(CONFIG_FILENAME)
 }
@@ -85,6 +90,7 @@ linkedin_backfill_days = 15
 github_poll_interval_secs = 120
 
 # Example connections (uncomment and fill in):
+# Tokens pasted here are encrypted in place on the next run.
 #
 # [[connections]]
 # id = "whatsapp"
