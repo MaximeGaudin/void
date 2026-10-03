@@ -1,4 +1,5 @@
 mod connection;
+mod encrypt;
 mod ignore;
 mod paths;
 mod secure_fs;
@@ -12,9 +13,11 @@ pub use connection::{
     settings_set_string_list, settings_set_u32, settings_str, settings_string,
     settings_string_list, settings_u32, ConnectionConfig,
 };
+pub use encrypt::SecretsReport;
 pub use ignore::conversation_matches_ignore;
 pub use paths::{
-    default_config, default_config_path, expand_tilde, redact_token, resolve_config_path,
+    config_dir, default_config, default_config_path, expand_tilde, redact_token,
+    resolve_config_path,
 };
 pub use secure_fs::{restrict_file, write_secure};
 pub use void_config::{

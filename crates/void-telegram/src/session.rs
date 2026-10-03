@@ -221,17 +221,30 @@ impl From<&PeerData> for PeerInfo {
 impl JsonFileSession {
     pub fn load_or_create(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
+        let mut migrate_plaintext = false;
         let mut data: Data = if path.exists() {
-            match std::fs::read_to_string(&path) {
-                Ok(json) => match serde_json::from_str(&json) {
-                    Ok(d) => d,
+            match void_core::secrets::read_secret_file(&path) {
+                Ok(file) => match serde_json::from_slice(&file.contents) {
+                    Ok(d) => {
+                        migrate_plaintext = file.was_plaintext;
+                        d
+                    }
                     Err(e) => {
                         warn!(path = %path.display(), error = %e, "corrupt session file, starting fresh");
                         Data::default()
                     }
                 },
                 Err(e) => {
-                    warn!(path = %path.display(), error = %e, "could not read session file");
+                    // Wrong/unavailable master key: keep the original aside so the
+                    // next save does not destroy a session that may still be valid.
+                    let backup = path.with_extension("json.undecryptable");
+                    let _ = std::fs::copy(&path, &backup);
+                    warn!(
+                        path = %path.display(),
+                        backup = %backup.display(),
+                        error = %e,
+                        "could not read session file, starting fresh"
+                    );
                     Data::default()
                 }
             }
@@ -249,18 +262,24 @@ impl JsonFileSession {
             }
         }
 
-        Self {
+        let session = Self {
             path,
             data: RwLock::new(data),
+        };
+        if migrate_plaintext {
+            // Legacy plaintext session: re-save it sealed.
+            session.save();
         }
+        session
     }
 
     fn save(&self) {
         let data = self.data.read().expect("session lock poisoned");
         match serde_json::to_string(&*data) {
             Ok(json) => {
-                // Holds Telegram auth keys — keep it owner-only.
-                if let Err(e) = void_core::config::write_secure(&self.path, json) {
+                // Holds Telegram auth keys — sealed with the void master key
+                // and kept owner-only.
+                if let Err(e) = void_core::secrets::write_secret_file(&self.path, json) {
                     warn!(error = %e, "failed to persist session");
                 }
             }
@@ -419,6 +438,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_session_path() -> std::path::PathBuf {
+        void_core::secrets::use_test_master_key();
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -453,8 +473,31 @@ mod tests {
             let s = JsonFileSession::load_or_create(&path);
             s.set_home_dc_id(4).await.unwrap();
         }
+        let raw = std::fs::read(&path).unwrap();
+        assert!(void_core::secrets::is_encrypted_file(&raw));
         let s2 = JsonFileSession::load_or_create(&path);
         assert_eq!(s2.home_dc_id().unwrap(), 4);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn legacy_plaintext_session_is_sealed_on_load() {
+        let path = unique_session_path();
+        {
+            let s = JsonFileSession::load_or_create(&path);
+            s.set_home_dc_id(5).await.unwrap();
+        }
+        // Rewrite as legacy plaintext JSON.
+        let pt = void_core::secrets::read_secret_file(&path)
+            .unwrap()
+            .contents;
+        std::fs::write(&path, &pt).unwrap();
+
+        let s = JsonFileSession::load_or_create(&path);
+        assert_eq!(s.home_dc_id().unwrap(), 5);
+        assert!(void_core::secrets::is_encrypted_file(
+            &std::fs::read(&path).unwrap()
+        ));
         let _ = std::fs::remove_file(&path);
     }
 }

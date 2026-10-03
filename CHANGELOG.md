@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Security** — credentials are encrypted at rest with AES-256-GCM under a master key kept in the OS credential store (macOS Keychain, Windows Credential Manager, Secret Service): token fields in `config.toml` (stored as `enc:v1:…`), Gmail/Calendar OAuth token caches, and the Telegram session. Existing plaintext is sealed on the next run, hand-pasted tokens are sealed in place without touching comments. Headless hosts can pass the key via `VOID_MASTER_KEY`; without any credential store, void falls back to an owner-only `master.key` file. See [Credential encryption](docs/configuration.md#credential-encryption).
+- **Doctor** — new credentials check: master key backend, credentials still in plaintext, and credentials encrypted under a different key.
+
 ## [0.15.0] - 2026-09-29
 
 ### Added

@@ -32,6 +32,7 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
+toml_edit = "0.25"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -73,6 +74,11 @@ dirs = "7"
 sysinfo = "0.39.3"
 sha2 = "0.10"
 inventory = "0.3"
+
+# Secrets at rest: AES-256-GCM sealing + OS credential store for the master key
+aes-gcm = "0.10"
+keyring = "4"
+zeroize = "1"
 
 # Testing
 wiremock = "0.6"

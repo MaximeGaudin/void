@@ -296,17 +296,21 @@ impl VoidConfig {
     }
 
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
-        let content = std::fs::read_to_string(path)?;
-        if content.contains("[[accounts]]") {
-            let migrated = content.replace("[[accounts]]", "[[connections]]");
-            std::fs::write(path, &migrated)?;
-            let mut config: Self = toml::from_str(&migrated)?;
-            if config.migrate_slack_sidecar_tokens() {
-                config.save(path)?;
-            }
-            return Ok(config);
+        let raw = std::fs::read_to_string(path)?;
+        let mut content = if raw.contains("[[accounts]]") {
+            raw.replace("[[accounts]]", "[[connections]]")
+        } else {
+            raw.clone()
+        };
+        // Seal hand-written plaintext tokens in place, keeping the user's comments.
+        if let Some(sealed) = super::encrypt::encrypt_plaintext_in_text(&content) {
+            content = sealed;
+        }
+        if content != raw {
+            super::write_secure(path, &content)?;
         }
         let mut config: Self = toml::from_str(&content)?;
+        config.decrypt_secrets();
         if config.migrate_slack_sidecar_tokens() {
             config.save(path)?;
         }
@@ -318,8 +322,9 @@ impl VoidConfig {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        let content = toml::to_string_pretty(self)?;
-        // Holds plaintext Slack/LinkedIn/Telegram secrets — keep it owner-only.
+        // Credentials are sealed with the master key (see `crate::secrets`);
+        // the file stays owner-only as defense in depth.
+        let content = toml::to_string_pretty(&self.with_encrypted_secrets())?;
         super::write_secure(path, content)?;
         Ok(())
     }
