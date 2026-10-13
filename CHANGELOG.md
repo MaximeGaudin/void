@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Gmail** — the startup INBOX refresh renews the access token on `401` and retries the message. A pass longer than the token's 1h lifetime (large inbox, rate-limited) used to skip every later message with `401 Unauthorized`.
+
 ## [0.15.0] - 2026-09-29
 
 ### Added
