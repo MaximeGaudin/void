@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sync** — `void --config <path> sync --daemon` (and the setup wizard's "Start syncing now?") now uses `<path>`: the daemon loaded the default config and spawned its child without `--config`, so it failed or synced the wrong profile.
+
 ## [0.15.0] - 2026-09-29
 
 ### Added
