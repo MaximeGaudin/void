@@ -188,6 +188,33 @@ mod fake_ssh_tests {
     }
 
     #[test]
+    fn scp_to_uploads_names_with_spaces_and_accents_via_ssh() {
+        let dir = tempfile::tempdir().unwrap();
+        // Fake ssh runs the remote command locally (stdin passes through).
+        write_script(
+            dir.path(),
+            "ssh",
+            "#!/bin/sh\nfor last; do :; done\nexec sh -c \"$last\"\n",
+        );
+        // SFTP-mode scp would keep shell quotes literally; it must not be used.
+        write_script(dir.path(), "scp", "#!/bin/sh\nexit 1\n");
+
+        let remote_dir = dir.path().join("staging");
+        std::fs::create_dir_all(&remote_dir).unwrap();
+        for name in ["my file.pdf", "devis_signé.pdf", "it's.pdf"] {
+            let local = dir.path().join(format!("local-{name}"));
+            std::fs::write(&local, name.as_bytes()).unwrap();
+            let remote = remote_dir.join(name);
+
+            with_path_prefix(dir.path(), || {
+                target(22).scp_to(&local, remote.to_str().unwrap()).unwrap()
+            });
+
+            assert_eq!(std::fs::read(&remote).unwrap(), name.as_bytes(), "{name}");
+        }
+    }
+
+    #[test]
     fn scp_to_surfaces_error_when_fake_exits_nonzero() {
         let dir = tempfile::tempdir().unwrap();
         write_script(
@@ -234,11 +261,11 @@ mod fake_ssh_tests {
         std::fs::write(&local, b"pdf").unwrap();
         let uploads = vec![StagedUpload {
             local_path: local,
-            remote_path: "/store/staging/x-attach.pdf".into(),
+            remote_path: "/store/staging/x/attach.pdf".into(),
         }];
 
         with_path_prefix(dir.path(), || {
-            execute_proxy_uploads(&target(22), "/store", &uploads).unwrap();
+            execute_proxy_uploads(&target(22), &uploads).unwrap();
         });
 
         let order = std::fs::read_to_string(&order_log).unwrap();

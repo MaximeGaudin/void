@@ -52,7 +52,7 @@ pub fn plan_proxy_file_transfer(
                             local_path.display()
                         )));
                     }
-                    let remote_path = staging_path(&staging_dir, &local_path);
+                    let remote_path = upload_staging_path(&staging_dir, &local_path);
                     rewritten[i + 1] = remote_path.clone();
                     uploads.push(StagedUpload {
                         local_path,
@@ -105,19 +105,9 @@ pub fn resolve_staged_paths_for_remote(
     Ok(())
 }
 
-pub fn execute_proxy_uploads(
-    ssh: &SshTarget,
-    remote_store_path: &str,
-    uploads: &[StagedUpload],
-) -> Result<(), ConfigError> {
-    if uploads.is_empty() {
-        return Ok(());
-    }
-
-    let staging_dir = format!("{remote_store_path}/staging");
-    ensure_remote_dir(ssh, &staging_dir)?;
-
+pub fn execute_proxy_uploads(ssh: &SshTarget, uploads: &[StagedUpload]) -> Result<(), ConfigError> {
     for upload in uploads {
+        ensure_remote_dir(ssh, parent_dir(&upload.remote_path))?;
         ssh.scp_to(&upload.local_path, &upload.remote_path)?;
     }
     Ok(())
@@ -141,7 +131,8 @@ pub fn execute_proxy_download(
     Ok(())
 }
 
-pub fn cleanup_remote_staging(ssh: &SshTarget, paths: &[String]) {
+/// Remove staged files, then the per-upload directories that held them.
+pub fn cleanup_remote_staging(ssh: &SshTarget, paths: &[String], dirs: &[String]) {
     for path in paths {
         let resolved = match resolve_remote_path(ssh, path) {
             Ok(p) => p,
@@ -149,6 +140,21 @@ pub fn cleanup_remote_staging(ssh: &SshTarget, paths: &[String]) {
         };
         let escaped = shell_escape_path(&resolved);
         let _ = ssh.run_remote(&format!("rm -f {escaped}"));
+    }
+    for dir in dirs {
+        let resolved = match resolve_remote_path(ssh, dir) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let escaped = shell_escape_path(&resolved);
+        let _ = ssh.run_remote(&format!("rmdir {escaped}"));
+    }
+}
+
+impl StagedUpload {
+    /// The per-upload directory created under `staging/` for this file.
+    pub fn remote_dir(&self) -> &str {
+        parent_dir(&self.remote_path)
     }
 }
 
@@ -188,6 +194,22 @@ fn replace_flag_value(args: &mut [String], flag: &str, old: &str, new: &str) {
         }
         i += 1;
     }
+}
+
+/// Uploads keep their original basename inside a unique directory, because
+/// connectors name the attachment after the staged file.
+fn upload_staging_path(staging_dir: &str, local_path: &Path) -> String {
+    let basename = local_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    format!("{staging_dir}/{}/{basename}", Uuid::new_v4())
+}
+
+fn parent_dir(remote_path: &str) -> &str {
+    remote_path
+        .rsplit_once('/')
+        .map_or(remote_path, |(dir, _)| dir)
 }
 
 fn staging_path(staging_dir: &str, local_path: &Path) -> String {
@@ -330,6 +352,26 @@ mod tests {
         assert_eq!(file_arg, plan.uploads[0].remote_path);
 
         let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn plan_keeps_original_basename_in_unique_staging_dir() {
+        let dir = std::env::temp_dir().join(format!("void-proxy-name-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("report.pdf");
+        std::fs::write(&a, b"a").unwrap();
+        let args = vec!["--file".to_string(), a.to_string_lossy().into_owned()];
+
+        let first = plan_proxy_file_transfer("/store", &args).unwrap();
+        let second = plan_proxy_file_transfer("/store", &args).unwrap();
+
+        let upload = &first.uploads[0];
+        assert!(upload.remote_path.ends_with("/report.pdf"));
+        assert!(upload.remote_dir().starts_with("/store/staging/"));
+        assert_ne!(upload.remote_dir(), "/store/staging");
+        assert_ne!(upload.remote_dir(), second.uploads[0].remote_dir());
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
