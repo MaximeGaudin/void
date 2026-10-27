@@ -168,6 +168,12 @@ impl SshTarget {
         } else {
             remote_path.to_string()
         };
+        // Legacy scp runs the remote path through a shell (needs quoting), SFTP-mode
+        // scp (OpenSSH 9+ default) takes it literally (quotes become part of the
+        // name). No quoting works for both, so paths that need it go through ssh.
+        if shell_escape_path(&resolved_remote) != resolved_remote {
+            return self.upload_via_ssh_cat(local_path, &resolved_remote);
+        }
         let remote_spec = format!(
             "{}:{}",
             self.destination(),
@@ -216,6 +222,31 @@ impl SshTarget {
         );
         self.fetch_via_ssh_cat(remote_path, local_path)
             .map_err(|ssh_err| ConfigError::Remote(format!("{scp_err}; ssh fallback: {ssh_err}")))
+    }
+
+    /// Upload by streaming the file into `cat` on the host, where we control the quoting.
+    fn upload_via_ssh_cat(&self, local_path: &Path, remote_path: &str) -> Result<(), ConfigError> {
+        let file = std::fs::File::open(local_path).map_err(|e| {
+            ConfigError::Remote(format!("ssh upload: open {}: {e}", local_path.display()))
+        })?;
+        let escaped = shell_escape_path(remote_path);
+        let mut cmd = Command::new("ssh");
+        cmd.args(self.base_ssh_args());
+        cmd.arg(self.destination());
+        // scp would copy the source mode; keep staged files owner-only instead.
+        cmd.arg(format!("umask 077; cat > {escaped}"));
+        cmd.stdin(file);
+        let output = cmd
+            .output()
+            .map_err(|e| ConfigError::Remote(format!("ssh upload failed: {e}")))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        Err(ConfigError::Remote(format!(
+            "ssh upload failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )))
     }
 
     /// Fallback when `scp` auth fails but `ssh` works (same keys, different subsystem).

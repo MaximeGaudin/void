@@ -376,11 +376,7 @@ impl ResolvedContext {
 
         let mut transfer = proxy_files::plan_proxy_file_transfer(&remote.remote_store_path, args)?;
         proxy_files::resolve_staged_paths_for_remote(&remote.ssh, &mut transfer)?;
-        proxy_files::execute_proxy_uploads(
-            &remote.ssh,
-            &remote.remote_store_path,
-            &transfer.uploads,
-        )?;
+        proxy_files::execute_proxy_uploads(&remote.ssh, &transfer.uploads)?;
         if transfer.uploads.is_empty() && transfer.download.is_some() {
             proxy_files::ensure_remote_staging(&remote.ssh, &remote.remote_store_path)?;
         }
@@ -447,7 +443,12 @@ impl ResolvedContext {
             Ok(exit_code)
         };
 
-        proxy_files::cleanup_remote_staging(&remote.ssh, &cleanup_paths);
+        let cleanup_dirs: Vec<String> = transfer
+            .uploads
+            .iter()
+            .map(|upload| upload.remote_dir().to_string())
+            .collect();
+        proxy_files::cleanup_remote_staging(&remote.ssh, &cleanup_paths, &cleanup_dirs);
         result
     }
 

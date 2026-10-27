@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Slack** — `void reply --in-thread` and scheduled replies (`--at`) to a message that is already inside a thread now post under the thread's parent. They used to pass the reply's own `ts` as `thread_ts`, which Slack's API says never to do.
+- **Remote store** — `--file` attachments keep their original name. They used to reach recipients as `<uuid>-report.pdf` because the staging UUID was part of the staged filename.
+- **Remote store** — `--file` uploads work for names with spaces or non-ASCII characters (`my file.pdf`, `devis_signé.pdf`). OpenSSH 9+ `scp` kept the shell quotes as part of the remote path and failed with `No such file or directory`.
 
 ## [0.15.1] - 2026-10-27
 
