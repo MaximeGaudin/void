@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Dependencies** — bump `rustls` to 0.23.46 and `ctutils` to 0.4.6 (RUSTSEC-2026-0346, RUSTSEC-2026-0347, RUSTSEC-2026-0385 and related rustls advisories), plus the pending minor/patch updates (tokio, reqwest, rmcp 3.8, …). The MCP server now uses rmcp's `ServerConfig` instead of the deprecated `ServerInfo` alias.
+
 ## [0.15.0] - 2026-09-29
 
 ### Added
