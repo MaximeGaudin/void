@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Withings** — new read-only connector for [Withings](https://developer.withings.com) health data. Body measurements (weight, body composition, blood pressure), daily activity, sleep, workouts, heart/ECG recordings and device battery levels each become a conversation, one message per measurement group, day, night, session, recording or device, searchable alongside messages. Configure with `client_id`, `client_secret`, `streams` (default: all six) and `backfill_days` (default 365); `void setup` runs the OAuth flow. Withings rotates the refresh token on every refresh and kills the old one, so tokens live in `<store>/<connection>-withings-token.json` (owner-only), the file is re-read before every call, and refreshes are serialized on a lock file (`flock` on Unix, an exclusive open on Windows) so the sync daemon and a CLI command cannot invalidate each other's grant.
+
 ### Fixed
 
 - **Gmail** — `void gmail draft create` and `void gmail draft update` accept several attachments: repeat `--file` (`--file a.pdf --file b.png`). A second `--file` used to be rejected by the argument parser. Remote mode stages every file.
