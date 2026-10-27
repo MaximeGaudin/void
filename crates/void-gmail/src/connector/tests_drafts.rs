@@ -86,7 +86,7 @@ async fn update_draft_keeps_thread_reply_headers_and_attachments() {
     mount_attachment(&server).await;
 
     let api = GmailApiClient::with_base_url("test-token", &server.uri());
-    let draft = update_draft_with_api(&api, "r-1", to_alice(), "Re: Hello", "New", None, None)
+    let draft = update_draft_with_api(&api, "r-1", to_alice(), "Re: Hello", "New", None, &[])
         .await
         .unwrap();
     assert_eq!(draft.id.as_deref(), Some("r-1"));
@@ -117,7 +117,7 @@ async fn update_draft_with_file_replaces_attachments_but_keeps_thread() {
         "Re: Hello",
         "With screenshot",
         None,
-        Some(&file),
+        &[&file],
     )
     .await
     .unwrap();
@@ -127,6 +127,98 @@ async fn update_draft_with_file_replaces_attachments_but_keeps_thread() {
     assert!(raw.contains("In-Reply-To: <orig@mail.example.com>\r\n"));
     assert!(raw.contains("filename=\"shot.png\""));
     assert!(!raw.contains("notes.txt"));
+}
+
+#[tokio::test]
+async fn update_draft_with_several_files_attaches_all_of_them() {
+    let server = MockServer::start().await;
+    mount_existing_reply_draft(&server).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let pdf = dir.path().join("invoice.pdf");
+    let png = dir.path().join("shot.png");
+    std::fs::write(&pdf, b"pdf").unwrap();
+    std::fs::write(&png, b"png").unwrap();
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    update_draft_with_api(
+        &api,
+        "r-1",
+        to_alice(),
+        "Re: Hello",
+        "Two files",
+        None,
+        &[&pdf, &png],
+    )
+    .await
+    .unwrap();
+
+    let (_, raw) = sent_raw(&server, "PUT").await;
+    let pdf_at = raw.find("filename=\"invoice.pdf\"").expect("pdf attached");
+    let png_at = raw.find("filename=\"shot.png\"").expect("png attached");
+    assert!(pdf_at < png_at, "attachments keep the --file order");
+    assert!(!raw.contains("notes.txt"));
+}
+
+#[tokio::test]
+async fn create_draft_with_several_files_attaches_all_of_them() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "d1" })))
+        .mount(&server)
+        .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.txt");
+    let b = dir.path().join("b.csv");
+    std::fs::write(&a, b"a").unwrap();
+    std::fs::write(&b, b"b").unwrap();
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    create_draft_with_api(
+        &api,
+        "me@example.com",
+        DraftRecipients {
+            to: Some("alice@example.com"),
+            cc: None,
+            bcc: None,
+        },
+        "Files",
+        "See attached",
+        None,
+        &[&a, &b],
+    )
+    .await
+    .unwrap();
+
+    let (_, raw) = sent_raw(&server, "POST").await;
+    assert!(raw.contains("filename=\"a.txt\""));
+    assert!(raw.contains("filename=\"b.csv\""));
+}
+
+#[tokio::test]
+async fn create_draft_with_missing_file_fails_before_any_request() {
+    let server = MockServer::start().await;
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let err = create_draft_with_api(
+        &api,
+        "me@example.com",
+        DraftRecipients {
+            to: Some("alice@example.com"),
+            cc: None,
+            bcc: None,
+        },
+        "Files",
+        "Body",
+        None,
+        &[std::path::Path::new("/nonexistent/void-missing.pdf")],
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("void-missing.pdf"));
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -154,7 +246,7 @@ async fn update_draft_reply_to_retargets_thread_and_headers() {
         "Re: Other",
         "Body",
         Some("other"),
-        None,
+        &[],
     )
     .await
     .unwrap();
@@ -199,7 +291,7 @@ async fn create_draft_reply_headers_use_message_id_header() {
         "Re: Hello",
         "Thanks",
         Some("msg1"),
-        None,
+        &[],
     )
     .await
     .unwrap();
