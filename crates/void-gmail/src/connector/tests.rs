@@ -1586,7 +1586,7 @@ async fn create_draft_derives_thread_id_from_reply_to_message() {
         "Re: Hello",
         "Thanks!",
         Some("msg1"),
-        None,
+        &[],
     )
     .await
     .unwrap();
@@ -1638,7 +1638,7 @@ async fn create_draft_derives_thread_id_and_recipients_together() {
         "Re: Chat",
         "Got it.",
         Some("msg2"),
-        None,
+        &[],
     )
     .await
     .unwrap();
@@ -1663,7 +1663,7 @@ async fn create_draft_errors_without_to_and_reply_to() {
         "Subject",
         "Body",
         None,
-        None,
+        &[],
     )
     .await;
 

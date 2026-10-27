@@ -333,6 +333,46 @@ mod tests {
     }
 
     #[test]
+    fn plan_rewrites_each_repeated_file_for_upload() {
+        let dir = std::env::temp_dir().join(format!("void-proxy-multi-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.pdf");
+        let b = dir.join("b.png");
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+
+        let plan = plan_proxy_file_transfer(
+            "~/.local/share/void",
+            &[
+                "gmail".into(),
+                "draft".into(),
+                "create".into(),
+                "--file".into(),
+                a.to_string_lossy().into_owned(),
+                "--file".into(),
+                b.to_string_lossy().into_owned(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(plan.uploads.len(), 2);
+        assert_eq!(plan.uploads[0].local_path, a);
+        assert_eq!(plan.uploads[1].local_path, b);
+        let file_args: Vec<&String> = plan
+            .args
+            .windows(2)
+            .filter(|w| w[0] == "--file")
+            .map(|w| &w[1])
+            .collect();
+        assert_eq!(
+            file_args,
+            [&plan.uploads[0].remote_path, &plan.uploads[1].remote_path]
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn plan_rewrites_out_for_download() {
         let plan = plan_proxy_file_transfer(
             "~/.local/share/void",
