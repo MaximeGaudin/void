@@ -2,7 +2,7 @@
 use sysinfo::Signal;
 use sysinfo::{Pid, System};
 use tracing::info;
-use void_core::config::{self, VoidConfig};
+use void_core::config::VoidConfig;
 
 use super::lock::{parse_lock_pid, refresh_process_exists};
 
@@ -112,7 +112,9 @@ pub(super) fn clear_lock_for_restart(lock_path: &std::path::Path) -> anyhow::Res
 pub fn daemonize(args: &super::SyncArgs, verbose: bool) -> anyhow::Result<()> {
     use std::process::Stdio;
 
-    let config_path = config::default_config_path();
+    // Honor the global `--config` (the child below runs from the store dir, so
+    // the path must be absolute to survive the cwd change).
+    let config_path = std::path::absolute(crate::context::client_config_path())?;
     let _cfg = VoidConfig::load(&config_path).map_err(|e| {
         anyhow::anyhow!(
             "Cannot load config from {}: {e}\nRun `void setup` first.",
@@ -153,6 +155,7 @@ pub fn daemonize(args: &super::SyncArgs, verbose: bool) -> anyhow::Result<()> {
     if verbose {
         cmd.arg("--verbose");
     }
+    cmd.arg("--config").arg(&config_path);
     cmd.arg("sync").arg("--daemon-inner");
     if let Some(ref connectors) = args.connectors {
         cmd.arg("--connectors").arg(connectors);

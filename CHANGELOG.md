@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sync** — `void --config <path> sync --daemon` (and the setup wizard's "Start syncing now?") now uses `<path>`: the daemon loaded the default config and spawned its child without `--config`, so it failed or synced the wrong profile.
 - **Gmail** — the startup INBOX refresh renews the access token on `401` and retries the message. A pass longer than the token's 1h lifetime (large inbox, rate-limited) used to skip every later message with `401 Unauthorized`.
 - **Gmail** — `void gmail draft create` and `void gmail draft update` accept several attachments: repeat `--file` (`--file a.pdf --file b.png`). A second `--file` used to be rejected by the argument parser. Remote mode stages every file.
 
