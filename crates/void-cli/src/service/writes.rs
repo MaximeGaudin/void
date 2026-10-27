@@ -215,13 +215,11 @@ pub async fn reply(
     let connector_type = parse_connector_type(&connection.connector_type.to_string())
         .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
 
-    let target_external_id = if params.in_thread && msg.connector == "slack" {
-        slack_thread_root_ts(&msg)
-    } else {
-        msg.external_id.as_str()
-    };
-    let reply_id =
-        connectors::build_reply_id(connector_type, &conv.external_id, target_external_id);
+    let reply_id = connectors::build_reply_id(
+        connector_type,
+        &conv.external_id,
+        reply_target_external_id(&msg, connector_type, params.in_thread),
+    );
 
     let content = if let Some(path) = params.file {
         MessageContent::File {
@@ -259,6 +257,22 @@ pub async fn reply(
         conn.reply(&reply_id, content, params.in_thread).await?
     };
     Ok(OutboundResult::immediate(sent_id))
+}
+
+/// External id an immediate reply targets: the thread root for a threaded
+/// Slack reply, the message itself otherwise.
+fn reply_target_external_id(
+    msg: &void_core::models::Message,
+    connector_type: void_core::models::ConnectorType,
+    in_thread: bool,
+) -> &str {
+    if in_thread
+        && connector_type == void_core::models::ConnectorType::from_static(void_slack::CONNECTOR_ID)
+    {
+        slack_thread_root_ts(msg)
+    } else {
+        &msg.external_id
+    }
 }
 
 /// `ts` of the thread a Slack reply should land in.
@@ -842,6 +856,27 @@ mod tests {
         let mut msg = stub_message("test-slack-1700000005.000200", "c1", "1700000005.000200");
         msg.reply_to_id = Some("other-1700000000.000100".into());
         assert_eq!(slack_thread_root_ts(&msg), "1700000005.000200");
+    }
+
+    #[test]
+    fn reply_target_external_id_uses_thread_root_only_for_slack_in_thread() {
+        let mut msg = stub_message("test-slack-1700000005.000200", "c1", "1700000005.000200");
+        msg.reply_to_id = Some("test-slack-1700000000.000100".into());
+        let slack = ConnectorType::from_static(void_slack::CONNECTOR_ID);
+        let whatsapp = ConnectorType::from_static("whatsapp");
+
+        assert_eq!(
+            reply_target_external_id(&msg, slack, true),
+            "1700000000.000100"
+        );
+        assert_eq!(
+            reply_target_external_id(&msg, slack, false),
+            "1700000005.000200"
+        );
+        assert_eq!(
+            reply_target_external_id(&msg, whatsapp, true),
+            "1700000005.000200"
+        );
     }
 
     #[test]
