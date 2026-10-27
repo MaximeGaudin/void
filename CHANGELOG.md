@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Slack** — `void reply --in-thread` and scheduled replies (`--at`) to a message that is already inside a thread now post under the thread's parent. They used to pass the reply's own `ts` as `thread_ts`, which Slack's API says never to do.
+
 ## [0.15.1] - 2026-10-27
 
 ### Changed
