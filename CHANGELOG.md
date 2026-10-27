@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Gmail** — the startup INBOX refresh renews the access token on `401` and retries the message. A pass longer than the token's 1h lifetime (large inbox, rate-limited) used to skip every later message with `401 Unauthorized`.
+- **Gmail** — `void gmail draft create` and `void gmail draft update` accept several attachments: repeat `--file` (`--file a.pdf --file b.png`). A second `--file` used to be rejected by the argument parser. Remote mode stages every file.
+
+### Security
+
+- **Dependencies** — bump `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-roots` / `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `ctutils` 0.4.6, `tokio` 1.54.1 and `event-listener` 5.4.2 to fix RUSTSEC-2026-0338/0339/0340/0341/0342 (quinn-proto), RUSTSEC-2026-0346/0347/0348/0349 (rustls), RUSTSEC-2026-0381/0383 (distrusted emSign roots), RUSTSEC-2026-0382 (distrusted intermediates), RUSTSEC-2026-0385 (ctutils) and the unsound RUSTSEC-2026-0221 / RUSTSEC-2026-0386. `cargo audit` and `cargo deny check` are clean.
 
 ## [0.15.0] - 2026-09-29
 
