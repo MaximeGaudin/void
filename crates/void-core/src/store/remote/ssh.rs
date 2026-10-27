@@ -226,12 +226,15 @@ impl SshTarget {
 
     /// Upload by streaming the file into `cat` on the host, where we control the quoting.
     fn upload_via_ssh_cat(&self, local_path: &Path, remote_path: &str) -> Result<(), ConfigError> {
-        let file = std::fs::File::open(local_path)?;
+        let file = std::fs::File::open(local_path).map_err(|e| {
+            ConfigError::Remote(format!("ssh upload: open {}: {e}", local_path.display()))
+        })?;
         let escaped = shell_escape_path(remote_path);
         let mut cmd = Command::new("ssh");
         cmd.args(self.base_ssh_args());
         cmd.arg(self.destination());
-        cmd.arg(format!("cat > {escaped}"));
+        // scp would copy the source mode; keep staged files owner-only instead.
+        cmd.arg(format!("umask 077; cat > {escaped}"));
         cmd.stdin(file);
         let output = cmd
             .output()

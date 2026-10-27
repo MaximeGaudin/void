@@ -215,6 +215,59 @@ mod fake_ssh_tests {
     }
 
     #[test]
+    fn scp_to_ssh_upload_surfaces_remote_error() {
+        let dir = tempfile::tempdir().unwrap();
+        write_script(
+            dir.path(),
+            "ssh",
+            "#!/bin/sh\necho 'disk full' 1>&2\nexit 1\n",
+        );
+        let local = dir.path().join("my file.pdf");
+        std::fs::write(&local, b"x").unwrap();
+
+        let err = with_path_prefix(dir.path(), || {
+            target(22)
+                .scp_to(&local, "/remote/my file.pdf")
+                .unwrap_err()
+        });
+        let msg = err.to_string();
+        assert!(msg.contains("ssh upload failed"), "msg: {msg}");
+        assert!(msg.contains("disk full"), "stderr surfaced: {msg}");
+    }
+
+    #[test]
+    fn cleanup_remote_staging_removes_file_then_its_dir() {
+        use crate::store::proxy_files::cleanup_remote_staging;
+
+        let dir = tempfile::tempdir().unwrap();
+        write_script(
+            dir.path(),
+            "ssh",
+            "#!/bin/sh\nfor last; do :; done\nexec sh -c \"$last\"\n",
+        );
+        let staging = dir.path().join("staging");
+        let upload_dir = staging.join("u1");
+        let other_dir = staging.join("u2");
+        std::fs::create_dir_all(&upload_dir).unwrap();
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let file = upload_dir.join("my file.pdf");
+        std::fs::write(&file, b"x").unwrap();
+        std::fs::write(other_dir.join("b.pdf"), b"y").unwrap();
+
+        with_path_prefix(dir.path(), || {
+            cleanup_remote_staging(
+                &target(22),
+                &[file.to_string_lossy().into_owned()],
+                &[upload_dir.to_string_lossy().into_owned()],
+            )
+        });
+
+        assert!(!upload_dir.exists(), "own upload dir removed");
+        assert!(other_dir.join("b.pdf").exists(), "sibling upload untouched");
+        assert!(staging.exists(), "staging root kept");
+    }
+
+    #[test]
     fn scp_to_surfaces_error_when_fake_exits_nonzero() {
         let dir = tempfile::tempdir().unwrap();
         write_script(
