@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Gmail** — `void gmail draft create` and `void gmail draft update` accept several attachments: repeat `--file` (`--file a.pdf --file b.png`). A second `--file` used to be rejected by the argument parser. Remote mode stages every file.
+
 ## [0.15.0] - 2026-09-29
 
 ### Added

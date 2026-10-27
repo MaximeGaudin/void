@@ -97,8 +97,8 @@ Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) acc
 | `void gmail label <id> --add <labels> --remove <labels>` | Modify labels on a thread |
 | `void gmail batch-modify <ids...> --add <labels> --remove <labels>` | Batch-modify labels on multiple messages |
 | `void gmail drafts` | List drafts. `--max <N>` |
-| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--cc`, `--bcc`, `--file` to attach, `--reply-to <id>` to draft a reply (folds original From/To/Cc into `To` when `--to` is omitted; `--cc` / `--bcc` are additive), `--signature` / `--signature-from <email>` |
-| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--cc` / `--bcc` / `--signature` / `--signature-from` flags as create. Keeps the draft's thread and `In-Reply-To` / `References` (`--reply-to <id>` re-targets it) and its existing attachments; `--file` replaces them |
+| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--cc`, `--bcc`, `--file` to attach (repeat for several files), `--reply-to <id>` to draft a reply (folds original From/To/Cc into `To` when `--to` is omitted; `--cc` / `--bcc` are additive), `--signature` / `--signature-from <email>` |
+| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--cc` / `--bcc` / `--signature` / `--signature-from` flags as create. Keeps the draft's thread and `In-Reply-To` / `References` (`--reply-to <id>` re-targets it) and its existing attachments; `--file` (repeatable) replaces them |
 | `void gmail draft delete <id>` | Delete a draft |
 | `void gmail attachment <id> <attachment-id> --out <path>` | Download an attachment |
 | `void gmail forward <id> --to <recipient>` | Forward a message. `--cc`, `--bcc`, `--comment`, `--signature` / `--signature-from <email>` (signature between comment and quote) |
