@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-27
+
+### Changed
+
+- **Dependencies** — updated `libheif-rs` to 3.0 (optional `heic` feature), `sha2` to 0.11, and the minor/patch group (tokio, reqwest, serde_json, clap, uuid, rmcp, …).
+
 ### Fixed
 
 - **Sync** — `void --config <path> sync --daemon` (and the setup wizard's "Start syncing now?") now uses `<path>`: the daemon loaded the default config and spawned its child without `--config`, so it failed or synced the wrong profile.
