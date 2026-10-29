@@ -19,7 +19,7 @@ chrono = { workspace = true }
 serde = { workspace = true }
 grammers-client = "0.10"
 grammers-mtsender = "0.10"
-grammers-session = { version = "0.10", default-features = false }
+grammers-session = { version = "0.11", default-features = false }
 grammers-tl-types = "0.10"
 qr2term = "0.3"
 base64 = { workspace = true }
