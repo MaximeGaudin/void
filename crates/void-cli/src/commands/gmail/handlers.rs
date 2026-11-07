@@ -194,27 +194,56 @@ async fn run_batch_modify(args: &BatchModifyArgs) -> anyhow::Result<()> {
 
 async fn run_drafts(args: &DraftsArgs) -> anyhow::Result<()> {
     let connector = build_gmail_connector(args.connection.as_deref())?;
-    let drafts = connector.list_drafts(args.max).await?;
+    let query = args.query.as_deref();
 
-    let items: Vec<serde_json::Value> = drafts
-        .iter()
-        .map(|d| {
-            let msg = d.message.as_ref();
-            serde_json::json!({
-                "draftId": d.id,
-                "messageId": msg.and_then(|m| m.id.as_deref()),
-                "threadId": msg.and_then(|m| m.thread_id.as_deref()),
-                "to": msg.and_then(|m| m.get_header("To")),
-                "subject": msg.and_then(|m| m.get_header("Subject")),
-                "snippet": msg.and_then(|m| m.snippet.clone()),
+    let items: Vec<serde_json::Value> = if args.ids_only {
+        connector
+            .list_draft_refs(args.max, query)
+            .await?
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "draftId": r.id,
+                    "messageId": r.message.as_ref().map(|m| m.id.as_str()),
+                    "threadId": r.message.as_ref().map(|m| m.thread_id.as_str()),
+                })
             })
-        })
-        .collect();
+            .collect()
+    } else {
+        connector
+            .list_drafts(args.max, query)
+            .await?
+            .iter()
+            .map(|d| {
+                let msg = d.message.as_ref();
+                serde_json::json!({
+                    "draftId": d.id,
+                    "messageId": msg.and_then(|m| m.id.as_deref()),
+                    "threadId": msg.and_then(|m| m.thread_id.as_deref()),
+                    "to": msg.and_then(|m| m.get_header("To")),
+                    "subject": msg.and_then(|m| m.get_header("Subject")),
+                    "snippet": msg.and_then(|m| m.snippet.clone()),
+                })
+            })
+            .collect()
+    };
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({ "data": items, "error": null }))?
     );
     Ok(())
+}
+
+/// `{draftId, messageId, threadId}` for create/update: the message and thread
+/// ids are what a caller needs next (open the draft in Gmail, find it in a
+/// thread), and Gmail already returns them in the same response.
+fn draft_ids_json(draft: &void_gmail::api::GmailDraft) -> serde_json::Value {
+    let msg = draft.message.as_ref();
+    serde_json::json!({
+        "draftId": draft.id.as_deref().unwrap_or("?"),
+        "messageId": msg.and_then(|m| m.id.as_deref()),
+        "threadId": msg.and_then(|m| m.thread_id.as_deref()),
+    })
 }
 
 async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
@@ -241,11 +270,10 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                 )
                 .await?;
 
-            let draft_id = draft.id.as_deref().unwrap_or("?");
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
-                    "data": { "draftId": draft_id },
+                    "data": draft_ids_json(&draft),
                     "error": null,
                 }))?
             );
@@ -274,12 +302,10 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                 )
                 .await?;
 
-            let draft_id = draft.id.as_deref().unwrap_or("?");
-            let thread_id = draft.message.as_ref().and_then(|m| m.thread_id.as_deref());
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
-                    "data": { "draftId": draft_id, "threadId": thread_id },
+                    "data": draft_ids_json(&draft),
                     "error": null,
                 }))?
             );

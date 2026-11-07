@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Gmail** — `void gmail drafts --ids-only` lists `draftId` / `messageId` / `threadId` from the list call alone, with no per-draft request (200 drafts in ~0.5 s instead of minutes). `--query <q>` filters drafts with Gmail search syntax (`to:alice`, `subject:invoice`).
+- **Gmail** — `void gmail draft create` and `void gmail draft update` also return the draft's `messageId` and `threadId`, so callers can open the draft or match it to its thread without listing drafts.
+
+### Changed
+
+- **Gmail** — `void gmail drafts` fetches drafts with `format=metadata` (To, Subject, snippet) several at a time instead of one `format=full` request after another, and paginates past Gmail's 500-per-page limit. Throughput is still bounded by the shared Gmail rate limiter. A draft whose details fail to load is listed with its ids instead of being dropped.
+
 ## [0.15.2] - 2026-10-27
 
 ### Fixed

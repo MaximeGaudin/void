@@ -105,9 +105,16 @@ pub struct BatchModifyArgs {
 
 #[derive(Debug, Args)]
 pub struct DraftsArgs {
-    /// Max results
+    /// Max results (paginates past Gmail's 500-per-page limit)
     #[arg(long, default_value = "20")]
     pub max: u32,
+    /// Only drafts matching this Gmail query (e.g. "to:alice", "subject:invoice")
+    #[arg(long, short = 'q')]
+    pub query: Option<String>,
+    /// Only draftId / messageId / threadId: one list call, no per-draft fetch.
+    /// Fastest way to know which threads already carry a draft.
+    #[arg(long)]
+    pub ids_only: bool,
     /// Gmail connection to use
     #[arg(long)]
     pub connection: Option<String>,
