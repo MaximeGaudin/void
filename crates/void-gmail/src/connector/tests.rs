@@ -1687,6 +1687,7 @@ fn seed_gmail_store(db: &Database, body: &str) {
     .unwrap();
     let mut metadata = serde_json::Map::new();
     metadata.insert("subject".into(), serde_json::json!("Hello"));
+    metadata.insert("to".into(), serde_json::json!("me@example.com"));
     db.upsert_message(&Message {
         id: "c1-m1".into(),
         conversation_id: "c1".into(),
@@ -1811,4 +1812,108 @@ async fn search_live_skips_store() {
     let msgs = search_with_api(&api, None, "in:inbox", 10).await.unwrap();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].get_header("Subject").as_deref(), Some("Live"));
+}
+
+// ---------------------------------------------------------------------------
+// Recipients (#119)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn sync_stores_recipients_and_search_serves_them_from_store() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/history"))
+        .respond_with(history_response(serde_json::json!({
+            "messagesAdded": [{"message": {"id": "r1", "threadId": "t1"}}]
+        })))
+        .mount(&server)
+        .await;
+    let mut msg = full_inbox_message("r1");
+    msg["payload"]["headers"] = serde_json::json!([
+        {"name": "From", "value": "Remi <remi@example.com>"},
+        {"name": "To", "value": "Maxime <me@example.com>, David <david@example.com>"},
+        {"name": "Cc", "value": "Guillaume <g@example.com>, Jihad <j@example.com>"},
+        {"name": "Subject", "value": "Subj"}
+    ]);
+    // HTML marks the stored body as complete, so the later search is served
+    // from the store.
+    msg["payload"]["mimeType"] = serde_json::json!("text/html");
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/r1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(msg))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let db = Database::open_in_memory().unwrap();
+    run_incremental(&server, &db).await;
+
+    let stored = db.get_message("test-gmail-r1").unwrap().expect("stored");
+    let meta = stored.metadata.expect("metadata");
+    assert_eq!(
+        meta["to"],
+        "Maxime <me@example.com>, David <david@example.com>"
+    );
+    assert_eq!(
+        meta["cc"],
+        "Guillaume <g@example.com>, Jihad <j@example.com>"
+    );
+
+    let gm = super::store::gmail_message_from_store(
+        &db.get_message("test-gmail-r1").unwrap().unwrap(),
+        "t1",
+    );
+    assert_eq!(
+        gm.get_header("Cc").as_deref(),
+        Some("Guillaume <g@example.com>, Jihad <j@example.com>")
+    );
+    assert_eq!(
+        build_reply_all_recipients(&gm, "me@example.com"),
+        "Remi <remi@example.com>, David <david@example.com>, Guillaume <g@example.com>, Jihad <j@example.com>"
+    );
+}
+
+#[tokio::test]
+async fn search_fetches_when_store_row_predates_recipients() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .respond_with(list_one_message_mock())
+        .mount(&server)
+        .await;
+    let mut live = api_full_message();
+    live["payload"]["headers"] = serde_json::json!([
+        {"name": "From", "value": "sender@example.com"},
+        {"name": "To", "value": "me@example.com, other@example.com"},
+        {"name": "Cc", "value": "cc@example.com"},
+        {"name": "Subject", "value": "Live"}
+    ]);
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(live))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let db = Database::open_in_memory().unwrap();
+    seed_gmail_store(&db, &"x".repeat(200));
+    // Simulate a row synced before recipients were stored.
+    let mut row = db
+        .find_message_by_connector_external_id(crate::CONNECTOR_ID, "m1")
+        .unwrap()
+        .unwrap();
+    row.metadata
+        .as_mut()
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("to");
+    db.upsert_message(&row).unwrap();
+
+    let msgs = search_with_api(&api, Some(&db), "in:inbox", 10)
+        .await
+        .unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].get_header("Cc").as_deref(), Some("cc@example.com"));
 }
