@@ -28,6 +28,8 @@ pub(super) async fn run_create(args: &CreateEventArgs) -> anyhow::Result<()> {
         end: &end,
         meet: args.meet,
         attendees: args.attendees.as_deref(),
+        visibility: args.visibility.as_deref(),
+        transparency: args.transparency.as_deref(),
     };
     let event = connector.create_event(&params, &db).await?;
 
@@ -95,6 +97,8 @@ pub(super) async fn run_update(args: &UpdateEventArgs) -> anyhow::Result<()> {
         start: start.as_deref(),
         end: end.as_deref(),
         send_updates: Some("all"),
+        visibility: args.visibility.as_deref(),
+        transparency: args.transparency.as_deref(),
     };
     let event = connector.update_event(&params, &db).await?;
 

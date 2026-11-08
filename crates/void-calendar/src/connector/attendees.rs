@@ -192,6 +192,8 @@ mod tests {
             },
             attendees,
             conference_data: None,
+            visibility: None,
+            transparency: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();

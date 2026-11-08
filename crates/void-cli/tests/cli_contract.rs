@@ -184,3 +184,24 @@ fn gmail_search_and_thread_help_include_live() {
         .success()
         .stdout(predicate::str::contains("--live"));
 }
+
+#[test]
+fn calendar_create_and_update_help_include_visibility() {
+    for sub in ["create", "update"] {
+        void()
+            .args(["calendar", sub, "--help"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("--visibility"))
+            .stdout(predicate::str::contains("--transparency"));
+    }
+}
+
+#[test]
+fn calendar_update_rejects_unknown_visibility() {
+    void()
+        .args(["calendar", "update", "ev1", "--visibility", "secret"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("private"));
+}
