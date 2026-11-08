@@ -2,8 +2,8 @@
 # Prevents "works locally, fails in CI" surprises caused by clippy lints that
 # get upgraded or added between stable releases.
 #
-# Workspace MSRV is 1.95 (see root Cargo.toml rust-version). `stable` must be
-# >= 1.95 for local builds and ./scripts/check.sh (e.g. sysinfo 0.39).
+# Workspace MSRV is 1.99 (see root Cargo.toml rust-version). `stable` must be
+# >= 1.99 for local builds and ./scripts/check.sh (e.g. html-to-markdown-rs 3.21).
 #
 # To upgrade: run `rustup update stable` (or your package manager's rust update),
 # then bump the channel below if you want to pin a specific version (e.g.
