@@ -63,7 +63,7 @@ pub(crate) fn build_response_attendees(
 }
 
 /// Derive the calendar account owner email from a connection ID.
-/// Convention: `{email}-calendar` (e.g. `mgaudin@gladia.io-calendar`).
+/// Convention: `{email}-calendar` (e.g. `owner@example.com-calendar`).
 pub(crate) fn connection_owner_email(connection_id: &str) -> Option<String> {
     let email = connection_id.strip_suffix("-calendar")?;
     if email.contains('@') {
@@ -114,8 +114,8 @@ mod tests {
     #[test]
     fn connection_owner_email_from_standard_id() {
         assert_eq!(
-            connection_owner_email("mgaudin@gladia.io-calendar").as_deref(),
-            Some("mgaudin@gladia.io")
+            connection_owner_email("owner@example.com-calendar").as_deref(),
+            Some("owner@example.com")
         );
     }
 
@@ -126,35 +126,35 @@ mod tests {
 
     #[test]
     fn connection_owner_email_without_suffix() {
-        assert_eq!(connection_owner_email("mgaudin@gladia.io"), None);
+        assert_eq!(connection_owner_email("owner@example.com"), None);
     }
 
     #[test]
     fn build_attendee_list_adds_owner_when_missing() {
         let list =
-            build_attendee_list("mgaudin@gladia.io-calendar", Some("alice@example.com")).unwrap();
+            build_attendee_list("owner@example.com-calendar", Some("alice@example.com")).unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].email, "mgaudin@gladia.io");
+        assert_eq!(list[0].email, "owner@example.com");
         assert_eq!(list[1].email, "alice@example.com");
     }
 
     #[test]
     fn build_attendee_list_does_not_duplicate_owner() {
         let list = build_attendee_list(
-            "mgaudin@gladia.io-calendar",
-            Some("mgaudin@gladia.io,alice@example.com"),
+            "owner@example.com-calendar",
+            Some("owner@example.com,alice@example.com"),
         )
         .unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].email, "mgaudin@gladia.io");
+        assert_eq!(list[0].email, "owner@example.com");
         assert_eq!(list[1].email, "alice@example.com");
     }
 
     #[test]
     fn build_attendee_list_case_insensitive_dedup() {
         let list = build_attendee_list(
-            "mgaudin@gladia.io-calendar",
-            Some("MGAUDIN@gladia.io,alice@example.com"),
+            "owner@example.com-calendar",
+            Some("OWNER@example.com,alice@example.com"),
         )
         .unwrap();
         assert_eq!(list.len(), 2);
@@ -162,8 +162,8 @@ mod tests {
 
     #[test]
     fn build_attendee_list_none_for_work_block() {
-        assert!(build_attendee_list("mgaudin@gladia.io-calendar", None).is_none());
-        assert!(build_attendee_list("mgaudin@gladia.io-calendar", Some("")).is_none());
+        assert!(build_attendee_list("owner@example.com-calendar", None).is_none());
+        assert!(build_attendee_list("owner@example.com-calendar", Some("")).is_none());
     }
 
     #[test]
@@ -178,7 +178,7 @@ mod tests {
         use crate::api::{EventDateTimeRequest, InsertEventRequest};
 
         let attendees =
-            build_attendee_list("mgaudin@gladia.io-calendar", Some("alice@example.com"));
+            build_attendee_list("owner@example.com-calendar", Some("alice@example.com"));
         let request = InsertEventRequest {
             summary: "Team Sync".into(),
             description: None,
@@ -203,6 +203,6 @@ mod tests {
             .iter()
             .map(|a| a["email"].as_str().unwrap())
             .collect();
-        assert_eq!(emails, ["mgaudin@gladia.io", "alice@example.com"]);
+        assert_eq!(emails, ["owner@example.com", "alice@example.com"]);
     }
 }

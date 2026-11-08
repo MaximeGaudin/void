@@ -344,7 +344,7 @@ mod tests {
             "slack",
             "saved",
             "--connection",
-            "slack-gladia",
+            "slack-acme",
             "-n",
             "10",
             "--page",
@@ -353,7 +353,7 @@ mod tests {
         match cli.command {
             Some(Command::Slack(ref args)) => match &args.command {
                 commands::slack::SlackCommand::Saved(saved) => {
-                    assert_eq!(saved.connection.as_deref(), Some("slack-gladia"));
+                    assert_eq!(saved.connection.as_deref(), Some("slack-acme"));
                     assert_eq!(saved.size, 10);
                     assert_eq!(saved.page, 2);
                 }
@@ -493,14 +493,14 @@ mod tests {
             "void",
             "slack",
             "edit",
-            "gladiaio-1789613206.915689",
+            "acme-1789613206.915689",
             "--message",
             "updated text",
         ]);
         match cli.command {
             Some(Command::Slack(ref s)) => match &s.command {
                 commands::slack::SlackCommand::Edit(e) => {
-                    assert_eq!(e.message_id, "gladiaio-1789613206.915689");
+                    assert_eq!(e.message_id, "acme-1789613206.915689");
                     assert_eq!(e.message, "updated text");
                     assert!(e.connection.is_none());
                 }
@@ -520,12 +520,12 @@ mod tests {
             "--message",
             "hi",
             "--connection",
-            "gladiaio",
+            "acme",
         ]);
         match cli.command {
             Some(Command::Slack(ref s)) => match &s.command {
                 commands::slack::SlackCommand::Edit(e) => {
-                    assert_eq!(e.connection.as_deref(), Some("gladiaio"));
+                    assert_eq!(e.connection.as_deref(), Some("acme"));
                 }
                 other => panic!("expected Edit, got {other:?}"),
             },
