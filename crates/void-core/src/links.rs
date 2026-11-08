@@ -13,7 +13,7 @@
 pub struct SlackLink {
     /// Workspace subdomain — informational only, do not use for DB keys.
     pub workspace: String,
-    /// Slack channel / conversation ID (e.g. `D09R63ASNEL`). This is the
+    /// Slack channel / conversation ID (e.g. `D0123ABCDEF`). This is the
     /// value stored in `conversations.external_id`.
     pub channel_id: String,
     /// Slack message timestamp in dot notation (e.g. `1773903727.112369`).
@@ -83,10 +83,10 @@ mod tests {
     #[test]
     fn parse_standard_link() {
         let link =
-            SlackLink::parse("https://gladiaio.slack.com/archives/D09R63ASNEL/p1773903727112369")
+            SlackLink::parse("https://acme.slack.com/archives/D0123ABCDEF/p1773903727112369")
                 .unwrap();
-        assert_eq!(link.workspace, "gladiaio");
-        assert_eq!(link.channel_id, "D09R63ASNEL");
+        assert_eq!(link.workspace, "acme");
+        assert_eq!(link.channel_id, "D0123ABCDEF");
         assert_eq!(link.message_ts, "1773903727.112369");
     }
 
@@ -95,11 +95,11 @@ mod tests {
         // Real-world URL style: message inside a thread, with `thread_ts` and
         // `cid` query parameters. Must still resolve to the reply's own ts.
         let link = SlackLink::parse(
-            "https://gladiaio.slack.com/archives/C08UDH5JE57/p1776936528857609?thread_ts=1776932503.025469&cid=C08UDH5JE57",
+            "https://acme.slack.com/archives/C0123ABCDEF/p1776936528857609?thread_ts=1776932503.025469&cid=C0123ABCDEF",
         )
         .unwrap();
-        assert_eq!(link.workspace, "gladiaio");
-        assert_eq!(link.channel_id, "C08UDH5JE57");
+        assert_eq!(link.workspace, "acme");
+        assert_eq!(link.channel_id, "C0123ABCDEF");
         assert_eq!(link.message_ts, "1776936528.857609");
     }
 

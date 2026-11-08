@@ -1066,10 +1066,10 @@ fn compose_rfc2822_ascii_subject_unchanged() {
 fn compose_rfc2822_encodes_non_ascii_display_name_in_to() {
     // Regression: a raw UTF-8 display name written straight into a header is
     // only valid by convention. A strict receiver can reinterpret those bytes
-    // as Latin-1, turning "Maître" into "MaÃ®tre". RFC 2047-encoding the name
+    // as Latin-1, turning "Fèvre" into "FÃ¨vre". RFC 2047-encoding the name
     // (as we already do for Subject) avoids that ambiguity entirely.
     let raw = compose_rfc2822(
-        "\"Juliette Le Maître\" <jlemaitre@gladia.io>",
+        "\"Zoé Le Fèvre\" <zoe@example.com>",
         "Subject",
         "body",
         None,
@@ -1077,23 +1077,23 @@ fn compose_rfc2822_encodes_non_ascii_display_name_in_to() {
     )
     .unwrap();
     assert!(raw.contains("To: =?UTF-8?B?"));
-    assert!(raw.contains("<jlemaitre@gladia.io>"));
-    assert!(!raw.contains("Maître"));
+    assert!(raw.contains("<zoe@example.com>"));
+    assert!(!raw.contains("Fèvre"));
 }
 
 #[test]
 fn compose_rfc2822_encodes_mixed_ascii_and_non_ascii_recipients() {
-    let to = "\"Juliette Le Maître\" <jlemaitre@gladia.io>, \
-              Jean-Louis Queguiner <jlqueguiner@gladia.io>, \
-              Thibaut Le Boulaire <tleboulaire@gladia.io>";
+    let to = "\"Zoé Le Fèvre\" <zoe@example.com>, \
+              Dave Smith <dave@example.com>, \
+              Erin Jones <erin@example.com>";
     let raw = compose_rfc2822(to, "Subject", "body", None, None).unwrap();
     let to_line = raw.lines().find(|l| l.starts_with("To:")).expect("To line");
     assert!(to_line.contains("=?UTF-8?B?"));
-    assert!(to_line.contains("<jlemaitre@gladia.io>"));
+    assert!(to_line.contains("<zoe@example.com>"));
     // Recipients whose display name is already ASCII are left untouched.
-    assert!(to_line.contains("Jean-Louis Queguiner <jlqueguiner@gladia.io>"));
-    assert!(to_line.contains("Thibaut Le Boulaire <tleboulaire@gladia.io>"));
-    assert!(!to_line.contains("Maître"));
+    assert!(to_line.contains("Dave Smith <dave@example.com>"));
+    assert!(to_line.contains("Erin Jones <erin@example.com>"));
+    assert!(!to_line.contains("Fèvre"));
 }
 
 #[test]
@@ -1148,13 +1148,13 @@ fn compose_rfc2822_encodes_bare_non_ascii_address_with_no_name() {
 fn compose_rfc2822_display_name_comma_not_split_when_quoted() {
     // A comma inside a quoted display name must not be mistaken for the
     // address-list separator, even when the name is also non-ASCII.
-    let to = "\"Le Maître, Juliette\" <jlemaitre@gladia.io>, Bob <bob@example.com>";
+    let to = "\"Le Fèvre, Zoé\" <zoe@example.com>, Bob <bob@example.com>";
     let raw = compose_rfc2822(to, "Subject", "body", None, None).unwrap();
     let to_line = raw.lines().find(|l| l.starts_with("To:")).expect("To line");
     assert!(to_line.contains("=?UTF-8?B?"));
-    assert!(to_line.contains("<jlemaitre@gladia.io>"));
+    assert!(to_line.contains("<zoe@example.com>"));
     assert!(to_line.contains("Bob <bob@example.com>"));
-    assert!(!to_line.contains("Maître"));
+    assert!(!to_line.contains("Fèvre"));
     // Exactly two recipients: the quoted comma didn't create a bogus third entry.
     assert_eq!(to_line.matches('<').count(), 2);
 }

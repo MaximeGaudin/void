@@ -201,13 +201,13 @@ mod tests {
 
     #[test]
     fn resolve_messages_target_slack_link_finds_message_across_connections() {
-        // Real scenario: URL uses workspace `gladiaio` but the message is
+        // Real scenario: URL uses workspace `acme` but the message is
         // stored under connection `slack`. The resolver must still find it.
         let db = test_db();
         let (conv_id, msg_id) =
-            insert_slack_message(&db, "slack", "C08UDH5JE57", "1776936528.857609", "hi");
+            insert_slack_message(&db, "slack", "C0123ABCDEF", "1776936528.857609", "hi");
 
-        let url = "https://gladiaio.slack.com/archives/C08UDH5JE57/p1776936528857609?thread_ts=1776932503.025469";
+        let url = "https://acme.slack.com/archives/C0123ABCDEF/p1776936528857609?thread_ts=1776932503.025469";
         let target = resolve_messages_target(&db, url).unwrap();
 
         match target {
@@ -225,14 +225,14 @@ mod tests {
     #[test]
     fn resolve_messages_target_returns_unresolved_when_not_synced() {
         let db = test_db();
-        let url = "https://gladiaio.slack.com/archives/C08UDH5JE57/p1776936528857609";
+        let url = "https://acme.slack.com/archives/C0123ABCDEF/p1776936528857609";
         let target = resolve_messages_target(&db, url).unwrap();
         assert_eq!(
             target,
             MessagesTarget::UnresolvedSlackLink {
-                channel_id: "C08UDH5JE57".into(),
+                channel_id: "C0123ABCDEF".into(),
                 message_ts: "1776936528.857609".into(),
-                workspace: "gladiaio".into(),
+                workspace: "acme".into(),
             }
         );
     }
@@ -251,9 +251,9 @@ mod tests {
     fn resolve_message_finds_slack_link_across_connections() {
         let db = test_db();
         let (_, msg_id) =
-            insert_slack_message(&db, "slack", "C08UDH5JE57", "1776936528.857609", "hi");
+            insert_slack_message(&db, "slack", "C0123ABCDEF", "1776936528.857609", "hi");
 
-        let url = "https://gladiaio.slack.com/archives/C08UDH5JE57/p1776936528857609";
+        let url = "https://acme.slack.com/archives/C0123ABCDEF/p1776936528857609";
         let msg = resolve_message(&db, url).unwrap();
         assert_eq!(msg.id, msg_id);
     }
@@ -261,9 +261,9 @@ mod tests {
     #[test]
     fn resolve_message_returns_error_when_slack_link_unresolved() {
         let db = test_db();
-        let url = "https://gladiaio.slack.com/archives/C08UDH5JE57/p1776936528857609";
+        let url = "https://acme.slack.com/archives/C0123ABCDEF/p1776936528857609";
         let err = resolve_message(&db, url).unwrap_err().to_string();
-        assert!(err.contains("C08UDH5JE57"));
+        assert!(err.contains("C0123ABCDEF"));
         assert!(err.contains("1776936528.857609"));
     }
 }

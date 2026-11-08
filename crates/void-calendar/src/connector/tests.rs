@@ -508,7 +508,7 @@ async fn insert_event_request_includes_connection_owner() {
 
     Mock::given(method("POST"))
         .and(path("/calendar/v3/calendars/primary/events"))
-        .and(body_string_contains(r#""email":"mgaudin@gladia.io"#))
+        .and(body_string_contains(r#""email":"owner@example.com"#))
         .and(body_string_contains(r#""email":"alice@example.com"#))
         .respond_with(ResponseTemplate::new(200).set_body_string(
             r#"{
@@ -518,7 +518,7 @@ async fn insert_event_request_includes_connection_owner() {
             "end": {"dateTime": "2026-06-11T07:30:00Z"},
             "status": "confirmed",
             "attendees": [
-                {"email": "mgaudin@gladia.io", "responseStatus": "accepted"},
+                {"email": "owner@example.com", "responseStatus": "accepted"},
                 {"email": "alice@example.com", "responseStatus": "needsAction"}
             ]
         }"#,
@@ -527,7 +527,7 @@ async fn insert_event_request_includes_connection_owner() {
         .await;
 
     let api = CalendarApiClient::with_base_url("test-token", &mock_server.uri());
-    let attendees = build_attendee_list("mgaudin@gladia.io-calendar", Some("alice@example.com"));
+    let attendees = build_attendee_list("owner@example.com-calendar", Some("alice@example.com"));
     let request = InsertEventRequest {
         summary: "Team Sync".into(),
         description: None,
@@ -547,12 +547,12 @@ async fn insert_event_request_includes_connection_owner() {
         .insert_event("primary", &request, None, Some("all"))
         .await
         .unwrap();
-    let mapped = map_event(&resp, "mgaudin@gladia.io-calendar", "primary").unwrap();
+    let mapped = map_event(&resp, "owner@example.com-calendar", "primary").unwrap();
     let stored: Vec<String> = serde_json::from_value(mapped.attendees.unwrap()).unwrap();
     assert_eq!(
         stored,
         vec![
-            "mgaudin@gladia.io".to_string(),
+            "owner@example.com".to_string(),
             "alice@example.com".to_string()
         ]
     );
@@ -560,11 +560,11 @@ async fn insert_event_request_includes_connection_owner() {
 
 #[test]
 fn external_event_id_strips_void_prefix() {
-    let conn = "mgaudin@gladia.io-calendar";
+    let conn = "owner@example.com-calendar";
     assert_eq!(
         external_event_id(
             conn,
-            "mgaudin@gladia.io-calendar-2k5hbff0r6uinr8p1d4g8bmt6g"
+            "owner@example.com-calendar-2k5hbff0r6uinr8p1d4g8bmt6g"
         ),
         "2k5hbff0r6uinr8p1d4g8bmt6g"
     );
@@ -590,24 +590,24 @@ fn attendee(email: &str, is_self: Option<bool>) -> EventAttendee {
 #[test]
 fn find_self_attendee_priority() {
     let atts = vec![
-        attendee("jl@gladia.io", None),
-        attendee("MGaudin@gladia.io", Some(true)),
+        attendee("carol@example.com", None),
+        attendee("Owner@example.com", Some(true)),
     ];
     assert_eq!(
         find_self_attendee(&atts, None, None).as_deref(),
-        Some("MGaudin@gladia.io")
+        Some("Owner@example.com")
     );
     assert_eq!(
-        find_self_attendee(&atts, Some("JL@gladia.io"), None).as_deref(),
-        Some("jl@gladia.io")
+        find_self_attendee(&atts, Some("CAROL@example.com"), None).as_deref(),
+        Some("carol@example.com")
     );
     assert_eq!(find_self_attendee(&atts, Some("nobody@x.io"), None), None);
 
-    let no_flag = vec![attendee("mgaudin@gladia.io", None)];
+    let no_flag = vec![attendee("owner@example.com", None)];
     assert_eq!(find_self_attendee(&no_flag, None, None), None);
     assert_eq!(
-        find_self_attendee(&no_flag, None, Some("mgaudin@gladia.io")).as_deref(),
-        Some("mgaudin@gladia.io")
+        find_self_attendee(&no_flag, None, Some("owner@example.com")).as_deref(),
+        Some("owner@example.com")
     );
 }
 
@@ -617,8 +617,8 @@ const RSVP_EVENT: &str = r#"{
     "start": {"dateTime": "2026-09-30T07:00:00Z"},
     "end": {"dateTime": "2026-09-30T07:30:00Z"},
     "attendees": [
-        {"email": "jl@gladia.io", "responseStatus": "accepted", "organizer": true},
-        {"email": "mgaudin@gladia.io", "responseStatus": "needsAction"SELF}
+        {"email": "carol@example.com", "responseStatus": "accepted", "organizer": true},
+        {"email": "owner@example.com", "responseStatus": "needsAction"SELF}
     ]
 }"#;
 
@@ -666,9 +666,9 @@ async fn respond_updates_self_attendee_only() {
 
     let atts = patched_attendees(&server).await;
     assert_eq!(atts.len(), 2, "no attendee added: {atts:?}");
-    assert_eq!(atts[0]["email"], "jl@gladia.io");
+    assert_eq!(atts[0]["email"], "carol@example.com");
     assert_eq!(atts[0]["responseStatus"], "accepted");
-    assert_eq!(atts[1]["email"], "mgaudin@gladia.io");
+    assert_eq!(atts[1]["email"], "owner@example.com");
     assert_eq!(atts[1]["responseStatus"], "accepted");
 }
 
@@ -681,7 +681,7 @@ async fn respond_falls_back_to_primary_calendar_email() {
         .respond_with(ResponseTemplate::new(200).set_body_string(
             r#"{"items": [
                 {"id": "team@group.calendar.google.com", "primary": false},
-                {"id": "mgaudin@gladia.io", "primary": true}
+                {"id": "owner@example.com", "primary": true}
             ]}"#,
         ))
         .expect(1)
@@ -702,7 +702,7 @@ async fn respond_falls_back_to_primary_calendar_email() {
 
     let atts = patched_attendees(&server).await;
     assert_eq!(atts.len(), 2);
-    assert_eq!(atts[1]["email"], "mgaudin@gladia.io");
+    assert_eq!(atts[1]["email"], "owner@example.com");
     assert_eq!(atts[1]["responseStatus"], "declined");
     assert_eq!(atts[1]["comment"], "conflict");
 }
@@ -734,7 +734,7 @@ async fn respond_errors_instead_of_adding_unknown_attendee() {
         &api,
         "primary",
         "2k5hbff0r6uinr8p1d4g8bmt6g",
-        Some("mgaudin@gladia.io-calendar"),
+        Some("owner@example.com-calendar"),
         "accepted",
         None,
     )

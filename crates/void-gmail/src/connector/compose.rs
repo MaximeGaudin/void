@@ -52,7 +52,7 @@ fn reject_header_injection(field: &str, value: &str) -> anyhow::Result<()> {
 
 /// Splits a comma-separated RFC 5322 address list at top-level commas,
 /// treating commas inside a double-quoted display name as part of that name
-/// (e.g. `"Le Maître, Juliette" <j@x.com>, Bob <b@x.com>`).
+/// (e.g. `"Le Fèvre, Zoé" <j@x.com>, Bob <b@x.com>`).
 fn split_address_list(value: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut in_quotes = false;

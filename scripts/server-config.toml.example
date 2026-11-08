@@ -15,7 +15,7 @@ linkedin_backfill_days = 15
 retention_days = 15
 
 [[connections]]
-id = "mgaudin@gladia.io"
+id = "owner@example.com"
 type = "gmail"
 credentials_file = "~/.config/void/gmail-credentials.json"
 
@@ -25,7 +25,7 @@ type = "gmail"
 credentials_file = "~/.config/void/gmail-credentials.json"
 
 [[connections]]
-id = "mgaudin@gladia.io-calendar"
+id = "owner@example.com-calendar"
 type = "calendar"
 credentials_file = "~/.config/void/gmail-credentials.json"
 calendar_ids = ["primary"]
