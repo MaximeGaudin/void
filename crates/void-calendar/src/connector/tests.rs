@@ -126,6 +126,8 @@ fn map_event_basic() {
         attendees: None,
         conference_data: None,
         html_link: None,
+        visibility: None,
+        transparency: None,
     };
 
     let result = map_event(&event, "my-cal", "primary").unwrap();
@@ -153,6 +155,8 @@ fn map_event_all_day() {
         attendees: None,
         conference_data: None,
         html_link: None,
+        visibility: None,
+        transparency: None,
     };
 
     let result = map_event(&event, "my-cal", "primary").unwrap();
@@ -187,6 +191,8 @@ fn map_event_with_meet() {
             }]),
         }),
         html_link: None,
+        visibility: None,
+        transparency: None,
     };
 
     let result = map_event(&event, "my-cal", "primary").unwrap();
@@ -541,6 +547,8 @@ async fn insert_event_request_includes_connection_owner() {
         },
         attendees,
         conference_data: None,
+        visibility: None,
+        transparency: None,
     };
 
     let resp = api
@@ -556,6 +564,114 @@ async fn insert_event_request_includes_connection_owner() {
             "alice@example.com".to_string()
         ]
     );
+}
+
+#[test]
+fn insert_request_omits_visibility_and_transparency_when_unset() {
+    let request = InsertEventRequest {
+        summary: "Focus".into(),
+        description: None,
+        start: EventDateTimeRequest {
+            date_time: "2026-03-15T09:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        end: EventDateTimeRequest {
+            date_time: "2026-03-15T10:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        attendees: None,
+        conference_data: None,
+        visibility: None,
+        transparency: None,
+    };
+    let json = serde_json::to_value(&request).unwrap();
+    assert!(json.get("visibility").is_none(), "{json}");
+    assert!(json.get("transparency").is_none(), "{json}");
+}
+
+#[tokio::test]
+async fn insert_event_sends_visibility_and_transparency() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars/primary/events"))
+        .and(body_string_contains(r#""visibility":"private""#))
+        .and(body_string_contains(r#""transparency":"transparent""#))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{
+            "id": "ev-private",
+            "summary": "Dentist",
+            "start": {"dateTime": "2026-03-15T08:00:00Z"},
+            "end": {"dateTime": "2026-03-15T09:00:00Z"},
+            "status": "confirmed",
+            "visibility": "private",
+            "transparency": "transparent"
+        }"#,
+        ))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let api = CalendarApiClient::with_base_url("test-token", &mock_server.uri());
+    let request = InsertEventRequest {
+        summary: "Dentist".into(),
+        description: None,
+        start: EventDateTimeRequest {
+            date_time: "2026-03-15T08:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        end: EventDateTimeRequest {
+            date_time: "2026-03-15T09:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        attendees: None,
+        conference_data: None,
+        visibility: Some("private".into()),
+        transparency: Some("transparent".into()),
+    };
+
+    let resp = api
+        .insert_event("primary", &request, None, None)
+        .await
+        .unwrap();
+    let mapped = map_event(&resp, "test-cal", "primary").unwrap();
+    assert_eq!(
+        mapped.metadata,
+        Some(serde_json::json!({"visibility": "private", "transparency": "transparent"}))
+    );
+}
+
+#[tokio::test]
+async fn update_event_patches_only_visibility() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/calendar/v3/calendars/primary/events/ev1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"{"id": "ev1", "summary": "Dentist", "visibility": "private"}"#),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let api = CalendarApiClient::with_base_url("test-token", &mock_server.uri());
+    let update = UpdateEventRequest {
+        visibility: Some("private".into()),
+        ..Default::default()
+    };
+    api.update_event("primary", "ev1", &update, Some("all"))
+        .await
+        .unwrap();
+
+    let reqs = mock_server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+    assert_eq!(body, serde_json::json!({"visibility": "private"}));
+}
+
+#[test]
+fn map_event_without_visibility_has_no_metadata() {
+    let event: GoogleCalendarEvent =
+        serde_json::from_str(r#"{"id": "e9", "summary": "Standup"}"#).unwrap();
+    let mapped = map_event(&event, "test-cal", "primary").unwrap();
+    assert!(mapped.metadata.is_none());
 }
 
 #[test]

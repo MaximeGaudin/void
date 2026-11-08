@@ -55,6 +55,8 @@ impl CalendarConnector {
             },
             attendees: attendee_list,
             conference_data,
+            visibility: params.visibility.map(str::to_string),
+            transparency: params.transparency.map(str::to_string),
         };
 
         let conference_version = if params.meet { Some(1) } else { None };
@@ -125,6 +127,8 @@ impl CalendarConnector {
                 time_zone: timezone,
             }),
             attendees: None,
+            visibility: params.visibility.map(str::to_string),
+            transparency: params.transparency.map(str::to_string),
         };
 
         let resp = api
