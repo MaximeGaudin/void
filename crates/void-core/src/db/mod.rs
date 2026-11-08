@@ -23,6 +23,7 @@ use tracing::{debug, info};
 
 use crate::error::DbError;
 
+pub use messages::PruneResult;
 pub use schema::SCHEMA_VERSION;
 pub use search::fts5_escape;
 

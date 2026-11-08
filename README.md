@@ -5,7 +5,7 @@
 [![CI](https://github.com/MaximeGaudin/void/actions/workflows/ci.yml/badge.svg)](https://github.com/MaximeGaudin/void/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/MaximeGaudin/void)](https://github.com/MaximeGaudin/void/releases/latest)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](Cargo.toml)
+[![Rust](https://img.shields.io/badge/rust-1.99%2B-orange.svg)](Cargo.toml)
 
 **One inbox for everything.** `void` unifies WhatsApp, Telegram, Slack, Gmail, Google Calendar, LinkedIn, GitHub, Circleback, Withings, Hacker News, Google News, and Reddit into a single local-first command-line tool — one inbox, one search index, one set of commands.
 

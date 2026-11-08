@@ -23,6 +23,7 @@ pub fn build_meta(current_page: i64, page_size: i64, total_elements: i64) -> Pag
         page_size,
         total_elements,
         total_pages,
+        has_more: current_page < total_pages,
     }
 }
 
@@ -85,5 +86,14 @@ mod tests {
     fn build_meta_partial_last_page() {
         let m = build_meta(1, 10, 95);
         assert_eq!(m.total_pages, 10);
+    }
+
+    #[test]
+    fn build_meta_has_more_until_last_page() {
+        assert!(build_meta(1, 50, 1551).has_more);
+        assert!(build_meta(31, 50, 1551).has_more);
+        assert!(!build_meta(32, 50, 1551).has_more);
+        assert!(!build_meta(40, 50, 1551).has_more);
+        assert!(!build_meta(1, 50, 0).has_more);
     }
 }

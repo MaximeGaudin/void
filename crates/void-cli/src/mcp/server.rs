@@ -4,7 +4,7 @@ use serde::Deserialize;
 use rmcp::transport::stdio;
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, ContentBlock, ServerInfo},
+    model::{CallToolResult, ContentBlock, ServerConfig},
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
 };
 
@@ -736,9 +736,9 @@ impl VoidMcpServer {
 
 #[tool_handler]
 impl ServerHandler for VoidMcpServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         // Prefer the binary/product name over CARGO_CRATE_NAME ("void-cli").
-        ServerInfo::default().with_server_info(rmcp::model::Implementation::new(
+        ServerConfig::default().with_server_info(rmcp::model::Implementation::new(
             "void",
             env!("CARGO_PKG_VERSION"),
         ))

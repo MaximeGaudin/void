@@ -12,6 +12,9 @@ pub struct PaginationMeta {
     pub page_size: i64,
     pub total_elements: i64,
     pub total_pages: i64,
+    /// `true` when pages after `current_page` still hold results, so callers
+    /// looping "fetch → process → fetch" know to ask for `--page N+1`.
+    pub has_more: bool,
 }
 
 impl Default for OutputFormatter {

@@ -363,3 +363,59 @@ fn mark_archived_with_context_unknown_id_is_noop() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn reconcile_inbox_conversations_follows_thread_state() {
+    let db = test_db();
+    db.upsert_conversation(&make_conversation_with_connector(
+        "acct-t1", "acct", "t1", "gmail",
+    ))
+    .unwrap();
+    db.upsert_conversation(&make_conversation_with_connector(
+        "acct-t2", "acct", "t2", "gmail",
+    ))
+    .unwrap();
+
+    // t1 is in the inbox: its archived first message must come back.
+    let mut old = make_message_with_connector("m1", "acct-t1", "acct", "old", 1_000, "gmail");
+    old.is_archived = true;
+    db.upsert_message(&old).unwrap();
+    db.upsert_message(&make_message_with_connector(
+        "m2", "acct-t1", "acct", "reply", 2_000, "gmail",
+    ))
+    .unwrap();
+    // t2 left the inbox.
+    db.upsert_message(&make_message_with_connector(
+        "m3", "acct-t2", "acct", "gone", 3_000, "gmail",
+    ))
+    .unwrap();
+
+    let inbox: std::collections::HashSet<String> = ["acct-t1".to_string()].into();
+    let (unarchived, archived) = db
+        .reconcile_inbox_conversations("acct", "gmail", &inbox)
+        .unwrap();
+    assert_eq!((unarchived, archived), (1, 1));
+    assert!(!db.get_message("m1").unwrap().unwrap().is_archived);
+    assert!(!db.get_message("m2").unwrap().unwrap().is_archived);
+    assert!(db.get_message("m3").unwrap().unwrap().is_archived);
+}
+
+#[test]
+fn set_conversation_archived_touches_only_that_conversation() {
+    let db = test_db();
+    db.upsert_conversation(&make_conversation("c1", "test-slack", "C1"))
+        .unwrap();
+    db.upsert_conversation(&make_conversation("c2", "test-slack", "C2"))
+        .unwrap();
+    for (id, conv) in [("m1", "c1"), ("m2", "c1"), ("m3", "c2")] {
+        let mut msg = make_message(id, conv, "test-slack", "x", 1_000);
+        msg.is_archived = true;
+        db.upsert_message(&msg).unwrap();
+    }
+
+    assert_eq!(db.set_conversation_archived("c1", false).unwrap(), 2);
+    assert_eq!(db.set_conversation_archived("c1", false).unwrap(), 0);
+    assert!(!db.get_message("m1").unwrap().unwrap().is_archived);
+    assert!(!db.get_message("m2").unwrap().unwrap().is_archived);
+    assert!(db.get_message("m3").unwrap().unwrap().is_archived);
+}

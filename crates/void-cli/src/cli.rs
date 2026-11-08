@@ -155,6 +155,9 @@ pub fn run() -> anyhow::Result<()> {
             context::ensure_local_sync_allowed()?;
         } else if let Some(ref cmd) = cli.command {
             if !context::runs_with_local_cache(cmd) {
+                if matches!(cmd, Command::Hook(_)) {
+                    commands::hook::warn_local_hooks_ignored(&context::hooks_dir());
+                }
                 context::proxy_current_command()?;
             }
         }
@@ -636,6 +639,71 @@ mod tests {
                         assert_eq!(a.connection.as_deref(), Some("me@example.com"));
                     }
                     other => panic!("expected Create, got {other:?}"),
+                },
+                other => panic!("expected Draft, got {other:?}"),
+            },
+            other => panic!("expected Gmail, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_gmail_draft_create_with_repeated_file() {
+        let cli = parse(&[
+            "void",
+            "gmail",
+            "draft",
+            "create",
+            "--to",
+            "a@b.com",
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--file",
+            "a.pdf",
+            "--file",
+            "b.png",
+        ]);
+        match cli.command {
+            Some(Command::Gmail(ref g)) => match &g.command {
+                commands::gmail::GmailCommand::Draft(d) => match &d.action {
+                    commands::gmail::DraftAction::Create(a) => {
+                        assert_eq!(a.file, ["a.pdf", "b.png"]);
+                    }
+                    other => panic!("expected Create, got {other:?}"),
+                },
+                other => panic!("expected Draft, got {other:?}"),
+            },
+            other => panic!("expected Gmail, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_gmail_draft_update_with_repeated_file() {
+        let cli = parse(&[
+            "void",
+            "gmail",
+            "draft",
+            "update",
+            "d1",
+            "--to",
+            "a@b.com",
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--file",
+            "a.pdf",
+            "--file",
+            "b.png",
+        ]);
+        match cli.command {
+            Some(Command::Gmail(ref g)) => match &g.command {
+                commands::gmail::GmailCommand::Draft(d) => match &d.action {
+                    commands::gmail::DraftAction::Update(a) => {
+                        assert_eq!(a.file, ["a.pdf", "b.png"]);
+                    }
+                    other => panic!("expected Update, got {other:?}"),
                 },
                 other => panic!("expected Draft, got {other:?}"),
             },

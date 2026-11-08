@@ -1,6 +1,66 @@
-//! Attendee list building for calendar event creation.
+//! Attendee list building for calendar event creation and RSVP.
 
-use crate::api::AttendeeRequest;
+use crate::api::{AttendeeRequest, AttendeeResponseRequest, EventAttendee};
+
+/// Pick the attendee entry that represents the calendar owner.
+///
+/// Priority: explicit `email` override, then the attendee Google flags with
+/// `self: true`, then `account_email` (the primary calendar id). Matching is
+/// case-insensitive. Returns the attendee's email exactly as Google stores it,
+/// or `None` when the owner is not on the guest list.
+pub(crate) fn find_self_attendee(
+    attendees: &[EventAttendee],
+    email_override: Option<&str>,
+    account_email: Option<&str>,
+) -> Option<String> {
+    let by_email = |wanted: &str| {
+        attendees
+            .iter()
+            .filter_map(|a| a.email.as_deref())
+            .find(|e| e.eq_ignore_ascii_case(wanted))
+            .map(str::to_string)
+    };
+    if let Some(wanted) = email_override {
+        return by_email(wanted);
+    }
+    if let Some(me) = attendees
+        .iter()
+        .find(|a| a.is_self == Some(true))
+        .and_then(|a| a.email.clone())
+    {
+        return Some(me);
+    }
+    account_email.and_then(by_email)
+}
+
+/// Rebuild the attendee list with `me`'s response set to `status`.
+/// Other attendees keep their current response; no attendee is ever added.
+pub(crate) fn build_response_attendees(
+    attendees: &[EventAttendee],
+    me: &str,
+    status: &str,
+    comment: Option<&str>,
+) -> Vec<AttendeeResponseRequest> {
+    attendees
+        .iter()
+        .map(|a| {
+            let is_me = a.email.as_deref() == Some(me);
+            AttendeeResponseRequest {
+                email: a.email.clone().unwrap_or_default(),
+                response_status: if is_me {
+                    Some(status.to_string())
+                } else {
+                    a.response_status.clone()
+                },
+                comment: if is_me {
+                    comment.map(str::to_string)
+                } else {
+                    None
+                },
+            }
+        })
+        .collect()
+}
 
 /// Derive the calendar account owner email from a connection ID.
 /// Convention: `{email}-calendar` (e.g. `mgaudin@gladia.io-calendar`).

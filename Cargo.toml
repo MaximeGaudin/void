@@ -19,10 +19,10 @@ members = [
 ]
 
 [workspace.package]
-version = "0.14.0"
+version = "0.15.2"
 edition = "2021"
 license = "AGPL-3.0-only"
-rust-version = "1.95"
+rust-version = "1.99"
 repository = "https://github.com/MaximeGaudin/void"
 
 [workspace.dependencies]
@@ -66,13 +66,13 @@ tokio-tungstenite = { version = "0.29", features = ["native-tls"] }
 futures-util = "0.3"
 base64 = "0.23"
 libc = "0.2"
-html-to-markdown-rs = "3"
+html-to-markdown-rs = "3.21"
 open = "5"
 url = "2"
 urlencoding = "2"
 dirs = "7"
 sysinfo = "0.39.3"
-sha2 = "0.10"
+sha2 = "0.11"
 inventory = "0.3"
 
 # Testing

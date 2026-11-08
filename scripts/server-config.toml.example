@@ -12,6 +12,7 @@ hackernews_poll_interval_secs = 3600
 reddit_poll_interval_secs = 3600
 linkedin_poll_interval_secs = 1800
 linkedin_backfill_days = 15
+retention_days = 15
 
 [[connections]]
 id = "mgaudin@gladia.io"

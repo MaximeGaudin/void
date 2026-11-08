@@ -195,22 +195,55 @@ pub fn compose_rfc2822_with_attachment(
     in_reply_to: Option<&str>,
     references: Option<&str>,
 ) -> anyhow::Result<String> {
-    let file_bytes = std::fs::read(file_path)
-        .with_context(|| format!("failed to read file {}", file_path.display()))?;
-    let encoded = STANDARD.encode(&file_bytes);
-    let wrapped = encoded
-        .as_bytes()
-        .chunks(76)
-        // STANDARD base64 alphabet is ASCII, so each chunk is valid UTF-8.
-        .map(|c| std::str::from_utf8(c).expect("base64 output is ASCII"))
-        .collect::<Vec<_>>()
-        .join("\r\n");
+    let attachment = OutgoingAttachment::from_path(file_path, mime_type)?;
+    compose_rfc2822_with_attachments(
+        recipients,
+        subject,
+        body,
+        std::slice::from_ref(&attachment),
+        in_reply_to,
+        references,
+    )
+}
 
-    let filename = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("attachment");
-    let mime = mime_type.unwrap_or("application/octet-stream");
+/// An attachment held in memory, ready to be embedded in an outgoing message.
+#[derive(Debug, Clone)]
+pub struct OutgoingAttachment {
+    pub filename: String,
+    pub mime_type: String,
+    pub data: Vec<u8>,
+}
+
+impl OutgoingAttachment {
+    pub fn from_path(file_path: &std::path::Path, mime_type: Option<&str>) -> anyhow::Result<Self> {
+        let data = std::fs::read(file_path)
+            .with_context(|| format!("failed to read file {}", file_path.display()))?;
+        let filename = file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("attachment")
+            .to_string();
+        Ok(Self {
+            filename,
+            mime_type: mime_type.unwrap_or("application/octet-stream").to_string(),
+            data,
+        })
+    }
+}
+
+/// Compose a `multipart/mixed` message with an HTML body and any number of
+/// attachments. With no attachments this is [`compose_rfc2822_ex`].
+pub fn compose_rfc2822_with_attachments(
+    recipients: ComposeRecipients<'_>,
+    subject: &str,
+    body: &str,
+    attachments: &[OutgoingAttachment],
+    in_reply_to: Option<&str>,
+    references: Option<&str>,
+) -> anyhow::Result<String> {
+    if attachments.is_empty() {
+        return compose_rfc2822_ex(recipients, subject, body, in_reply_to, references, None);
+    }
 
     const BOUNDARY: &str = "void_boundary_001";
 
@@ -228,24 +261,40 @@ pub fn compose_rfc2822_with_attachment(
     }
     headers.push_str("\r\n");
 
-    let (content_type, final_body) = if looks_like_html_for_compose(body) {
-        ("text/html", body.to_string())
+    let final_body = if looks_like_html_for_compose(body) {
+        body.to_string()
     } else {
-        ("text/html", body.replace('\n', "<br>\n"))
+        body.replace('\n', "<br>\n")
     };
 
-    let body_encoded = STANDARD.encode(final_body.as_bytes());
-    let body_wrapped = body_encoded
+    let mut raw = format!(
+        "{headers}--{BOUNDARY}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n",
+        wrap_base64(final_body.as_bytes())
+    );
+    for att in attachments {
+        // Filenames can come from an existing Gmail draft: keep them out of
+        // the header syntax.
+        let filename = att.filename.replace(['"', '\r', '\n'], "_");
+        let mime = &att.mime_type;
+        raw.push_str(&format!(
+            "--{BOUNDARY}\r\nContent-Type: {mime}; name=\"{filename}\"\r\nContent-Disposition: attachment; filename=\"{filename}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n",
+            wrap_base64(&att.data)
+        ));
+    }
+    raw.push_str(&format!("--{BOUNDARY}--"));
+    Ok(raw)
+}
+
+/// Standard base64 wrapped at 76 columns with CRLF, as MIME requires.
+fn wrap_base64(bytes: &[u8]) -> String {
+    STANDARD
+        .encode(bytes)
         .as_bytes()
         .chunks(76)
+        // STANDARD base64 alphabet is ASCII, so each chunk is valid UTF-8.
         .map(|c| std::str::from_utf8(c).expect("base64 output is ASCII"))
         .collect::<Vec<_>>()
-        .join("\r\n");
-
-    let raw = format!(
-        "{headers}--{BOUNDARY}\r\nContent-Type: {content_type}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n{body_wrapped}\r\n--{BOUNDARY}\r\nContent-Type: {mime}; name=\"{filename}\"\r\nContent-Disposition: attachment; filename=\"{filename}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{wrapped}\r\n--{BOUNDARY}--"
-    );
-    Ok(raw)
+        .join("\r\n")
 }
 
 pub fn parse_email_address(from: &str) -> String {

@@ -1,5 +1,6 @@
 mod proxy_files;
 mod remote;
+mod remote_hooks;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -12,8 +13,9 @@ use crate::error::ConfigError;
 
 pub use proxy_files::plan_proxy_file_transfer;
 pub use remote::{
-    cache_is_fresh, default_cache_dir, fetch_remote_file, fetch_remote_files_if_present, now_secs,
-    CacheMeta, RemoteProxyTargets, SshTarget, REMOTE_PATH_PREFIX,
+    cache_is_fresh, default_cache_dir, fetch_remote_file, fetch_remote_files_if_present,
+    invalidate_database_snapshot, now_secs, CacheMeta, RemoteProxyTargets, SshTarget,
+    REMOTE_PATH_PREFIX,
 };
 
 #[derive(Debug, Clone)]
@@ -374,30 +376,12 @@ impl ResolvedContext {
 
         let mut transfer = proxy_files::plan_proxy_file_transfer(&remote.remote_store_path, args)?;
         proxy_files::resolve_staged_paths_for_remote(&remote.ssh, &mut transfer)?;
-        proxy_files::execute_proxy_uploads(
-            &remote.ssh,
-            &remote.remote_store_path,
-            &transfer.uploads,
-        )?;
+        proxy_files::execute_proxy_uploads(&remote.ssh, &transfer.uploads)?;
         if transfer.uploads.is_empty() && transfer.download.is_some() {
             proxy_files::ensure_remote_staging(&remote.ssh, &remote.remote_store_path)?;
         }
 
-        let targets = {
-            let mut cache = remote
-                .proxy_targets
-                .lock()
-                .map_err(|e| ConfigError::Remote(format!("proxy cache lock poisoned: {e}")))?;
-            if let Some(targets) = cache.as_ref() {
-                targets.clone()
-            } else {
-                let targets = remote
-                    .ssh
-                    .resolve_proxy_targets(&remote.remote_config_path)?;
-                *cache = Some(targets.clone());
-                targets
-            }
-        };
+        let targets = remote.cached_proxy_targets()?;
 
         if let Some(warning) =
             version_skew_message(targets.void_version.as_deref(), env!("CARGO_PKG_VERSION"))
@@ -421,6 +405,16 @@ impl ResolvedContext {
             .join(" ");
         let remote_command = format!("{REMOTE_PATH_PREFIX} {escaped}");
         let output = remote.ssh.run_remote(&remote_command)?;
+        // The remote run may have written to the store, even on a non-zero
+        // exit (partial batch). Drop the snapshot's freshness so the next
+        // local read (`inbox`, `messages`…) sees the write.
+        if let Err(e) = invalidate_database_snapshot(&remote.cache_dir) {
+            warn!(
+                cache = %remote.cache_dir.display(),
+                error = %e,
+                "failed to invalidate remote database snapshot after proxied command"
+            );
+        }
         if !output.stdout.is_empty() {
             print!("{}", String::from_utf8_lossy(&output.stdout));
         }
@@ -449,7 +443,12 @@ impl ResolvedContext {
             Ok(exit_code)
         };
 
-        proxy_files::cleanup_remote_staging(&remote.ssh, &cleanup_paths);
+        let cleanup_dirs: Vec<String> = transfer
+            .uploads
+            .iter()
+            .map(|upload| upload.remote_dir().to_string())
+            .collect();
+        proxy_files::cleanup_remote_staging(&remote.ssh, &cleanup_paths, &cleanup_dirs);
         result
     }
 
@@ -475,6 +474,22 @@ impl ResolvedContext {
         } else {
             Ok(())
         }
+    }
+}
+
+impl RemoteHandle {
+    /// Resolve (once per process) the remote config path and `void` binary.
+    fn cached_proxy_targets(&self) -> Result<RemoteProxyTargets, ConfigError> {
+        let mut cache = self
+            .proxy_targets
+            .lock()
+            .map_err(|e| ConfigError::Remote(format!("proxy cache lock poisoned: {e}")))?;
+        if let Some(targets) = cache.as_ref() {
+            return Ok(targets.clone());
+        }
+        let targets = self.ssh.resolve_proxy_targets(&self.remote_config_path)?;
+        *cache = Some(targets.clone());
+        Ok(targets)
     }
 }
 

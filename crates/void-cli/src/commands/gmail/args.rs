@@ -146,9 +146,9 @@ pub struct DraftCreateArgs {
     /// Email body
     #[arg(long)]
     pub body: String,
-    /// File to attach
+    /// File to attach. Repeat to attach several files (`--file a.pdf --file b.png`).
     #[arg(long)]
-    pub file: Option<String>,
+    pub file: Vec<String>,
     /// Message ID to reply to — associates the draft with the thread and sets In-Reply-To headers.
     #[arg(long)]
     pub reply_to: Option<String>,
@@ -183,9 +183,13 @@ pub struct DraftUpdateArgs {
     /// Email body
     #[arg(long)]
     pub body: String,
-    /// File to attach
+    /// File to attach. Repeat to attach several files. Replaces the draft's existing
+    /// attachments; without it they are kept.
     #[arg(long)]
-    pub file: Option<String>,
+    pub file: Vec<String>,
+    /// Message ID to reply to. Without it the draft keeps its current thread and reply headers.
+    #[arg(long)]
+    pub reply_to: Option<String>,
     /// Append the account's Gmail signature (fetched via users.settings.sendAs).
     /// Not idempotent: pass `--body` without an existing signature or it will be duplicated.
     #[arg(long)]

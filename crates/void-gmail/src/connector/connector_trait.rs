@@ -10,6 +10,10 @@ use tracing::{debug, error, info, warn};
 /// Wall-clock threshold to detect hibernation gaps (same rationale as Slack:
 /// `SystemTime` survives macOS sleep where the monotonic clock pauses).
 const IDLE_THRESHOLD: Duration = Duration::from_secs(3 * 60);
+/// Full INBOX reconciliation cadence. Incremental history can miss label
+/// changes (filtered history, dropped fetches), so local archive state is
+/// re-aligned with Gmail on this interval.
+const FULL_REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 use void_core::connector::{Connector, ForwardOptions};
 use void_core::db::Database;
@@ -61,6 +65,7 @@ impl Connector for GmailConnector {
 
         let mut interval = tokio::time::interval(Duration::from_secs(self.poll_interval_secs));
         let mut last_sync = SystemTime::now();
+        let mut last_refresh = SystemTime::now();
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
@@ -83,6 +88,13 @@ impl Connector for GmailConnector {
                         if let Err(e) = self.refresh_inbox(&db).await {
                             error!(connection_id = %self.config_id, "inbox refresh after idle failed: {e}");
                         }
+                        last_refresh = SystemTime::now();
+                    } else if last_refresh.elapsed().unwrap_or_default() > FULL_REFRESH_INTERVAL {
+                        debug!(connection_id = %self.config_id, "periodic inbox refresh");
+                        if let Err(e) = self.refresh_inbox(&db).await {
+                            error!(connection_id = %self.config_id, "periodic inbox refresh failed: {e}");
+                        }
+                        last_refresh = SystemTime::now();
                     }
                     if let Err(e) = self.incremental_sync(&db).await {
                         error!(connection_id = %self.config_id, "incremental sync error: {e}");
@@ -210,29 +222,33 @@ impl Connector for GmailConnector {
     async fn archive(
         &self,
         external_id: &str,
-        _conversation_external_id: &str,
+        conversation_external_id: &str,
     ) -> anyhow::Result<()> {
-        info!(message_id = %external_id, "archiving Gmail message");
-        let api = self.get_client().await?;
-        api.modify_message(external_id, &[], &["INBOX"]).await?;
-        Ok(())
+        self.archive_batch(&[external_id], conversation_external_id)
+            .await
     }
 
     async fn archive_batch(
         &self,
         external_ids: &[&str],
-        _conversation_external_id: &str,
+        conversation_external_id: &str,
     ) -> anyhow::Result<()> {
         if external_ids.is_empty() {
             return Ok(());
         }
         info!(
             count = external_ids.len(),
-            "archiving Gmail messages (batch)"
+            thread_id = %conversation_external_id,
+            "archiving Gmail messages"
         );
+        let api = self.get_client().await?;
+        let ids = self
+            .thread_archive_ids(&api, external_ids, conversation_external_id)
+            .await;
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
         // batchModify caps each request at 1000 ids.
-        for chunk in external_ids.chunks(1000) {
-            self.batch_modify(chunk, &[], &["INBOX"]).await?;
+        for chunk in ids.chunks(1000) {
+            api.batch_modify_messages(chunk, &[], &["INBOX"]).await?;
         }
         Ok(())
     }

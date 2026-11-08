@@ -6,7 +6,8 @@ use crate::error::DbError;
 use crate::models::{CalendarEvent, Contact, Conversation, Message};
 
 use super::{
-    conversations, directory, events, hook_logs, messages, mute_sync, rate_limit, Database,
+    conversations, directory, events, hook_logs, messages, messages::PruneResult, mute_sync,
+    rate_limit, Database,
 };
 
 impl Database {
@@ -16,6 +17,20 @@ impl Database {
 
     pub fn list_hook_logs(&self, limit: usize) -> Result<Vec<crate::hooks::HookLog>, DbError> {
         hook_logs::list(&*self.conn()?, limit)
+    }
+
+    /// Latest execution of each hook that has run at least once.
+    pub fn hook_last_runs(&self) -> Result<Vec<crate::hooks::HookRunSummary>, DbError> {
+        hook_logs::last_runs(&*self.conn()?)
+    }
+
+    /// Count messages ingested after `since` (unix seconds), optionally for one connector.
+    pub fn count_messages_synced_since(
+        &self,
+        connector: Option<&str>,
+        since: i64,
+    ) -> Result<i64, DbError> {
+        hook_logs::count_messages_synced_since(&*self.conn()?, connector, since)
     }
 
     // -- Conversations --
@@ -252,6 +267,33 @@ impl Database {
         messages::reconcile_inbox(&*self.conn()?, connection_id, connector, inbox_external_ids)
     }
 
+    /// Reconcile `is_archived` per conversation: messages of conversations in
+    /// `inbox_conversation_ids` are unarchived, all others archived.
+    /// Returns (unarchived_count, archived_count).
+    pub fn reconcile_inbox_conversations(
+        &self,
+        connection_id: &str,
+        connector: &str,
+        inbox_conversation_ids: &std::collections::HashSet<String>,
+    ) -> Result<(usize, usize), DbError> {
+        messages::reconcile_inbox_conversations(
+            &*self.conn()?,
+            connection_id,
+            connector,
+            inbox_conversation_ids,
+        )
+    }
+
+    /// Set `is_archived` on every message of a conversation. Returns the
+    /// number of rows whose state changed.
+    pub fn set_conversation_archived(
+        &self,
+        conversation_id: &str,
+        archived: bool,
+    ) -> Result<usize, DbError> {
+        messages::set_conversation_archived(&*self.conn()?, conversation_id, archived)
+    }
+
     /// Reconcile `is_saved` for all messages of a connection to match the given saved set.
     /// Returns (newly_saved_count, newly_unsaved_count).
     pub fn reconcile_saved(
@@ -379,6 +421,19 @@ impl Database {
 
     pub fn delete_event(&self, connection_id: &str, external_id: &str) -> Result<bool, DbError> {
         events::delete(&*self.conn()?, connection_id, external_id)
+    }
+
+    /// Delete messages older than `before_ts`. Saved messages are kept.
+    ///
+    /// Returns cached file paths from the deleted rows so the caller can remove them.
+    pub fn prune_messages_before(&self, before_ts: i64) -> Result<PruneResult, DbError> {
+        messages::prune_before(&*self.conn()?, before_ts)
+    }
+
+    /// Rewrite the database file so deleted pages are returned to the OS.
+    pub fn vacuum(&self) -> Result<(), DbError> {
+        self.conn()?.execute_batch("VACUUM")?;
+        Ok(())
     }
 
     /// Delete all data (messages, conversations, events, sync_state) for a given connector type.

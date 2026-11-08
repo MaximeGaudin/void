@@ -171,6 +171,10 @@ impl Default for SyncConfig {
             toml::Value::Integer(default_linkedin_backfill_days() as i64),
         );
         values.insert(
+            "retention_days".into(),
+            toml::Value::Integer(default_retention_days() as i64),
+        );
+        values.insert(
             "github_poll_interval_secs".into(),
             toml::Value::Integer(default_github_poll() as i64),
         );
@@ -198,6 +202,17 @@ impl SyncConfig {
             .and_then(|v| v.as_integer())
             .and_then(|i| u64::try_from(i).ok())
             .unwrap_or(default_linkedin_backfill_days())
+    }
+
+    /// Delete stored messages older than this many days. `0` keeps everything.
+    ///
+    /// Missing key uses the default (15). Saved messages (`is_saved`) are kept.
+    pub fn retention_days(&self) -> u64 {
+        self.values
+            .get("retention_days")
+            .and_then(|v| v.as_integer())
+            .and_then(|i| u64::try_from(i).ok())
+            .unwrap_or(default_retention_days())
     }
 
     pub fn gmail_poll_interval_secs(&self) -> u64 {
@@ -254,6 +269,10 @@ fn default_linkedin_poll() -> u64 {
 }
 
 fn default_linkedin_backfill_days() -> u64 {
+    15
+}
+
+fn default_retention_days() -> u64 {
     15
 }
 

@@ -41,6 +41,8 @@ Most read commands accept:
 | `--page <N>` | Page through results |
 | `--include-muted` | Include muted conversations |
 
+Paginated commands (`inbox`, `conversations`, `messages`, …) return a `pagination` object next to `data`: `current_page`, `page_size`, `total_elements`, `total_pages` and `has_more`. When `has_more` is `true`, more results wait on `--page <N+1>` — the default page holds only 50 items.
+
 ## Reading
 
 | Command | Description |
@@ -88,15 +90,15 @@ Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) acc
 
 | Command | Description |
 |---------|-------------|
-| `void gmail search <query>` | Search with Gmail query syntax (`from:`, `newer_than:7d`, …). `--max <N>`. Reads the local INBOX store when a usable body is already synced; `--live` forces the Gmail API |
+| `void gmail search <query>` | Search with Gmail query syntax (`from:`, `newer_than:7d`, …). `--max <N>`. Reads the local INBOX store when a usable body is already synced; `--live` forces the Gmail API. `date` / `timestamp` are RFC 3339 UTC (from Gmail `internalDate`) |
 | `void gmail thread <id>` | View a full email thread. Serves the local INBOX mirror when every message has a usable stored body; `--live` fetches from Gmail |
 | `void gmail url <id>` | Generate the Gmail web URL for a thread |
 | `void gmail labels` | List labels |
 | `void gmail label <id> --add <labels> --remove <labels>` | Modify labels on a thread |
 | `void gmail batch-modify <ids...> --add <labels> --remove <labels>` | Batch-modify labels on multiple messages |
 | `void gmail drafts` | List drafts. `--max <N>` |
-| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--cc`, `--bcc`, `--file` to attach, `--reply-to <id>` to draft a reply (folds original From/To/Cc into `To` when `--to` is omitted; `--cc` / `--bcc` are additive), `--signature` / `--signature-from <email>` |
-| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--cc` / `--bcc` / `--signature` / `--signature-from` flags as create |
+| `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--cc`, `--bcc`, `--file` to attach (repeat for several files), `--reply-to <id>` to draft a reply (folds original From/To/Cc into `To` when `--to` is omitted; `--cc` / `--bcc` are additive), `--signature` / `--signature-from <email>` |
+| `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--cc` / `--bcc` / `--signature` / `--signature-from` flags as create. Keeps the draft's thread and `In-Reply-To` / `References` (`--reply-to <id>` re-targets it) and its existing attachments; `--file` (repeatable) replaces them |
 | `void gmail draft delete <id>` | Delete a draft |
 | `void gmail attachment <id> <attachment-id> --out <path>` | Download an attachment |
 | `void gmail forward <id> --to <recipient>` | Forward a message. `--cc`, `--bcc`, `--comment`, `--signature` / `--signature-from <email>` (signature between comment and quote) |
@@ -188,6 +190,7 @@ LLM automations triggered by new messages or cron schedules. See the full [Hooks
 | `void hook delete <name>` | Delete a hook |
 | `void hook test <name>` | Dry-run a hook. `--message-id <id>` to test `new_message` hooks against a real message |
 | `void hook log` | Execution logs. `-n/--limit`, `--hook <name>`, `--id <log-id>` |
+| `void hook push [<name>...]` | Remote store mode only: copy local hook files to the remote host (all when no name is given). Restart the remote daemon afterwards |
 
 ## System
 

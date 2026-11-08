@@ -126,6 +126,16 @@ end = "19:00"
 utc_offset_hours = 2
 ```
 
+### Remote store mode
+
+With `store.mode = "remote"`, the sync daemon — and therefore every hook — runs on the remote host. It loads hooks from the `hooks/` directory next to the **remote** config (e.g. `~/.config/void/hooks/` on the server) and never reads the client's hooks directory.
+
+- `void hook list`, `create`, `show`, `enable`/`disable`, `delete`, `test` and `log` are proxied over SSH, so they show and change what the remote daemon runs. `--prompt-file` is uploaded to the server first.
+- If hook files exist in the client's hooks directory, every `void hook` command (and `void doctor`) warns that they are ignored.
+- `void hook push [<name>...]` copies client hook files (all `*.toml`, or the named ones) to the remote hooks directory.
+
+The daemon loads hooks at startup only: after pushing or creating hooks, restart it on the server (`void sync --stop && void sync --daemon`).
+
 ## Testing and logs
 
 ```bash
@@ -142,3 +152,12 @@ void hook log --id 42
 ```
 
 Disable without deleting: `void hook disable <name>` / `void hook enable <name>`.
+
+## Health check
+
+`void doctor` has a Hooks section: each configured hook with its last execution. An enabled hook is flagged `[!!]` (and counted as an issue) when:
+
+- a `new_message` hook has not run for 24h (72h with an `active_window`) while new messages for its connector kept arriving;
+- a `schedule` hook missed a cron slot by more than 1h (72h with an `active_window`), or its cron expression is invalid.
+
+No configured hooks is reported as info (`[--]`). In remote mode the hook list comes from the remote host and executions from the synced database snapshot.

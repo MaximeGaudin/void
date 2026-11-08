@@ -51,6 +51,9 @@ pub struct EventAttendee {
     pub email: Option<String>,
     #[serde(rename = "responseStatus")]
     pub response_status: Option<String>,
+    /// Set by Google on the attendee entry that is the authenticated user.
+    #[serde(rename = "self", default)]
+    pub is_self: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

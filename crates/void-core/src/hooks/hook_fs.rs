@@ -7,10 +7,30 @@ use crate::error::HookError;
 use super::model::Hook;
 
 pub fn hooks_dir() -> PathBuf {
-    crate::config::default_config_path()
+    hooks_dir_for(&crate::config::default_config_path())
+}
+
+/// Hooks live in a `hooks/` directory next to the config file in use, so a
+/// daemon or proxied command started with `--config <path>` reads the same set.
+pub fn hooks_dir_for(config_path: &Path) -> PathBuf {
+    config_path
         .parent()
         .map(|path| path.join("hooks"))
         .unwrap_or_else(|| PathBuf::from(".config/void/hooks"))
+}
+
+/// Paths of hook definition files (`*.toml`) in `dir`, sorted by name.
+pub fn hook_files(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("toml"))
+        .collect();
+    files.sort();
+    files
 }
 
 pub fn slugify(name: &str) -> String {
