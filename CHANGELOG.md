@@ -14,9 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Gmail** — `void gmail drafts` fetches drafts with `format=metadata` (To, Subject, snippet) several at a time instead of one `format=full` request after another, and paginates past Gmail's 500-per-page limit. Throughput is still bounded by the shared Gmail rate limiter. A draft whose details fail to load is listed with its ids instead of being dropped.
+- **Gmail** — `void gmail drafts` fetches drafts with `format=metadata` (To, Cc, Bcc, Subject, snippet) several at a time instead of one `format=full` request after another, and paginates past Gmail's 500-per-page limit. Throughput is still bounded by the shared Gmail rate limiter. A draft whose details fail to load is listed with its ids instead of being dropped.
+- **Calendar** — `void calendar create` and `void calendar update` take `--visibility <default|public|private|confidential>` and `--transparency <opaque|transparent>` (busy / free), so a personal block on a shared work calendar can be made private from the CLI. Omitted flags are not sent, so calendar defaults still apply. Event JSON output now carries `visibility` and `transparency` in `metadata` when Google returns them.
+- **Dependencies** — updated the Telegram client (`grammers-client`, `grammers-mtsender`, `grammers-session`, `grammers-tl-types`) to 0.11 together. Telegram communities now sync as group conversations instead of being unsupported.
 - **Build** — minimum supported Rust version is now 1.99 (was 1.95), required by `html-to-markdown-rs` 3.21.
 - **Dependencies** — updated `html-to-markdown-rs` to 3.21 (Gmail HTML-to-Markdown). It replaces the unmaintained `astral-tl` parser (RUSTSEC-2026-0444) with `astral-html`.
+
+### Fixed
+
+- **Gmail** — `void gmail search`, `void gmail thread` and `void gmail drafts` expose `cc` and `bcc` next to `to` (#119). Messages served from the local store also keep their `To` / `Cc` / `Bcc` / `Reply-To`: the store only kept `From` and `Subject`, so `to` came back empty. Sync now stores the recipient headers for newly synced mail. Mail synced before this fix is always read from the API instead of the store, so its recipients are correct too.
 
 ## [0.15.2] - 2026-10-27
 

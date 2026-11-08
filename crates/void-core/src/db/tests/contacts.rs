@@ -55,22 +55,22 @@ fn list_contacts_search() {
 #[test]
 fn list_contacts_connection_filter() {
     let db = test_db();
-    let c1 = make_conversation("c1", "gladiaio", "C123");
+    let c1 = make_conversation("c1", "acme", "C123");
     db.upsert_conversation(&c1).unwrap();
-    let mut c2 = make_conversation("c2", "33651090627", "W123");
+    let mut c2 = make_conversation("c2", "33600000000", "W123");
     c2.connector = "whatsapp".into();
     db.upsert_conversation(&c2).unwrap();
 
-    let mut m1 = make_message("m1", "c1", "gladiaio", "hi", 1_000);
+    let mut m1 = make_message("m1", "c1", "acme", "hi", 1_000);
     m1.sender = "alice@slack".into();
     db.upsert_message(&m1).unwrap();
 
-    let mut m2 = make_message("m2", "c2", "33651090627", "hey", 2_000);
+    let mut m2 = make_message("m2", "c2", "33600000000", "hey", 2_000);
     m2.sender = "bob@wa".into();
     m2.connector = "whatsapp".into();
     db.upsert_message(&m2).unwrap();
 
-    let results = db.list_contacts(Some("gladiaio"), None, None, 100).unwrap();
+    let results = db.list_contacts(Some("acme"), None, None, 100).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].sender, "alice@slack");
 }

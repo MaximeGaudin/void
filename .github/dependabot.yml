@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # grammers crates are released in lockstep and share types; bumping one
+      # alone splits the lockfile and breaks the build.
+      grammers:
+        patterns: ["grammers-*"]
       # One PR per week for routine bumps instead of a flood
       minor-and-patch:
         update-types: ["minor", "patch"]

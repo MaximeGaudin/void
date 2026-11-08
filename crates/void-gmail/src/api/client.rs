@@ -453,6 +453,8 @@ impl GmailApiClient {
             .query(&[
                 ("format", "metadata"),
                 ("metadataHeaders", "To"),
+                ("metadataHeaders", "Cc"),
+                ("metadataHeaders", "Bcc"),
                 ("metadataHeaders", "Subject"),
             ])
             .send_retrying(&self.retry, self.limiter.as_ref())
