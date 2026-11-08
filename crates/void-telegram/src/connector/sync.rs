@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use grammers_client::client::{Client, UpdatesConfiguration};
+use grammers_client::client::Client;
 use grammers_client::message::Message as TgMessage;
 use grammers_client::peer::Peer;
 use grammers_client::update::Update;
+use grammers_mtsender::UpdatesConfiguration;
 use grammers_session::updates::UpdatesLike;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -17,7 +18,7 @@ use super::extract;
 
 pub(super) async fn run_sync(
     client: &Client,
-    updates: UnboundedReceiver<UpdatesLike>,
+    updates: Receiver<UpdatesLike>,
     db: &Arc<Database>,
     connection_id: &str,
     cancel: &CancellationToken,
@@ -25,13 +26,7 @@ pub(super) async fn run_sync(
     // Start the live update stream BEFORE backfill so that real-time messages
     // arriving during backfill are not lost. Duplicates are handled by upsert.
     let mut stream = client
-        .stream_updates(
-            updates,
-            UpdatesConfiguration {
-                catch_up: true,
-                ..Default::default()
-            },
-        )
+        .stream_updates(updates, UpdatesConfiguration { catch_up: true })
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -88,11 +83,7 @@ async fn backfill_dialogs(
         let chat_id = peer.id().to_string();
         let conv_external_id = format!("telegram_{connection_id}_{chat_id}");
 
-        let kind = match &peer {
-            Peer::User(_) => ConversationKind::Dm,
-            Peer::Group(_) => ConversationKind::Group,
-            Peer::Channel(_) => ConversationKind::Channel,
-        };
+        let kind = conversation_kind(peer);
 
         let conv = Conversation {
             id: format!("{connection_id}-{chat_id}"),
@@ -190,11 +181,7 @@ async fn handle_new_message(
     let conv_external_id = format!("telegram_{connection_id}_{chat_id}");
     let conv_name = peer.name().unwrap_or("?").to_string();
 
-    let kind = match &peer {
-        Peer::User(_) => ConversationKind::Dm,
-        Peer::Group(_) => ConversationKind::Group,
-        Peer::Channel(_) => ConversationKind::Channel,
-    };
+    let kind = conversation_kind(peer);
 
     let conv_id = format!("{connection_id}-{chat_id}");
     let conv = Conversation {
@@ -204,7 +191,7 @@ async fn handle_new_message(
         external_id: conv_external_id.clone(),
         name: Some(conv_name.clone()),
         kind,
-        last_message_at: Some(msg.date().timestamp()),
+        last_message_at: Some(msg.date().as_second()),
         unread_count: if msg.outgoing() { 0 } else { 1 },
         is_muted: false,
         metadata: None,
@@ -223,8 +210,8 @@ async fn handle_new_message(
         .chars()
         .take(80)
         .collect();
-    let time = msg
-        .date()
+    let time = chrono::DateTime::from_timestamp(msg.date().as_second(), 0)
+        .unwrap_or_default()
         .with_timezone(&chrono::Local)
         .format("%Y-%m-%d %H:%M:%S %Z")
         .to_string();
@@ -234,6 +221,16 @@ async fn handle_new_message(
     );
 
     Ok(())
+}
+
+/// Telegram communities group several chats under one umbrella; they hold
+/// conversations like a group does, so they are stored as groups.
+fn conversation_kind(peer: &Peer) -> ConversationKind {
+    match peer {
+        Peer::User(_) => ConversationKind::Dm,
+        Peer::Group(_) | Peer::Community(_) => ConversationKind::Group,
+        Peer::Channel(_) => ConversationKind::Channel,
+    }
 }
 
 fn tg_message_to_void(
@@ -266,7 +263,7 @@ fn tg_message_to_void(
         sender_name,
         sender_avatar_url: None,
         body: extract::extract_text(msg),
-        timestamp: msg.date().timestamp(),
+        timestamp: msg.date().as_second(),
         synced_at: Some(chrono::Utc::now().timestamp()),
         is_archived: false,
         is_saved: false,
