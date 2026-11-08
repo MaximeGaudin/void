@@ -83,7 +83,7 @@ jobs:
       - name: Test heic feature
         run: cargo test -p void-whatsapp --locked --features heic --lib -- prepare_image determine_media_type_heic
 
-  # Build against the declared MSRV (currently 1.95) so a dependency bump that
+  # Build against the declared MSRV (currently 1.99) so a dependency bump that
   # silently needs a newer rustc fails here instead of in a user's `cargo install`.
   # The check name is kept static ("MSRV") so required-status-check branch
   # protection keeps working when the version is bumped — update the toolchain
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: dtolnay/rust-toolchain@1.99.0
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.actor == 'dependabot[bot]' }}
