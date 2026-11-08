@@ -195,7 +195,7 @@ impl GmailConnector {
         subject: &str,
         body: &str,
         reply_to_message_id: Option<&str>,
-        file: Option<&std::path::Path>,
+        files: &[&std::path::Path],
         signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let body = maybe_append_signature(self, body, signature).await?;
@@ -207,7 +207,7 @@ impl GmailConnector {
             subject,
             &body,
             reply_to_message_id,
-            file,
+            files,
         )
         .await
     }
@@ -226,7 +226,7 @@ impl GmailConnector {
         subject: &str,
         body: &str,
         reply_to_message_id: Option<&str>,
-        file: Option<&std::path::Path>,
+        files: &[&std::path::Path],
         signature: super::compose::ComposeSignature<'_>,
     ) -> anyhow::Result<crate::api::GmailDraft> {
         let body = maybe_append_signature(self, body, signature).await?;
@@ -238,7 +238,7 @@ impl GmailConnector {
             subject,
             &body,
             reply_to_message_id,
-            file,
+            files,
         )
         .await
     }
@@ -371,7 +371,7 @@ pub(super) async fn create_draft_with_api(
     subject: &str,
     body: &str,
     reply_to_message_id: Option<&str>,
-    file: Option<&std::path::Path>,
+    files: &[&std::path::Path],
 ) -> anyhow::Result<crate::api::GmailDraft> {
     // When replying, fetch the original message once to derive both the
     // thread ID (for Gmail API association) and reply-all recipients (when
@@ -414,10 +414,7 @@ pub(super) async fn create_draft_with_api(
         bcc: recipients.bcc,
     };
 
-    let attachments = match file {
-        Some(path) => vec![super::compose::OutgoingAttachment::from_path(path, None)?],
-        None => Vec::new(),
-    };
+    let attachments = load_attachments(files)?;
     let raw = super::compose::compose_rfc2822_with_attachments(
         recipients,
         subject,
@@ -439,8 +436,8 @@ pub(super) async fn create_draft_with_api(
 /// is lost. The existing draft is fetched first and, unless overridden:
 /// - its `threadId`, `In-Reply-To` and `References` are kept, so a reply
 ///   draft stays in its conversation (`reply_to_message_id` re-targets it);
-/// - its attachments are downloaded and re-attached when `file` is `None`.
-///   Passing `file` replaces them with that single file.
+/// - its attachments are downloaded and re-attached when `files` is empty.
+///   Passing `files` replaces them with those files.
 pub(super) async fn update_draft_with_api(
     api: &GmailApiClient,
     draft_id: &str,
@@ -448,7 +445,7 @@ pub(super) async fn update_draft_with_api(
     subject: &str,
     body: &str,
     reply_to_message_id: Option<&str>,
-    file: Option<&std::path::Path>,
+    files: &[&std::path::Path],
 ) -> anyhow::Result<crate::api::GmailDraft> {
     let existing = api
         .get_draft(draft_id)
@@ -467,10 +464,12 @@ pub(super) async fn update_draft_with_api(
         None => existing_msg.map(ReplyContext::of_draft).unwrap_or_default(),
     };
 
-    let attachments = match (file, existing_msg) {
-        (Some(path), _) => vec![super::compose::OutgoingAttachment::from_path(path, None)?],
-        (None, Some(msg)) => download_attachments(api, msg).await?,
-        (None, None) => Vec::new(),
+    let attachments = if !files.is_empty() {
+        load_attachments(files)?
+    } else if let Some(msg) = existing_msg {
+        download_attachments(api, msg).await?
+    } else {
+        Vec::new()
     };
 
     let raw = super::compose::compose_rfc2822_with_attachments(
@@ -486,6 +485,16 @@ pub(super) async fn update_draft_with_api(
     api.update_draft(draft_id, &encoded, reply.thread_id.as_deref())
         .await
         .map_err(Into::into)
+}
+
+/// Read local files to attach, in the order given.
+fn load_attachments(
+    files: &[&std::path::Path],
+) -> anyhow::Result<Vec<super::compose::OutgoingAttachment>> {
+    files
+        .iter()
+        .map(|path| super::compose::OutgoingAttachment::from_path(path, None))
+        .collect()
 }
 
 /// Fetch every file attachment of `msg` so it can be re-embedded.

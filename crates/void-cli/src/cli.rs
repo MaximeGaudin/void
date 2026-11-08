@@ -646,6 +646,71 @@ mod tests {
         }
     }
 
+    #[test]
+    fn parse_gmail_draft_create_with_repeated_file() {
+        let cli = parse(&[
+            "void",
+            "gmail",
+            "draft",
+            "create",
+            "--to",
+            "a@b.com",
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--file",
+            "a.pdf",
+            "--file",
+            "b.png",
+        ]);
+        match cli.command {
+            Some(Command::Gmail(ref g)) => match &g.command {
+                commands::gmail::GmailCommand::Draft(d) => match &d.action {
+                    commands::gmail::DraftAction::Create(a) => {
+                        assert_eq!(a.file, ["a.pdf", "b.png"]);
+                    }
+                    other => panic!("expected Create, got {other:?}"),
+                },
+                other => panic!("expected Draft, got {other:?}"),
+            },
+            other => panic!("expected Gmail, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_gmail_draft_update_with_repeated_file() {
+        let cli = parse(&[
+            "void",
+            "gmail",
+            "draft",
+            "update",
+            "d1",
+            "--to",
+            "a@b.com",
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--file",
+            "a.pdf",
+            "--file",
+            "b.png",
+        ]);
+        match cli.command {
+            Some(Command::Gmail(ref g)) => match &g.command {
+                commands::gmail::GmailCommand::Draft(d) => match &d.action {
+                    commands::gmail::DraftAction::Update(a) => {
+                        assert_eq!(a.file, ["a.pdf", "b.png"]);
+                    }
+                    other => panic!("expected Update, got {other:?}"),
+                },
+                other => panic!("expected Draft, got {other:?}"),
+            },
+            other => panic!("expected Gmail, got {other:?}"),
+        }
+    }
+
     // --- Unsupported connector forward rejection ---
 
     #[test]

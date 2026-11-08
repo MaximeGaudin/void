@@ -204,7 +204,7 @@ pub async fn reply(
         let (id, scheduled_at) = run_slack_scheduled_reply(
             connection,
             &conv.external_id,
-            &msg.external_id,
+            slack_thread_root_ts(&msg),
             params.message,
             at_str,
         )
@@ -215,7 +215,11 @@ pub async fn reply(
     let connector_type = parse_connector_type(&connection.connector_type.to_string())
         .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", connection.connector_type))?;
 
-    let reply_id = connectors::build_reply_id(connector_type, &conv.external_id, &msg.external_id);
+    let reply_id = connectors::build_reply_id(
+        connector_type,
+        &conv.external_id,
+        reply_target_external_id(&msg, connector_type, params.in_thread),
+    );
 
     let content = if let Some(path) = params.file {
         MessageContent::File {
@@ -253,6 +257,37 @@ pub async fn reply(
         conn.reply(&reply_id, content, params.in_thread).await?
     };
     Ok(OutboundResult::immediate(sent_id))
+}
+
+/// External id an immediate reply targets: the thread root for a threaded
+/// Slack reply, the message itself otherwise.
+fn reply_target_external_id(
+    msg: &void_core::models::Message,
+    connector_type: void_core::models::ConnectorType,
+    in_thread: bool,
+) -> &str {
+    if in_thread
+        && connector_type == void_core::models::ConnectorType::from_static(void_slack::CONNECTOR_ID)
+    {
+        slack_thread_root_ts(msg)
+    } else {
+        &msg.external_id
+    }
+}
+
+/// `ts` of the thread a Slack reply should land in.
+///
+/// Slack requires `thread_ts` to be the parent's `ts`, never a reply's. Sync
+/// stores the parent as `reply_to_id` (`{connection_id}-{thread_ts}`), so a
+/// message that is itself a threaded reply resolves to its parent; anything
+/// else is (or starts) its own thread.
+fn slack_thread_root_ts(msg: &void_core::models::Message) -> &str {
+    msg.reply_to_id
+        .as_deref()
+        .and_then(|id| id.strip_prefix(msg.connection_id.as_str()))
+        .and_then(|rest| rest.strip_prefix('-'))
+        .filter(|ts| !ts.is_empty())
+        .unwrap_or(&msg.external_id)
 }
 
 /// Edit a Slack message body via `chat.update`.
@@ -797,6 +832,51 @@ mod tests {
         let mut msg = make_message(id, conversation_id, "test-slack", "body", 0);
         msg.external_id = external_id.into();
         msg
+    }
+
+    #[test]
+    fn slack_thread_root_ts_uses_parent_for_threaded_reply() {
+        let mut msg = stub_message("test-slack-1700000005.000200", "c1", "1700000005.000200");
+        msg.reply_to_id = Some("test-slack-1700000000.000100".into());
+        assert_eq!(slack_thread_root_ts(&msg), "1700000000.000100");
+    }
+
+    #[test]
+    fn slack_thread_root_ts_keeps_own_ts_for_parent_and_top_level() {
+        let mut parent = stub_message("test-slack-1700000000.000100", "c1", "1700000000.000100");
+        parent.reply_to_id = Some("test-slack-1700000000.000100".into());
+        assert_eq!(slack_thread_root_ts(&parent), "1700000000.000100");
+
+        let top_level = stub_message("test-slack-1700000009.000300", "c1", "1700000009.000300");
+        assert_eq!(slack_thread_root_ts(&top_level), "1700000009.000300");
+    }
+
+    #[test]
+    fn slack_thread_root_ts_ignores_reply_to_id_from_other_connection() {
+        let mut msg = stub_message("test-slack-1700000005.000200", "c1", "1700000005.000200");
+        msg.reply_to_id = Some("other-1700000000.000100".into());
+        assert_eq!(slack_thread_root_ts(&msg), "1700000005.000200");
+    }
+
+    #[test]
+    fn reply_target_external_id_uses_thread_root_only_for_slack_in_thread() {
+        let mut msg = stub_message("test-slack-1700000005.000200", "c1", "1700000005.000200");
+        msg.reply_to_id = Some("test-slack-1700000000.000100".into());
+        let slack = ConnectorType::from_static(void_slack::CONNECTOR_ID);
+        let whatsapp = ConnectorType::from_static("whatsapp");
+
+        assert_eq!(
+            reply_target_external_id(&msg, slack, true),
+            "1700000000.000100"
+        );
+        assert_eq!(
+            reply_target_external_id(&msg, slack, false),
+            "1700000005.000200"
+        );
+        assert_eq!(
+            reply_target_external_id(&msg, whatsapp, true),
+            "1700000005.000200"
+        );
     }
 
     #[test]

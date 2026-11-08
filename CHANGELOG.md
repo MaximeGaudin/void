@@ -12,6 +12,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Security** — credentials are encrypted at rest with AES-256-GCM under a master key kept in the OS credential store (macOS Keychain, Windows Credential Manager, Secret Service): token fields in `config.toml` (stored as `enc:v1:…`), Gmail/Calendar OAuth token caches, and the Telegram session. Existing plaintext is sealed on the next run, hand-pasted tokens are sealed in place without touching comments. Headless hosts can pass the key via `VOID_MASTER_KEY`; without any credential store, void falls back to an owner-only `master.key` file. See [Credential encryption](docs/configuration.md#credential-encryption).
 - **Doctor** — new credentials check: master key backend, credentials still in plaintext, and credentials encrypted under a different key.
 
+### Changed
+
+- **Build** — minimum supported Rust version is now 1.99 (was 1.95), required by `html-to-markdown-rs` 3.21.
+- **Dependencies** — updated `html-to-markdown-rs` to 3.21 (Gmail HTML-to-Markdown). It replaces the unmaintained `astral-tl` parser (RUSTSEC-2026-0444) with `astral-html`.
+
+## [0.15.2] - 2026-10-27
+
+### Fixed
+
+- **Slack** — `void reply --in-thread` and scheduled replies (`--at`) to a message that is already inside a thread now post under the thread's parent. They used to pass the reply's own `ts` as `thread_ts`, which Slack's API says never to do.
+- **Remote store** — `--file` attachments keep their original name. They used to reach recipients as `<uuid>-report.pdf` because the staging UUID was part of the staged filename.
+- **Remote store** — `--file` uploads work for names with spaces or non-ASCII characters (`my file.pdf`, `devis_signé.pdf`). OpenSSH 9+ `scp` kept the shell quotes as part of the remote path and failed with `No such file or directory`.
+
+## [0.15.1] - 2026-10-27
+
+### Changed
+
+- **Dependencies** — updated `libheif-rs` to 3.0 (optional `heic` feature), `sha2` to 0.11, and the minor/patch group (tokio, reqwest, serde_json, clap, uuid, rmcp, …).
+
+### Fixed
+
+- **Sync** — `void --config <path> sync --daemon` (and the setup wizard's "Start syncing now?") now uses `<path>`: the daemon loaded the default config and spawned its child without `--config`, so it failed or synced the wrong profile.
+- **Gmail** — the startup INBOX refresh renews the access token on `401` and retries the message. A pass longer than the token's 1h lifetime (large inbox, rate-limited) used to skip every later message with `401 Unauthorized`.
+- **Gmail** — `void gmail draft create` and `void gmail draft update` accept several attachments: repeat `--file` (`--file a.pdf --file b.png`). A second `--file` used to be rejected by the argument parser. Remote mode stages every file.
+
+### Security
+
+- **Dependencies** — bump `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-roots` / `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `ctutils` 0.4.6, `tokio` 1.54.1 and `event-listener` 5.4.2 to fix RUSTSEC-2026-0338/0339/0340/0341/0342 (quinn-proto), RUSTSEC-2026-0346/0347/0348/0349 (rustls), RUSTSEC-2026-0381/0383 (distrusted emSign roots), RUSTSEC-2026-0382 (distrusted intermediates), RUSTSEC-2026-0385 (ctutils) and the unsound RUSTSEC-2026-0221 / RUSTSEC-2026-0386. `cargo audit` and `cargo deny check` are clean.
+
 ## [0.15.0] - 2026-09-29
 
 ### Added

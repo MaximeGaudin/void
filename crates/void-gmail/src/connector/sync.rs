@@ -109,8 +109,24 @@ impl GmailConnector {
             }
         }
 
+        // A large first pass can outlive the 1h access token `api` was built
+        // with: on 401, renew it via get_client() and keep using the new one.
+        let mut renewed: Option<GmailApiClient> = None;
         for msg_id in &new_msg_ids {
-            match api.get_message(msg_id).await {
+            let mut result = renewed.as_ref().unwrap_or(api).get_message(msg_id).await;
+            if result.as_ref().is_err_and(is_unauthorized) {
+                match self.get_client().await {
+                    Ok(fresh) => {
+                        info!(config_id = %self.config_id, "access token expired mid-refresh, renewed");
+                        result = fresh.get_message(msg_id).await;
+                        renewed = Some(fresh);
+                    }
+                    Err(e) => {
+                        warn!(config_id = %self.config_id, "failed to renew access token: {e}")
+                    }
+                }
+            }
+            match result {
                 Ok(msg) => {
                     self.store_message(db, &msg)?;
                 }
@@ -374,6 +390,10 @@ impl GmailConnector {
         }
         Ok(())
     }
+}
+
+fn is_unauthorized(e: &GmailError) -> bool {
+    matches!(e, GmailError::Http(err) if err.status() == Some(reqwest::StatusCode::UNAUTHORIZED))
 }
 
 fn has_inbox_label(msg: &GmailMessage) -> bool {

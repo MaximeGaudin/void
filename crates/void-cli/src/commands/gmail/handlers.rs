@@ -221,7 +221,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
     match &args.action {
         DraftAction::Create(a) => {
             let connector = build_gmail_connector(a.connection.as_deref())?;
-            let file_path = a.file.as_deref().map(std::path::Path::new);
+            let files: Vec<&std::path::Path> = a.file.iter().map(std::path::Path::new).collect();
             let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
             let draft = connector
                 .create_draft(
@@ -233,7 +233,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                     &a.subject,
                     &a.body,
                     reply_to,
-                    file_path,
+                    &files,
                     void_gmail::connector::ComposeSignature::from_flags(
                         a.signature,
                         a.signature_from.as_deref(),
@@ -253,7 +253,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
         }
         DraftAction::Update(a) => {
             let connector = build_gmail_connector(a.connection.as_deref())?;
-            let file_path = a.file.as_deref().map(std::path::Path::new);
+            let files: Vec<&std::path::Path> = a.file.iter().map(std::path::Path::new).collect();
             let reply_to = a.reply_to.as_deref().map(strip_void_id_prefix);
             let draft = connector
                 .update_draft(
@@ -266,7 +266,7 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
                     &a.subject,
                     &a.body,
                     reply_to,
-                    file_path,
+                    &files,
                     void_gmail::connector::ComposeSignature::from_flags(
                         a.signature,
                         a.signature_from.as_deref(),
