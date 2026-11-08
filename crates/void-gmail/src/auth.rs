@@ -74,20 +74,29 @@ impl std::fmt::Debug for InstalledCredentials {
 impl TokenCache {
     pub fn load(path: &Path) -> Result<Self, GmailError> {
         debug!(path = %path.display(), "loading token cache");
-        let content = std::fs::read_to_string(path).map_err(|e| {
+        let file = void_core::secrets::read_secret_file(path).map_err(|e| {
             GmailError::Auth(format!(
                 "failed to read token cache at {}: {e}",
                 path.display()
             ))
         })?;
-        serde_json::from_str(&content).map_err(|e| GmailError::Parse(e.to_string()))
+        let cache: Self =
+            serde_json::from_slice(&file.contents).map_err(|e| GmailError::Parse(e.to_string()))?;
+        if file.was_plaintext {
+            // Legacy plaintext cache: re-save it sealed.
+            if let Err(e) = cache.save(path) {
+                tracing::warn!(path = %path.display(), error = %e, "failed to encrypt token cache");
+            }
+        }
+        Ok(cache)
     }
 
     pub fn save(&self, path: &Path) -> Result<(), GmailError> {
         debug!(path = %path.display(), "saving token cache");
         let content = serde_json::to_string_pretty(self).map_err(GmailError::from)?;
-        // Holds OAuth access/refresh tokens — keep it owner-only.
-        void_core::config::write_secure(path, content)?;
+        // Holds OAuth access/refresh tokens — sealed with the void master key
+        // and kept owner-only.
+        void_core::secrets::write_secret_file(path, content)?;
         Ok(())
     }
 
@@ -338,6 +347,7 @@ mod tests {
 
     #[test]
     fn token_cache_save_load_roundtrip() {
+        void_core::secrets::use_test_master_key();
         let dir = std::env::temp_dir().join(format!("void-gmail-auth-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("token.json");
@@ -349,11 +359,34 @@ mod tests {
         };
         cache.save(&path).unwrap();
 
+        let raw = std::fs::read(&path).unwrap();
+        assert!(void_core::secrets::is_encrypted_file(&raw));
+        assert!(!String::from_utf8_lossy(&raw).contains("1//refresh"));
+
         let loaded = TokenCache::load(&path).unwrap();
         assert_eq!(loaded.access_token, "ya29.test");
         assert_eq!(loaded.refresh_token.as_deref(), Some("1//refresh"));
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn token_cache_legacy_plaintext_is_loaded_and_sealed() {
+        void_core::secrets::use_test_master_key();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("token.json");
+        std::fs::write(
+            &path,
+            r#"{"access_token":"ya29.old","refresh_token":"1//old","expires_at":1}"#,
+        )
+        .unwrap();
+
+        let loaded = TokenCache::load(&path).unwrap();
+        assert_eq!(loaded.refresh_token.as_deref(), Some("1//old"));
+        assert!(void_core::secrets::is_encrypted_file(
+            &std::fs::read(&path).unwrap()
+        ));
+        assert_eq!(TokenCache::load(&path).unwrap().access_token, "ya29.old");
     }
 
     #[test]
@@ -383,6 +416,7 @@ mod tests {
 
     #[test]
     fn token_cache_load_invalid_json_err() {
+        void_core::secrets::use_test_master_key();
         let dir =
             std::env::temp_dir().join(format!("void-gmail-bad-json-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();

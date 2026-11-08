@@ -86,6 +86,7 @@ fn resolve_migration_connection_ambiguous_connector_returns_none() {
 
 #[test]
 fn migrate_db_mutes_to_config_imports_muted_conversations() {
+    void_core::secrets::use_test_master_key();
     let dir = std::env::temp_dir().join(format!("void-mute-migrate-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let config_path = dir.join("config.toml");

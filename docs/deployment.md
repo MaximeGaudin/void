@@ -57,7 +57,7 @@ server (always on)                                  laptop(s)
                     └──► WhatsApp, Slack, Gmail, ...
 ```
 
-On the server, configure and run `void` exactly as in local mode (`void setup`, `void sync --daemon`). On each laptop, the entire client config is:
+On the server, configure and run `void` exactly as in local mode (`void setup`, `void sync --daemon`). Credentials are [encrypted](configuration.md#credential-encryption) on the server; the config snapshot cached on your laptop only holds ciphertext. A headless server usually has no credential store, so void falls back to a `master.key` file — set `VOID_MASTER_KEY` for the daemon and SSH sessions instead if you prefer to keep the key off disk. On each laptop, the entire client config is:
 
 ```toml
 # ~/.config/void/config.toml

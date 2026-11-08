@@ -839,3 +839,108 @@ type = "definitely-not-a-connector"
         "definitely-not-a-connector"
     );
 }
+
+#[test]
+fn save_encrypts_credentials_and_load_decrypts_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let config = VoidConfig {
+        connections: vec![ConnectionConfig {
+            id: "work-slack".into(),
+            connector_type: ConnectorType::from_static("slack"),
+            ignore_conversations: vec![],
+            settings: test_slack_settings("xapp-1-secret", "xoxp-secret", Some("A0123456"), None),
+        }],
+        ..Default::default()
+    };
+    config.save(&path).unwrap();
+
+    let on_disk = std::fs::read_to_string(&path).unwrap();
+    assert!(!on_disk.contains("xapp-1-secret"));
+    assert!(!on_disk.contains("xoxp-secret"));
+    assert!(on_disk.contains("enc:v1:"));
+    // Non-secret settings stay readable.
+    assert!(on_disk.contains("A0123456"));
+
+    let loaded = VoidConfig::load(&path).unwrap();
+    let settings = &loaded.connections[0].settings;
+    assert_eq!(settings_str(settings, "app_token"), Some("xapp-1-secret"));
+    assert_eq!(settings_str(settings, "user_token"), Some("xoxp-secret"));
+}
+
+#[test]
+fn load_seals_hand_written_plaintext_and_keeps_comments() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"# my notes
+[[connections]]
+id = "gh"
+type = "github"
+token = "ghp_plaintext" # personal token
+username = "octocat"
+"#,
+    )
+    .unwrap();
+
+    let loaded = VoidConfig::load(&path).unwrap();
+    assert_eq!(
+        settings_str(&loaded.connections[0].settings, "token"),
+        Some("ghp_plaintext")
+    );
+
+    let on_disk = std::fs::read_to_string(&path).unwrap();
+    assert!(!on_disk.contains("ghp_plaintext"));
+    assert!(on_disk.contains("# my notes"));
+    assert!(on_disk.contains("# personal token"));
+    assert!(on_disk.contains(r#"username = "octocat""#));
+
+    let raw = VoidConfig::parse(&on_disk).unwrap();
+    let report = raw.secrets_report();
+    assert_eq!(report.encrypted, 1);
+    assert!(report.plaintext.is_empty());
+    assert!(report.undecryptable.is_empty());
+}
+
+#[test]
+fn secrets_report_flags_plaintext_and_undecryptable() {
+    let raw = VoidConfig::parse(
+        r#"
+[[connections]]
+id = "r"
+type = "reddit"
+client_id = "public-id"
+client_secret = "plain-secret"
+refresh_token = "enc:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+"#,
+    )
+    .unwrap();
+    let report = raw.secrets_report();
+    assert_eq!(report.encrypted, 0);
+    assert_eq!(report.plaintext, vec![("r".into(), "client_secret".into())]);
+    assert_eq!(
+        report.undecryptable,
+        vec![("r".into(), "refresh_token".into())]
+    );
+}
+
+#[test]
+fn undecryptable_credential_survives_load_and_save() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let foreign = "enc:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    std::fs::write(
+        &path,
+        format!("[[connections]]\nid = \"gh\"\ntype = \"github\"\ntoken = \"{foreign}\"\n"),
+    )
+    .unwrap();
+
+    let loaded = VoidConfig::load(&path).unwrap();
+    assert_eq!(
+        settings_str(&loaded.connections[0].settings, "token"),
+        Some(foreign)
+    );
+    loaded.save(&path).unwrap();
+    assert!(std::fs::read_to_string(&path).unwrap().contains(foreign));
+}

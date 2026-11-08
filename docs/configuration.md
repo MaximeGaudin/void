@@ -8,6 +8,7 @@
 - [`[sync]`](#sync)
 - [`[[connections]]`](#connections)
 - [`ignore_conversations`](#ignore_conversations)
+- [Credential encryption](#credential-encryption)
 - [Data storage layout](#data-storage-layout)
 
 ## File location
@@ -161,6 +162,39 @@ ignore_conversations = ["noisy-group@g.us", "spam", "social"]
 
 You can also mute/unmute interactively with `void mute` — see the [command reference](commands.md#acting).
 
+## Credential encryption
+
+Credential fields (`app_token`, `user_token`, `config_refresh_token`, `client_secret`, `refresh_token`, `api_key`, `api_hash`, `token`, `password`) are stored encrypted:
+
+```toml
+[[connections]]
+id = "github"
+type = "github"
+token = "enc:v1:jW5JDqVmQz9JPMRY63bG701Z61Nx2ls7…" # your comments are kept
+username = "octocat"
+```
+
+You can still paste a plaintext token by hand: void encrypts it in place on the next run, keeping comments and layout. Other settings stay readable.
+
+Values are sealed with AES-256-GCM under a 256-bit master key, created on first use and resolved in this order:
+
+| Source | When |
+|--------|------|
+| `VOID_MASTER_KEY` (base64 of 32 bytes) | Set in the environment — headless servers, systemd `LoadCredential=`, CI. Never written to disk by void. |
+| OS credential store, entry `void` / `master-key` | macOS Keychain, Windows Credential Manager, Secret Service (Linux with a D-Bus session). Default. |
+| `master.key` next to `config.toml` (`0600`) | No credential store reachable, or `VOID_SECRET_STORE=file`. Weaker: the key is on the same disk. |
+
+Once a backend holds the key, void keeps using it: a key in the credential store is never silently replaced by a file key (e.g. when an SSH session has no D-Bus). To run void where the credential store isn't reachable, export the existing key:
+
+```bash
+# macOS
+export VOID_MASTER_KEY="$(security find-generic-password -s void -a master-key -w)"
+# Linux (Secret Service)
+export VOID_MASTER_KEY="$(secret-tool lookup service void username master-key)"
+```
+
+Back up the master key along with your config: without it, encrypted tokens can't be recovered and the affected connections have to be set up again. `void doctor` reports the backend in use, any credential still in plaintext, and any credential encrypted under a different key.
+
 ## Data storage layout
 
 Everything lives locally under `store.path` — no external database, no Docker:
@@ -168,9 +202,9 @@ Everything lives locally under `store.path` — no external database, no Docker:
 | File | Content |
 |------|---------|
 | `void.db` | Main SQLite database (WAL mode), plus `void.db-shm` / `void.db-wal` |
-| `whatsapp-<connection-id>.db` | WhatsApp session |
-| `telegram-<connection-id>.json` | Telegram session |
-| `<connection-id>-token.json` | OAuth2 token cache (Gmail, Calendar) |
+| `whatsapp-<connection-id>.db` | WhatsApp session (file permissions only) |
+| `telegram-<connection-id>.json` | Telegram session (encrypted) |
+| `<connection-id>-token.json` | OAuth2 token cache (Gmail, Calendar, encrypted) |
 | `LOCK` | PID file while the sync daemon is running |
 
 The config file lives at the platform config path (above), separate from the store.

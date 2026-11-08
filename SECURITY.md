@@ -17,11 +17,14 @@ You can expect an acknowledgment within a few days. Please include reproduction 
 Void handles sensitive material by design. What you should know:
 
 - **Everything is local.** Messages, contacts, and events are stored in a SQLite database under your store directory (default `~/.local/share/void`). Nothing is sent to any third-party service operated by this project — void only talks to the APIs of the services you connect (and Unipile for LinkedIn).
-- **Credentials at rest.** OAuth tokens, WhatsApp/Telegram session files, and Slack tokens live unencrypted in the store directory, protected by filesystem permissions only. On Unix, void writes these files `0600` (owner-only) and their parent directory `0700`, but anyone who can still read them (e.g. via a too-permissive backup or a shared/`root` account) can act as you. Treat backups of it accordingly.
+- **Credentials at rest.** Tokens in `config.toml` (Slack, Reddit, GitHub, LinkedIn, Circleback, Telegram API hash), the Gmail/Calendar OAuth token caches, and the Telegram session are encrypted with AES-256-GCM under a per-user master key kept in the OS credential store (macOS Keychain, Windows Credential Manager, Secret Service on Linux). Plaintext left by older versions or written by hand is sealed on the next run. Files stay `0600` / `0700` on Unix as defense in depth. Limits:
+  - On a host without a reachable credential store (e.g. a headless Linux server without a D-Bus session), the master key falls back to an owner-only `master.key` file in the config directory — a leaked `config.toml`, store backup, or remote-mode cache no longer exposes usable tokens, but someone who can read your whole home directory still can. Provide the key through `VOID_MASTER_KEY` (e.g. systemd `LoadCredential=`) to avoid that. `void doctor` shows which backend is in use.
+  - The WhatsApp session (`whatsapp-<id>.db`, a SQLite store owned by the WhatsApp library) is still protected by file permissions only.
+  - Anything running as your user while void is unlocked (including an agent with shell access) can still ask void for the decrypted tokens. Encryption at rest protects copies of the files, not a compromised session.
 - **Hooks execute an external agent CLI** (e.g. `claude`) with prompts that may contain message content. Review hook prompts and the agent's tool permissions (`extra_args`) before enabling a hook.
 - **Remote store mode** transports data over your own SSH connection; no additional service is introduced.
 
-Hardening contributions (e.g. OS keychain integration for tokens) are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Hardening contributions (e.g. encrypting the WhatsApp session store) are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Embedded Google OAuth client
 
