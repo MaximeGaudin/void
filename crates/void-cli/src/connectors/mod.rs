@@ -12,6 +12,7 @@ mod reddit;
 mod slack;
 mod telegram;
 mod whatsapp;
+mod withings;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -304,6 +305,45 @@ mod tests {
         let connector = (plugin.build)(&conn, store.path(), &sync).unwrap();
         assert_eq!(connector.connector_type().as_str(), "reddit");
         assert_eq!(connector.connection_id(), "test-reddit");
+    }
+
+    #[test]
+    fn validate_all_connections_withings_missing_client_secret_fails() {
+        let mut settings = toml::Table::new();
+        settings.insert("client_id".into(), toml::Value::String("id".into()));
+        let conn = ConnectionConfig {
+            id: "withings".into(),
+            connector_type: ConnectorType::from_static("withings"),
+            ignore_conversations: vec![],
+            settings,
+        };
+        let mut cfg = VoidConfig::default();
+        cfg.connections.push(conn);
+        let err = validate_all_connections(&cfg).unwrap_err();
+        assert!(err.to_string().contains("missing client_secret"));
+    }
+
+    #[test]
+    fn build_withings_connector_via_registry() {
+        let mut settings = toml::Table::new();
+        settings.insert("client_id".into(), toml::Value::String("id".into()));
+        settings.insert("client_secret".into(), toml::Value::String("secret".into()));
+        settings.insert(
+            "streams".into(),
+            toml::Value::Array(vec![toml::Value::String("sleep".into())]),
+        );
+        let conn = ConnectionConfig {
+            id: "test-withings".into(),
+            connector_type: ConnectorType::from_static("withings"),
+            ignore_conversations: vec![],
+            settings,
+        };
+        let sync = SyncConfig::default();
+        let plugin = by_id("withings").unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let connector = (plugin.build)(&conn, store.path(), &sync).unwrap();
+        assert_eq!(connector.connector_type().as_str(), "withings");
+        assert_eq!(connector.connection_id(), "test-withings");
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 Every connector is added through the same flow: run `void setup`, pick the service, follow the prompts. This page covers what each service needs.
 
+Most connectors need nothing but that wizard. Slack, Reddit, GitHub, Circleback and Withings first need credentials registered with the service itself — each section below walks through that registration, field by field, before the wizard.
+
 | Connector | Credentials needed | Sync mechanism |
 |-----------|--------------------|----------------|
 | [WhatsApp](#whatsapp) | None — QR code | wa-rs WebSocket (push) |
@@ -14,6 +16,8 @@ Every connector is added through the same flow: run `void setup`, pick the servi
 | [Google News](#google-news) | None — public RSS | Google News RSS polling |
 | [Reddit](#reddit) | Reddit app OAuth | Reddit API polling |
 | [GitHub](#github) | Personal Access Token | GitHub REST API polling |
+| [Circleback](#circleback) | Circleback API key | Circleback API polling |
+| [Withings](#withings) | Withings app OAuth | Withings API polling |
 
 ## WhatsApp
 
@@ -236,6 +240,149 @@ connector's state first with `void sync --clear-connector circleback`, then sync
 void inbox --connector circleback
 void search "pricing" --connector circleback
 ```
+
+## Withings
+
+[Withings](https://www.withings.com) scales, blood-pressure monitors, watches and sleep mats feed
+the Health Mate API. The connector pulls them read-only: each data stream becomes a conversation,
+and each measurement group, day, night, workout session, ECG recording or device becomes a message.
+
+Withings has no shared credentials to lend, so this takes one detour through their developer
+dashboard. Budget five minutes; the walkthrough below leaves nothing to guess.
+
+### 1. Register a Withings application
+
+Sign in at <https://developer.withings.com/dashboard> and create an application. The form asks for
+more than you need — only three fields matter:
+
+| Field | What to put | Why |
+|-------|-------------|-----|
+| Target environment | **Development** | Production requires a public HTTPS callback; void runs on your machine |
+| Application name / description | Anything, e.g. `Void` | Shown only to you, on the consent screen |
+| Registered URLs | **`http://localhost:8765/callback`** | Must match byte for byte — Withings compares the string exactly, a trailing slash or a different port fails the exchange |
+
+Withings will warn you that *"HTTP URLs, localhost and ports other than 80 or 443 are not supported
+for applications running in production […] your application will be restricted to 10 users"*.
+That is expected and harmless here: the application is yours, and it has exactly one user — you.
+
+When asked for scopes, tick all three:
+
+```
+user.info      user.metrics      user.activity
+```
+
+Leaving one out does not fail the setup — it silently empties a stream. `user.metrics` carries
+weight and blood pressure, `user.activity` carries steps, sleep, workouts and ECG.
+
+Once the application is created, the dashboard shows a **Client ID** and a **Client Secret**. Keep
+that tab open; the next step asks for both.
+
+### 2. Run the wizard
+
+```bash
+void setup
+```
+
+Pick **Add a connection** → **Withings**, then answer four prompts:
+
+1. **Withings client ID** — paste from the dashboard
+2. **Withings client secret** — paste from the dashboard
+3. **Streams** — press Enter for all six, or name a subset (`measures, sleep`)
+4. **Backfill days** and **Account name** — press Enter for `365` and `withings`
+
+Your browser then opens on the Withings consent screen. Approve access, and the tab confirms the
+authorization. Withings gives only about 30 seconds to redeem an authorization code, so the wizard
+exchanges it the instant the redirect lands — do not leave the consent screen waiting.
+
+If the browser does not open, the wizard prints the URL; paste it manually. If the port is taken,
+free it (`lsof -nP -iTCP:8765 -sTCP:LISTEN`) and re-run the wizard.
+
+### 3. Check it took
+
+```bash
+void setup     # → Show configuration: credentials redacted, streams listed
+void doctor    # → Withings credentials valid
+void sync      # first sync backfills a year
+void inbox --connector withings
+```
+
+The resulting config:
+
+```toml
+[[connections]]
+id = "withings"
+type = "withings"
+client_id = "..."
+client_secret = "..."
+streams = ["measures", "activity", "sleep", "workouts", "heart", "devices"]
+backfill_days = 365
+```
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `client_id` | — | required; from the Withings developer dashboard |
+| `client_secret` | — | required; from the same place |
+| `streams` | all six | any of `measures`, `activity`, `sleep`, `workouts`, `heart`, `devices` — omit the key for all of them |
+| `backfill_days` | 365 | how far back the first sync reaches |
+
+### What lands in the inbox
+
+Each stream is one conversation:
+
+- **Body measurements** — one message per measurement group: weight, fat ratio, muscle and bone
+  mass, hydration, blood pressure, heart rate, SpO2, pulse wave velocity, vascular age
+- **Daily activity** — one message per day: steps, distance, calories, active time, average heart rate
+- **Sleep** — one message per night: time asleep, sleep score, deep and REM time, time awake,
+  average heart rate
+- **Workouts** — one message per session: sport, duration, moving time, distance, calories,
+  average and max heart rate
+- **Heart & ECG** — one message per recording: the AFib verdict for an ECG, heart rate, and blood
+  pressure when the cuff reported it
+- **Devices** — one message per linked device, rewritten on each poll: model, kind, battery level
+  (`high`/`medium`/`low`, Withings gives no percentage) and last session
+
+Every raw field is kept in the message metadata, so `void messages --json` gives you the numbers
+without re-parsing the rendered line.
+
+Measurements a scale could not attribute to a user (someone else stepped on it) are skipped. The
+day and the night just recorded keep changing after they are first imported, so the connector
+re-reads the last 7 days of activity, sleep, workouts and heart data on every poll and updates
+those rows in place; body measurements use Withings' own `lastupdate` cursor and are only re-read
+when Withings changes them.
+
+The connector is read-only: `void send` and `void reply` refuse a Withings conversation.
+
+```bash
+void inbox --connector withings
+void messages withings-sleep
+void search "weight" --connector withings
+```
+
+### Tokens, and why one application per program
+
+Withings rotates the refresh token on every refresh and kills the previous one. Tokens therefore
+live in `<store>/<connection-id>-withings-token.json` (owner-only), never in `config.toml`. void
+re-reads that file before every call and serializes refreshes on a lock file next to it (`flock` on
+Unix, an exclusive open on Windows), so the sync daemon and a CLI command running side by side
+cannot invalidate each other.
+
+A *separate* program holding the same grant — another machine, a hosted MCP server, a sync script —
+has no way to see that rotation, and the first refresh kills it. Give each program its own Withings
+application; they are free and take a minute to register.
+
+If a grant is lost anyway, re-authorize with `void setup` → **Re-authenticate a connection** →
+your Withings connection. That reruns the browser flow and rewrites the token file.
+
+### When something is off
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `no Withings token at …` | the OAuth flow never completed | `void setup` → Re-authenticate a connection |
+| `the Withings refresh token was rejected` | another program refreshed the same grant, or access was revoked in the Health Mate app | re-authorize, then give that program its own application |
+| Consent screen returns an error page | the registered URL does not match `http://localhost:8765/callback` exactly | fix it in the dashboard, re-run the wizard |
+| Sleep, workouts or activity stay empty | `user.activity` was not granted | add the scope in the dashboard, then re-authenticate |
+| `could not listen on 127.0.0.1:8765` | another process holds the port | `lsof -nP -iTCP:8765 -sTCP:LISTEN`, stop it, re-run |
+| `Withings is rate limiting this app` (status 601) | too many calls | the connector retries on its own; raise `withings_poll_interval_secs` if it persists |
 
 ## Multiple accounts
 

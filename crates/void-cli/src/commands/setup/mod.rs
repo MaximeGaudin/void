@@ -16,6 +16,7 @@ pub(crate) mod reddit;
 pub(crate) mod slack;
 pub(crate) mod telegram;
 pub(crate) mod whatsapp;
+pub(crate) mod withings;
 mod wizard;
 
 use void_core::config::{self, VoidConfig};

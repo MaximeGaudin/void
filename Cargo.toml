@@ -15,6 +15,7 @@ members = [
     "crates/void-github",
     "crates/void-circleback",
     "crates/void-imessage",
+    "crates/void-withings",
 ]
 
 [workspace.package]
@@ -98,3 +99,4 @@ void-reddit = { path = "crates/void-reddit" }
 void-github = { path = "crates/void-github" }
 void-circleback = { path = "crates/void-circleback" }
 void-imessage = { path = "crates/void-imessage" }
+void-withings = { path = "crates/void-withings" }

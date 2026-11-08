@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Withings** — new read-only connector for [Withings](https://developer.withings.com) health data. Body measurements (weight, body composition, blood pressure), daily activity, sleep, workouts, heart/ECG recordings and device battery levels each become a conversation, one message per measurement group, day, night, session, recording or device, searchable alongside messages. Configure with `client_id`, `client_secret`, `streams` (default: all six) and `backfill_days` (default 365); `void setup` runs the OAuth flow. Withings rotates the refresh token on every refresh and kills the old one, so tokens live in `<store>/<connection>-withings-token.json` (owner-only), the file is re-read before every call, and refreshes are serialized on a lock file (`flock` on Unix, an exclusive open on Windows) so the sync daemon and a CLI command cannot invalidate each other's grant.
 - **Gmail** — `void gmail drafts --ids-only` lists `draftId` / `messageId` / `threadId` from the list call alone, with no per-draft request (200 drafts in ~0.5 s instead of minutes). `--query <q>` filters drafts with Gmail search syntax (`to:alice`, `subject:invoice`).
 - **Gmail** — `void gmail draft create` and `void gmail draft update` also return the draft's `messageId` and `threadId`, so callers can open the draft or match it to its thread without listing drafts.
 
