@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Dependencies** — updated the Telegram client (`grammers-client`, `grammers-mtsender`, `grammers-session`, `grammers-tl-types`) to 0.11 together. Telegram communities now sync as group conversations instead of being unsupported.
+- **Build** — minimum supported Rust version is now 1.99 (was 1.95), required by `html-to-markdown-rs` 3.21.
+- **Dependencies** — updated `html-to-markdown-rs` to 3.21 (Gmail HTML-to-Markdown). It replaces the unmaintained `astral-tl` parser (RUSTSEC-2026-0444) with `astral-html`.
 
 ## [0.15.2] - 2026-10-27
 
