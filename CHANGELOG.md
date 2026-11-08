@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependencies** — updated the Telegram client (`grammers-client`, `grammers-mtsender`, `grammers-session`, `grammers-tl-types`) to 0.11 together. Telegram communities now sync as group conversations instead of being unsupported.
+
 ## [0.15.2] - 2026-10-27
 
 ### Fixed

@@ -183,6 +183,7 @@ impl From<&PeerInfo> for PeerData {
                     ChannelKind::Broadcast => "broadcast".into(),
                     ChannelKind::Megagroup => "megagroup".into(),
                     ChannelKind::Gigagroup => "gigagroup".into(),
+                    ChannelKind::Community => "community".into(),
                 }),
             },
         }
@@ -211,6 +212,7 @@ impl From<&PeerData> for PeerInfo {
                     "broadcast" => ChannelKind::Broadcast,
                     "megagroup" => ChannelKind::Megagroup,
                     "gigagroup" => ChannelKind::Gigagroup,
+                    "community" => ChannelKind::Community,
                     _ => ChannelKind::Broadcast,
                 }),
             },
@@ -325,9 +327,9 @@ impl Session for JsonFileSession {
         })
     }
 
-    fn cache_peer(&self, peer: &PeerInfo) -> BoxFuture<'_, Result<(), Self::Error>> {
+    fn cache_peer(&self, peer: PeerInfo) -> BoxFuture<'_, Result<(), Self::Error>> {
         let key = peer.id().bot_api_dialog_id();
-        let peer_data = PeerData::from(peer);
+        let peer_data = PeerData::from(&peer);
         Box::pin(async move {
             let Some(key) = key else {
                 return Ok(());
@@ -416,14 +418,20 @@ mod tests {
     use super::JsonFileSession;
     use grammers_session::Session;
     use std::env::temp_dir;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Parallel tests can read the same clock value, so a per-process counter
+    /// (plus the pid, for concurrent test binaries) keeps every path distinct.
     fn unique_session_path() -> std::path::PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        temp_dir().join(format!("void_telegram_session_test_{nanos}.json"))
+        let pid = std::process::id();
+        temp_dir().join(format!("void_telegram_session_test_{pid}_{nanos}_{n}.json"))
     }
 
     #[test]
@@ -455,6 +463,40 @@ mod tests {
         }
         let s2 = JsonFileSession::load_or_create(&path);
         assert_eq!(s2.home_dc_id().unwrap(), 4);
+        let _ = std::fs::remove_file(&path);
+    }
+    #[tokio::test]
+    async fn every_channel_kind_survives_cache_and_reload() {
+        use grammers_session::types::{ChannelKind, PeerInfo};
+
+        let kinds = [
+            ChannelKind::Broadcast,
+            ChannelKind::Megagroup,
+            ChannelKind::Gigagroup,
+            ChannelKind::Community,
+        ];
+        let path = unique_session_path();
+        let _ = std::fs::remove_file(&path);
+        let peers: Vec<PeerInfo> = kinds
+            .iter()
+            .enumerate()
+            .map(|(i, kind)| PeerInfo::Channel {
+                id: 1_000 + i as i64,
+                auth: None,
+                kind: Some(*kind),
+            })
+            .collect();
+        {
+            let s = JsonFileSession::load_or_create(&path);
+            for peer in &peers {
+                s.cache_peer(peer.clone()).await.unwrap();
+            }
+        }
+        let s2 = JsonFileSession::load_or_create(&path);
+        for peer in peers {
+            let found = s2.peer(peer.id()).await.unwrap();
+            assert_eq!(found, Some(peer));
+        }
         let _ = std::fs::remove_file(&path);
     }
 }
