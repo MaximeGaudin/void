@@ -10,11 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Withings** — new read-only connector for [Withings](https://developer.withings.com) health data. Body measurements (weight, body composition, blood pressure), daily activity, sleep, workouts, heart/ECG recordings and device battery levels each become a conversation, one message per measurement group, day, night, session, recording or device, searchable alongside messages. Configure with `client_id`, `client_secret`, `streams` (default: all six) and `backfill_days` (default 365); `void setup` runs the OAuth flow. Withings rotates the refresh token on every refresh and kills the old one, so tokens live in `<store>/<connection>-withings-token.json` (owner-only), the file is re-read before every call, and refreshes are serialized on a lock file (`flock` on Unix, an exclusive open on Windows) so the sync daemon and a CLI command cannot invalidate each other's grant.
+- **Gmail** — `void gmail drafts --ids-only` lists `draftId` / `messageId` / `threadId` from the list call alone, with no per-draft request (200 drafts in ~0.5 s instead of minutes). `--query <q>` filters drafts with Gmail search syntax (`to:alice`, `subject:invoice`).
+- **Gmail** — `void gmail draft create` and `void gmail draft update` also return the draft's `messageId` and `threadId`, so callers can open the draft or match it to its thread without listing drafts.
 
 ### Changed
 
+- **Gmail** — `void gmail drafts` fetches drafts with `format=metadata` (To, Cc, Bcc, Subject, snippet) several at a time instead of one `format=full` request after another, and paginates past Gmail's 500-per-page limit. Throughput is still bounded by the shared Gmail rate limiter. A draft whose details fail to load is listed with its ids instead of being dropped.
+- **Calendar** — `void calendar create` and `void calendar update` take `--visibility <default|public|private|confidential>` and `--transparency <opaque|transparent>` (busy / free), so a personal block on a shared work calendar can be made private from the CLI. Omitted flags are not sent, so calendar defaults still apply. Event JSON output now carries `visibility` and `transparency` in `metadata` when Google returns them.
+- **Dependencies** — updated the Telegram client (`grammers-client`, `grammers-mtsender`, `grammers-session`, `grammers-tl-types`) to 0.11 together. Telegram communities now sync as group conversations instead of being unsupported.
 - **Build** — minimum supported Rust version is now 1.99 (was 1.95), required by `html-to-markdown-rs` 3.21.
 - **Dependencies** — updated `html-to-markdown-rs` to 3.21 (Gmail HTML-to-Markdown). It replaces the unmaintained `astral-tl` parser (RUSTSEC-2026-0444) with `astral-html`.
+
+### Fixed
+
+- **Gmail** — `void gmail search`, `void gmail thread` and `void gmail drafts` expose `cc` and `bcc` next to `to` (#119). Messages served from the local store also keep their `To` / `Cc` / `Bcc` / `Reply-To`: the store only kept `From` and `Subject`, so `to` came back empty. Sync now stores the recipient headers for newly synced mail. Mail synced before this fix is always read from the API instead of the store, so its recipients are correct too.
 
 ## [0.15.2] - 2026-10-27
 

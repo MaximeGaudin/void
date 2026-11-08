@@ -74,10 +74,10 @@ Times are ISO 8601: `2026-03-31T17:00:00`, `2026-03-31 17:00`, or `2026-03-31` (
 |---------|-------------|
 | `void calendar` | Today's events |
 | `void calendar week` | This week's events |
-| `void calendar create --title <t> --start <time>` | Create an event. `--end` (default: start + 30 min), `--description`, `--attendees`, `--meet` (attach a Google Meet link) |
+| `void calendar create --title <t> --start <time>` | Create an event. `--end` (default: start + 30 min), `--description`, `--attendees`, `--meet` (attach a Google Meet link), `--visibility <default\|public\|private\|confidential>`, `--transparency <opaque\|transparent>` (busy / free). Omitted flags are not sent, so the calendar defaults apply |
 | `void calendar search <query>` | Search events. `--from`, `--to` |
 | `void calendar respond <id> --status <accepted\|declined\|tentative>` | Respond to an invite. `--comment`, `--email` |
-| `void calendar update <id>` | Update an event: `--title`, `--description`, `--start`, `--end` |
+| `void calendar update <id>` | Update an event: `--title`, `--description`, `--start`, `--end`, `--visibility`, `--transparency` |
 | `void calendar delete <id>` | Delete an event |
 | `void calendar availability --attendees <emails> --from <t> --to <t>` | Check attendee availability (FreeBusy) |
 | `void calendar calendars` | List available calendars |
@@ -96,7 +96,7 @@ Outgoing Gmail compose (`send`, `reply`, `forward`, and draft create/update) acc
 | `void gmail labels` | List labels |
 | `void gmail label <id> --add <labels> --remove <labels>` | Modify labels on a thread |
 | `void gmail batch-modify <ids...> --add <labels> --remove <labels>` | Batch-modify labels on multiple messages |
-| `void gmail drafts` | List drafts. `--max <N>` |
+| `void gmail drafts` | List drafts. `--max <N>`, `--query <q>` (Gmail search syntax), `--ids-only` (draft / message / thread ids from one list call, no per-draft fetch) |
 | `void gmail draft create --subject <s> --body <b>` | Create a draft (never sends directly). `--to`, `--cc`, `--bcc`, `--file` to attach (repeat for several files), `--reply-to <id>` to draft a reply (folds original From/To/Cc into `To` when `--to` is omitted; `--cc` / `--bcc` are additive), `--signature` / `--signature-from <email>` |
 | `void gmail draft update <id> --to <t> --subject <s> --body <b>` | Update a draft. Same `--cc` / `--bcc` / `--signature` / `--signature-from` flags as create. Keeps the draft's thread and `In-Reply-To` / `References` (`--reply-to <id>` re-targets it) and its existing attachments; `--file` (repeatable) replaces them |
 | `void gmail draft delete <id>` | Delete a draft |

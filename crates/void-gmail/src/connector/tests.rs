@@ -1,4 +1,7 @@
-use super::api_methods::{build_reply_all_recipients, create_draft_with_api, search_with_api};
+use super::api_methods::{
+    build_reply_all_recipients, create_draft_with_api, list_draft_refs_with_api,
+    list_drafts_with_api, search_with_api,
+};
 use super::*;
 use crate::api::{GmailApiClient, GmailMessage};
 use base64::Engine;
@@ -1066,10 +1069,10 @@ fn compose_rfc2822_ascii_subject_unchanged() {
 fn compose_rfc2822_encodes_non_ascii_display_name_in_to() {
     // Regression: a raw UTF-8 display name written straight into a header is
     // only valid by convention. A strict receiver can reinterpret those bytes
-    // as Latin-1, turning "Maître" into "MaÃ®tre". RFC 2047-encoding the name
+    // as Latin-1, turning "Fèvre" into "FÃ¨vre". RFC 2047-encoding the name
     // (as we already do for Subject) avoids that ambiguity entirely.
     let raw = compose_rfc2822(
-        "\"Juliette Le Maître\" <jlemaitre@gladia.io>",
+        "\"Zoé Le Fèvre\" <zoe@example.com>",
         "Subject",
         "body",
         None,
@@ -1077,23 +1080,23 @@ fn compose_rfc2822_encodes_non_ascii_display_name_in_to() {
     )
     .unwrap();
     assert!(raw.contains("To: =?UTF-8?B?"));
-    assert!(raw.contains("<jlemaitre@gladia.io>"));
-    assert!(!raw.contains("Maître"));
+    assert!(raw.contains("<zoe@example.com>"));
+    assert!(!raw.contains("Fèvre"));
 }
 
 #[test]
 fn compose_rfc2822_encodes_mixed_ascii_and_non_ascii_recipients() {
-    let to = "\"Juliette Le Maître\" <jlemaitre@gladia.io>, \
-              Jean-Louis Queguiner <jlqueguiner@gladia.io>, \
-              Thibaut Le Boulaire <tleboulaire@gladia.io>";
+    let to = "\"Zoé Le Fèvre\" <zoe@example.com>, \
+              Dave Smith <dave@example.com>, \
+              Erin Jones <erin@example.com>";
     let raw = compose_rfc2822(to, "Subject", "body", None, None).unwrap();
     let to_line = raw.lines().find(|l| l.starts_with("To:")).expect("To line");
     assert!(to_line.contains("=?UTF-8?B?"));
-    assert!(to_line.contains("<jlemaitre@gladia.io>"));
+    assert!(to_line.contains("<zoe@example.com>"));
     // Recipients whose display name is already ASCII are left untouched.
-    assert!(to_line.contains("Jean-Louis Queguiner <jlqueguiner@gladia.io>"));
-    assert!(to_line.contains("Thibaut Le Boulaire <tleboulaire@gladia.io>"));
-    assert!(!to_line.contains("Maître"));
+    assert!(to_line.contains("Dave Smith <dave@example.com>"));
+    assert!(to_line.contains("Erin Jones <erin@example.com>"));
+    assert!(!to_line.contains("Fèvre"));
 }
 
 #[test]
@@ -1148,13 +1151,13 @@ fn compose_rfc2822_encodes_bare_non_ascii_address_with_no_name() {
 fn compose_rfc2822_display_name_comma_not_split_when_quoted() {
     // A comma inside a quoted display name must not be mistaken for the
     // address-list separator, even when the name is also non-ASCII.
-    let to = "\"Le Maître, Juliette\" <jlemaitre@gladia.io>, Bob <bob@example.com>";
+    let to = "\"Le Fèvre, Zoé\" <zoe@example.com>, Bob <bob@example.com>";
     let raw = compose_rfc2822(to, "Subject", "body", None, None).unwrap();
     let to_line = raw.lines().find(|l| l.starts_with("To:")).expect("To line");
     assert!(to_line.contains("=?UTF-8?B?"));
-    assert!(to_line.contains("<jlemaitre@gladia.io>"));
+    assert!(to_line.contains("<zoe@example.com>"));
     assert!(to_line.contains("Bob <bob@example.com>"));
-    assert!(!to_line.contains("Maître"));
+    assert!(!to_line.contains("Fèvre"));
     // Exactly two recipients: the quoted comma didn't create a bogus third entry.
     assert_eq!(to_line.matches('<').count(), 2);
 }
@@ -1687,6 +1690,7 @@ fn seed_gmail_store(db: &Database, body: &str) {
     .unwrap();
     let mut metadata = serde_json::Map::new();
     metadata.insert("subject".into(), serde_json::json!("Hello"));
+    metadata.insert("to".into(), serde_json::json!("me@example.com"));
     db.upsert_message(&Message {
         id: "c1-m1".into(),
         conversation_id: "c1".into(),
@@ -1811,4 +1815,235 @@ async fn search_live_skips_store() {
     let msgs = search_with_api(&api, None, "in:inbox", 10).await.unwrap();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].get_header("Subject").as_deref(), Some("Live"));
+}
+
+// ---------------------------------------------------------------------------
+// Drafts listing
+// ---------------------------------------------------------------------------
+
+async fn mount_two_draft_pages(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [
+                {"id": "d1", "message": {"id": "m1", "threadId": "t1"}},
+                {"id": "d2", "message": {"id": "m2", "threadId": "t2"}}
+            ],
+            "nextPageToken": "p2"
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(query_param("pageToken", "p2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [{"id": "d3", "message": {"id": "m3", "threadId": "t3"}}]
+        })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn list_draft_refs_paginates_without_fetching_drafts() {
+    let server = MockServer::start().await;
+    mount_two_draft_pages(&server).await;
+    // Any per-draft fetch would hit this and fail the expectation.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts/d1"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let refs = list_draft_refs_with_api(&api, 100, None).await.unwrap();
+    let ids: Vec<_> = refs
+        .iter()
+        .map(|r| {
+            (
+                r.id.as_str(),
+                r.message.as_ref().unwrap().thread_id.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(ids, vec![("d1", "t1"), ("d2", "t2"), ("d3", "t3")]);
+}
+
+#[tokio::test]
+async fn list_draft_refs_stops_at_max_and_passes_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(query_param("q", "to:alice"))
+        .and(query_param("maxResults", "2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [
+                {"id": "d1", "message": {"id": "m1", "threadId": "t1"}},
+                {"id": "d2", "message": {"id": "m2", "threadId": "t2"}}
+            ],
+            "nextPageToken": "more"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let refs = list_draft_refs_with_api(&api, 2, Some("to:alice"))
+        .await
+        .unwrap();
+    assert_eq!(refs.len(), 2);
+}
+
+#[tokio::test]
+async fn list_drafts_fetches_metadata_in_list_order_and_keeps_failed_ones() {
+    let server = MockServer::start().await;
+    mount_two_draft_pages(&server).await;
+    for (id, subject) in [("d1", "first"), ("d3", "third")] {
+        Mock::given(method("GET"))
+            .and(path(format!("/gmail/v1/users/me/drafts/{id}")))
+            .and(query_param("format", "metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": id,
+                "message": {
+                    "id": id.replace('d', "m"),
+                    "threadId": id.replace('d', "t"),
+                    "snippet": format!("{subject} snippet"),
+                    "payload": {"headers": [
+                        {"name": "To", "value": "alice@example.com"},
+                        {"name": "Subject", "value": subject}
+                    ]}
+                }
+            })))
+            .mount(&server)
+            .await;
+    }
+    // d2 cannot be fetched: it must still be listed, with its ids.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts/d2"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let drafts = list_drafts_with_api(&api, 100, None).await.unwrap();
+
+    let ids: Vec<_> = drafts.iter().map(|d| d.id.as_deref().unwrap()).collect();
+    assert_eq!(ids, vec!["d1", "d2", "d3"]);
+    let subject = |i: usize| {
+        drafts[i]
+            .message
+            .as_ref()
+            .and_then(|m| m.get_header("Subject"))
+    };
+    assert_eq!(subject(0).as_deref(), Some("first"));
+    assert_eq!(subject(1), None);
+    assert_eq!(subject(2).as_deref(), Some("third"));
+    let m2 = drafts[1].message.as_ref().unwrap();
+    assert_eq!(m2.id.as_deref(), Some("m2"));
+    assert_eq!(m2.thread_id.as_deref(), Some("t2"));
+}
+
+// ---------------------------------------------------------------------------
+// Recipients (#119)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn sync_stores_recipients_and_search_serves_them_from_store() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/history"))
+        .respond_with(history_response(serde_json::json!({
+            "messagesAdded": [{"message": {"id": "r1", "threadId": "t1"}}]
+        })))
+        .mount(&server)
+        .await;
+    let mut msg = full_inbox_message("r1");
+    msg["payload"]["headers"] = serde_json::json!([
+        {"name": "From", "value": "Remi <remi@example.com>"},
+        {"name": "To", "value": "Maxime <me@example.com>, David <david@example.com>"},
+        {"name": "Cc", "value": "Guillaume <g@example.com>, Jihad <j@example.com>"},
+        {"name": "Subject", "value": "Subj"}
+    ]);
+    // HTML marks the stored body as complete, so the later search is served
+    // from the store.
+    msg["payload"]["mimeType"] = serde_json::json!("text/html");
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/r1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(msg))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let db = Database::open_in_memory().unwrap();
+    run_incremental(&server, &db).await;
+
+    let stored = db.get_message("test-gmail-r1").unwrap().expect("stored");
+    let meta = stored.metadata.expect("metadata");
+    assert_eq!(
+        meta["to"],
+        "Maxime <me@example.com>, David <david@example.com>"
+    );
+    assert_eq!(
+        meta["cc"],
+        "Guillaume <g@example.com>, Jihad <j@example.com>"
+    );
+
+    let gm = super::store::gmail_message_from_store(
+        &db.get_message("test-gmail-r1").unwrap().unwrap(),
+        "t1",
+    );
+    assert_eq!(
+        gm.get_header("Cc").as_deref(),
+        Some("Guillaume <g@example.com>, Jihad <j@example.com>")
+    );
+    assert_eq!(
+        build_reply_all_recipients(&gm, "me@example.com"),
+        "Remi <remi@example.com>, David <david@example.com>, Guillaume <g@example.com>, Jihad <j@example.com>"
+    );
+}
+
+#[tokio::test]
+async fn search_fetches_when_store_row_predates_recipients() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .respond_with(list_one_message_mock())
+        .mount(&server)
+        .await;
+    let mut live = api_full_message();
+    live["payload"]["headers"] = serde_json::json!([
+        {"name": "From", "value": "sender@example.com"},
+        {"name": "To", "value": "me@example.com, other@example.com"},
+        {"name": "Cc", "value": "cc@example.com"},
+        {"name": "Subject", "value": "Live"}
+    ]);
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/m1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(live))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let db = Database::open_in_memory().unwrap();
+    seed_gmail_store(&db, &"x".repeat(200));
+    // Simulate a row synced before recipients were stored.
+    let mut row = db
+        .find_message_by_connector_external_id(crate::CONNECTOR_ID, "m1")
+        .unwrap()
+        .unwrap();
+    row.metadata
+        .as_mut()
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("to");
+    db.upsert_message(&row).unwrap();
+
+    let msgs = search_with_api(&api, Some(&db), "in:inbox", 10)
+        .await
+        .unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].get_header("Cc").as_deref(), Some("cc@example.com"));
 }

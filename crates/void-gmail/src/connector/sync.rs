@@ -342,6 +342,22 @@ impl GmailConnector {
         let attachments = msg.file_attachments();
         let mut metadata = serde_json::Map::new();
         metadata.insert("subject".into(), serde_json::json!(subject));
+        // Recipients, so reads served from the store keep To/Cc (#119). `to` is
+        // always written (empty when absent): its presence marks a row synced
+        // with recipients, see `store::stored_has_recipients`.
+        metadata.insert(
+            super::store::META_TO.into(),
+            serde_json::json!(msg.get_header("To").unwrap_or_default()),
+        );
+        for (header, key) in [
+            ("Cc", super::store::META_CC),
+            ("Bcc", super::store::META_BCC),
+            ("Reply-To", super::store::META_REPLY_TO),
+        ] {
+            if let Some(v) = msg.get_header(header).filter(|v| !v.is_empty()) {
+                metadata.insert(key.into(), serde_json::json!(v));
+            }
+        }
         if html_body.is_some() {
             metadata.insert("has_html".into(), serde_json::json!(true));
             metadata.insert("snippet".into(), serde_json::json!(msg.snippet));

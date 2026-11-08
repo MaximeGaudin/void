@@ -2,6 +2,11 @@ use clap::{Args, Subcommand};
 
 use crate::output::CONNECTOR_FILTER_HELP;
 
+/// Google Calendar `visibility` values.
+const VISIBILITY_VALUES: [&str; 4] = ["default", "public", "private", "confidential"];
+/// Google Calendar `transparency` values.
+const TRANSPARENCY_VALUES: [&str; 2] = ["opaque", "transparent"];
+
 #[derive(Debug, Args)]
 pub struct CalendarArgs {
     #[command(subcommand)]
@@ -62,6 +67,12 @@ pub struct CreateEventArgs {
     /// Comma-separated attendee emails
     #[arg(long)]
     pub attendees: Option<String>,
+    /// Event visibility (omit to use the calendar default)
+    #[arg(long, value_parser = VISIBILITY_VALUES)]
+    pub visibility: Option<String>,
+    /// Busy/free status: opaque (busy) or transparent (free). Omit for busy
+    #[arg(long, value_parser = TRANSPARENCY_VALUES)]
+    pub transparency: Option<String>,
     /// Calendar connection to use
     #[arg(long)]
     pub connection: Option<String>,
@@ -98,6 +109,12 @@ pub struct UpdateEventArgs {
     /// New end time in ISO 8601 format (e.g. 2026-03-31T17:00:00)
     #[arg(long)]
     pub end: Option<String>,
+    /// New event visibility
+    #[arg(long, value_parser = VISIBILITY_VALUES)]
+    pub visibility: Option<String>,
+    /// New busy/free status: opaque (busy) or transparent (free)
+    #[arg(long, value_parser = TRANSPARENCY_VALUES)]
+    pub transparency: Option<String>,
     /// Calendar connection to use
     #[arg(long)]
     pub connection: Option<String>,

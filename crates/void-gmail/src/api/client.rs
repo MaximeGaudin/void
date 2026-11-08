@@ -407,13 +407,28 @@ impl GmailApiClient {
         Ok(())
     }
 
-    pub async fn list_drafts(&self, max_results: u32) -> Result<DraftListResponse, GmailError> {
-        debug!(max_results, "gmail: list_drafts");
+    /// One page of `users.drafts.list`. The list call is cheap (5 quota units) and
+    /// already carries each draft's `message.id` and `message.threadId`.
+    /// `query` uses Gmail search syntax (e.g. `to:alice`, `subject:invoice`).
+    pub async fn list_drafts(
+        &self,
+        max_results: u32,
+        page_token: Option<&str>,
+        query: Option<&str>,
+    ) -> Result<DraftListResponse, GmailError> {
+        debug!(max_results, ?page_token, ?query, "gmail: list_drafts");
+        let mut params = vec![("maxResults", max_results.to_string())];
+        if let Some(t) = page_token {
+            params.push(("pageToken", t.to_string()));
+        }
+        if let Some(q) = query {
+            params.push(("q", q.to_string()));
+        }
         let resp: DraftListResponse = self
             .http
             .get(format!("{}/gmail/v1/users/me/drafts", self.base_url))
             .bearer_auth(&self.access_token)
-            .query(&[("maxResults", max_results.to_string())])
+            .query(&params)
             .send_retrying(&self.retry, self.limiter.as_ref())
             .await?
             .error_for_status()?
@@ -421,6 +436,33 @@ impl GmailApiClient {
             .await?;
         let count = resp.drafts.as_ref().map(|d| d.len()).unwrap_or(0);
         debug!(count, "gmail: list_drafts ok");
+        Ok(resp)
+    }
+
+    /// A draft with headers only (`format=metadata`): enough for listing
+    /// (To, Subject, snippet) without downloading bodies and attachments.
+    pub async fn get_draft_metadata(&self, draft_id: &str) -> Result<GmailDraft, GmailError> {
+        debug!(draft_id, "gmail: get_draft_metadata");
+        let resp: GmailDraft = self
+            .http
+            .get(format!(
+                "{}/gmail/v1/users/me/drafts/{draft_id}",
+                self.base_url
+            ))
+            .bearer_auth(&self.access_token)
+            .query(&[
+                ("format", "metadata"),
+                ("metadataHeaders", "To"),
+                ("metadataHeaders", "Cc"),
+                ("metadataHeaders", "Bcc"),
+                ("metadataHeaders", "Subject"),
+            ])
+            .send_retrying(&self.retry, self.limiter.as_ref())
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        debug!(draft_id, "gmail: get_draft_metadata ok");
         Ok(resp)
     }
 
