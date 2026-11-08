@@ -63,6 +63,15 @@ pub(crate) fn map_event(
             .collect::<Vec<_>>())
     });
 
+    let mut extra = serde_json::Map::new();
+    if let Some(v) = &event.visibility {
+        extra.insert("visibility".into(), v.clone().into());
+    }
+    if let Some(t) = &event.transparency {
+        extra.insert("transparency".into(), t.clone().into());
+    }
+    let metadata = (!extra.is_empty()).then_some(serde_json::Value::Object(extra));
+
     Some(CalendarEvent {
         id: format!("{connection_id}-{id}"),
         connection_id: connection_id.to_string(),
@@ -78,7 +87,7 @@ pub(crate) fn map_event(
         status: event.status.clone(),
         calendar_name: Some(calendar_name.to_string()),
         meet_link,
-        metadata: None,
+        metadata,
     })
 }
 

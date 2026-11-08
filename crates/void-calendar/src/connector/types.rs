@@ -7,6 +7,12 @@ pub struct CreateEventParams<'a> {
     pub end: &'a str,
     pub meet: bool,
     pub attendees: Option<&'a str>,
+    /// Google `visibility`: `default`, `public`, `private` or `confidential`.
+    /// `None` leaves the field out (calendar default).
+    pub visibility: Option<&'a str>,
+    /// Google `transparency`: `opaque` (busy) or `transparent` (free).
+    /// `None` leaves the field out (busy).
+    pub transparency: Option<&'a str>,
 }
 
 /// Parameters for updating an existing calendar event.
@@ -18,6 +24,10 @@ pub struct UpdateEventParams<'a> {
     pub start: Option<&'a str>,
     pub end: Option<&'a str>,
     pub send_updates: Option<&'a str>,
+    /// New Google `visibility`; `None` keeps the current value.
+    pub visibility: Option<&'a str>,
+    /// New Google `transparency`; `None` keeps the current value.
+    pub transparency: Option<&'a str>,
 }
 
 /// Syncs Google Calendar for a single configured connection (OAuth via Gmail auth stack).
