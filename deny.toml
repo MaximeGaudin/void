@@ -11,7 +11,12 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 # bincode 2.x is pulled transitively via wa-rs and marked unmaintained.
 # No in-tree fix; tracked upstream.
-ignore = ["RUSTSEC-2025-0141"]
+#
+# astral-tl is pulled by html-to-markdown-rs (gmail HTML bodies) and was
+# deprecated by Astral (unmaintained, no known vulnerability). Versions of
+# html-to-markdown-rs that switch to astral-html (>= 3.20) require Rust 1.99,
+# above our MSRV. Drop this entry when the MSRV reaches 1.99.
+ignore = ["RUSTSEC-2025-0141", "RUSTSEC-2026-0444"]
 
 [licenses]
 confidence-threshold = 0.8
