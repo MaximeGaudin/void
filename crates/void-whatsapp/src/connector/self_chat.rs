@@ -182,7 +182,7 @@ mod tests {
 
     fn identity() -> OwnIdentity {
         OwnIdentity {
-            phone_jid: Some("33651090627@s.whatsapp.net".into()),
+            phone_jid: Some("33600000000@s.whatsapp.net".into()),
             lid_jid: Some("94004066660357@lid".into()),
         }
     }
@@ -191,16 +191,16 @@ mod tests {
     fn is_self_chat_matches_own_lid() {
         let id = identity();
         assert!(id.is_self_chat("94004066660357@lid"));
-        assert!(!id.is_self_chat("33651090627@s.whatsapp.net"));
+        assert!(!id.is_self_chat("33600000000@s.whatsapp.net"));
         assert!(!id.is_self_chat("120363@g.us"));
     }
 
     #[test]
     fn is_own_address_accepts_phone_and_lid() {
         let id = identity();
-        assert!(id.is_own_address("33651090627"));
-        assert!(id.is_own_address("+33651090627"));
-        assert!(id.is_own_address("33651090627@s.whatsapp.net"));
+        assert!(id.is_own_address("33600000000"));
+        assert!(id.is_own_address("+33600000000"));
+        assert!(id.is_own_address("33600000000@s.whatsapp.net"));
         assert!(id.is_own_address("94004066660357@lid"));
         assert!(!id.is_own_address("33612345678"));
     }
@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn should_route_own_phone_to_self_chat() {
         let id = identity();
-        assert!(id.should_route_as_self_chat("33651090627"));
+        assert!(id.should_route_as_self_chat("33600000000"));
         assert!(id.should_route_as_self_chat("94004066660357@lid"));
     }
 
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn apply_self_chat_stanza_attrs_sets_recipient_fields() {
         let own_lid = parse_jid("94004066660357@lid").unwrap();
-        let own_pn = parse_jid("33651090627@s.whatsapp.net").unwrap();
+        let own_pn = parse_jid("33600000000@s.whatsapp.net").unwrap();
         let mut stanza =
             wa_rs_binary::node::Node::new("message", wa_rs_binary::node::Attrs::new(), None);
         apply_self_chat_stanza_attrs(&mut stanza, &own_lid, &own_pn);
@@ -241,7 +241,7 @@ mod tests {
                 .attrs
                 .get("peer_recipient_pn")
                 .and_then(|v| v.as_str()),
-            Some("33651090627@s.whatsapp.net")
+            Some("33600000000@s.whatsapp.net")
         );
     }
 }

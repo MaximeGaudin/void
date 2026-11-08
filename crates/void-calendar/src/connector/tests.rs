@@ -5,8 +5,9 @@ use wiremock::matchers::{body_string_contains, method, path, query_param, query_
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::attendees::{build_attendee_list, find_self_attendee};
-use super::events::respond_with_client;
+use super::events::{insert_request, respond_with_client, update_request};
 use super::mapping::{external_event_id, map_event, parse_date, parse_rfc3339};
+use super::types::{CreateEventParams, UpdateEventParams};
 
 /// Runs the initial sync pagination loop using a pre-built API client (for testing without tokens).
 async fn run_initial_sync_with_client(
@@ -126,6 +127,8 @@ fn map_event_basic() {
         attendees: None,
         conference_data: None,
         html_link: None,
+        visibility: None,
+        transparency: None,
     };
 
     let result = map_event(&event, "my-cal", "primary").unwrap();
@@ -153,6 +156,8 @@ fn map_event_all_day() {
         attendees: None,
         conference_data: None,
         html_link: None,
+        visibility: None,
+        transparency: None,
     };
 
     let result = map_event(&event, "my-cal", "primary").unwrap();
@@ -187,6 +192,8 @@ fn map_event_with_meet() {
             }]),
         }),
         html_link: None,
+        visibility: None,
+        transparency: None,
     };
 
     let result = map_event(&event, "my-cal", "primary").unwrap();
@@ -508,7 +515,7 @@ async fn insert_event_request_includes_connection_owner() {
 
     Mock::given(method("POST"))
         .and(path("/calendar/v3/calendars/primary/events"))
-        .and(body_string_contains(r#""email":"mgaudin@gladia.io"#))
+        .and(body_string_contains(r#""email":"owner@example.com"#))
         .and(body_string_contains(r#""email":"alice@example.com"#))
         .respond_with(ResponseTemplate::new(200).set_body_string(
             r#"{
@@ -518,7 +525,7 @@ async fn insert_event_request_includes_connection_owner() {
             "end": {"dateTime": "2026-06-11T07:30:00Z"},
             "status": "confirmed",
             "attendees": [
-                {"email": "mgaudin@gladia.io", "responseStatus": "accepted"},
+                {"email": "owner@example.com", "responseStatus": "accepted"},
                 {"email": "alice@example.com", "responseStatus": "needsAction"}
             ]
         }"#,
@@ -527,7 +534,7 @@ async fn insert_event_request_includes_connection_owner() {
         .await;
 
     let api = CalendarApiClient::with_base_url("test-token", &mock_server.uri());
-    let attendees = build_attendee_list("mgaudin@gladia.io-calendar", Some("alice@example.com"));
+    let attendees = build_attendee_list("owner@example.com-calendar", Some("alice@example.com"));
     let request = InsertEventRequest {
         summary: "Team Sync".into(),
         description: None,
@@ -541,30 +548,186 @@ async fn insert_event_request_includes_connection_owner() {
         },
         attendees,
         conference_data: None,
+        visibility: None,
+        transparency: None,
     };
 
     let resp = api
         .insert_event("primary", &request, None, Some("all"))
         .await
         .unwrap();
-    let mapped = map_event(&resp, "mgaudin@gladia.io-calendar", "primary").unwrap();
+    let mapped = map_event(&resp, "owner@example.com-calendar", "primary").unwrap();
     let stored: Vec<String> = serde_json::from_value(mapped.attendees.unwrap()).unwrap();
     assert_eq!(
         stored,
         vec![
-            "mgaudin@gladia.io".to_string(),
+            "owner@example.com".to_string(),
             "alice@example.com".to_string()
         ]
     );
 }
 
 #[test]
+fn insert_request_omits_visibility_and_transparency_when_unset() {
+    let request = InsertEventRequest {
+        summary: "Focus".into(),
+        description: None,
+        start: EventDateTimeRequest {
+            date_time: "2026-03-15T09:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        end: EventDateTimeRequest {
+            date_time: "2026-03-15T10:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        attendees: None,
+        conference_data: None,
+        visibility: None,
+        transparency: None,
+    };
+    let json = serde_json::to_value(&request).unwrap();
+    assert!(json.get("visibility").is_none(), "{json}");
+    assert!(json.get("transparency").is_none(), "{json}");
+}
+
+#[tokio::test]
+async fn insert_event_sends_visibility_and_transparency() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars/primary/events"))
+        .and(body_string_contains(r#""visibility":"private""#))
+        .and(body_string_contains(r#""transparency":"transparent""#))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{
+            "id": "ev-private",
+            "summary": "Dentist",
+            "start": {"dateTime": "2026-03-15T08:00:00Z"},
+            "end": {"dateTime": "2026-03-15T09:00:00Z"},
+            "status": "confirmed",
+            "visibility": "private",
+            "transparency": "transparent"
+        }"#,
+        ))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let api = CalendarApiClient::with_base_url("test-token", &mock_server.uri());
+    let request = InsertEventRequest {
+        summary: "Dentist".into(),
+        description: None,
+        start: EventDateTimeRequest {
+            date_time: "2026-03-15T08:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        end: EventDateTimeRequest {
+            date_time: "2026-03-15T09:00:00Z".into(),
+            time_zone: "UTC".into(),
+        },
+        attendees: None,
+        conference_data: None,
+        visibility: Some("private".into()),
+        transparency: Some("transparent".into()),
+    };
+
+    let resp = api
+        .insert_event("primary", &request, None, None)
+        .await
+        .unwrap();
+    let mapped = map_event(&resp, "test-cal", "primary").unwrap();
+    assert_eq!(
+        mapped.metadata,
+        Some(serde_json::json!({"visibility": "private", "transparency": "transparent"}))
+    );
+}
+
+#[tokio::test]
+async fn update_event_patches_only_visibility() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/calendar/v3/calendars/primary/events/ev1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"{"id": "ev1", "summary": "Dentist", "visibility": "private"}"#),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let api = CalendarApiClient::with_base_url("test-token", &mock_server.uri());
+    let update = UpdateEventRequest {
+        visibility: Some("private".into()),
+        ..Default::default()
+    };
+    api.update_event("primary", "ev1", &update, Some("all"))
+        .await
+        .unwrap();
+
+    let reqs = mock_server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+    assert_eq!(body, serde_json::json!({"visibility": "private"}));
+}
+
+#[test]
+fn insert_request_carries_visibility_and_transparency_from_params() {
+    let params = CreateEventParams {
+        title: "Dentist",
+        description: None,
+        start: "2026-03-15T08:00:00Z",
+        end: "2026-03-15T09:00:00Z",
+        meet: false,
+        attendees: None,
+        visibility: Some("private"),
+        transparency: Some("transparent"),
+    };
+    let json = serde_json::to_value(insert_request(&params, None)).unwrap();
+    assert_eq!(json["visibility"], "private");
+    assert_eq!(json["transparency"], "transparent");
+    assert!(json.get("conferenceData").is_none(), "{json}");
+
+    let unset = CreateEventParams {
+        visibility: None,
+        transparency: None,
+        ..params
+    };
+    let json = serde_json::to_value(insert_request(&unset, None)).unwrap();
+    assert!(json.get("visibility").is_none(), "{json}");
+    assert!(json.get("transparency").is_none(), "{json}");
+}
+
+#[test]
+fn update_request_sends_only_given_fields() {
+    let params = UpdateEventParams {
+        event_id: "ev1",
+        title: None,
+        description: None,
+        start: None,
+        end: None,
+        send_updates: Some("all"),
+        visibility: Some("confidential"),
+        transparency: Some("opaque"),
+    };
+    let json = serde_json::to_value(update_request(&params)).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"visibility": "confidential", "transparency": "opaque"})
+    );
+}
+
+#[test]
+fn map_event_without_visibility_has_no_metadata() {
+    let event: GoogleCalendarEvent =
+        serde_json::from_str(r#"{"id": "e9", "summary": "Standup"}"#).unwrap();
+    let mapped = map_event(&event, "test-cal", "primary").unwrap();
+    assert!(mapped.metadata.is_none());
+}
+
+#[test]
 fn external_event_id_strips_void_prefix() {
-    let conn = "mgaudin@gladia.io-calendar";
+    let conn = "owner@example.com-calendar";
     assert_eq!(
         external_event_id(
             conn,
-            "mgaudin@gladia.io-calendar-2k5hbff0r6uinr8p1d4g8bmt6g"
+            "owner@example.com-calendar-2k5hbff0r6uinr8p1d4g8bmt6g"
         ),
         "2k5hbff0r6uinr8p1d4g8bmt6g"
     );
@@ -590,24 +753,24 @@ fn attendee(email: &str, is_self: Option<bool>) -> EventAttendee {
 #[test]
 fn find_self_attendee_priority() {
     let atts = vec![
-        attendee("jl@gladia.io", None),
-        attendee("MGaudin@gladia.io", Some(true)),
+        attendee("carol@example.com", None),
+        attendee("Owner@example.com", Some(true)),
     ];
     assert_eq!(
         find_self_attendee(&atts, None, None).as_deref(),
-        Some("MGaudin@gladia.io")
+        Some("Owner@example.com")
     );
     assert_eq!(
-        find_self_attendee(&atts, Some("JL@gladia.io"), None).as_deref(),
-        Some("jl@gladia.io")
+        find_self_attendee(&atts, Some("CAROL@example.com"), None).as_deref(),
+        Some("carol@example.com")
     );
     assert_eq!(find_self_attendee(&atts, Some("nobody@x.io"), None), None);
 
-    let no_flag = vec![attendee("mgaudin@gladia.io", None)];
+    let no_flag = vec![attendee("owner@example.com", None)];
     assert_eq!(find_self_attendee(&no_flag, None, None), None);
     assert_eq!(
-        find_self_attendee(&no_flag, None, Some("mgaudin@gladia.io")).as_deref(),
-        Some("mgaudin@gladia.io")
+        find_self_attendee(&no_flag, None, Some("owner@example.com")).as_deref(),
+        Some("owner@example.com")
     );
 }
 
@@ -617,8 +780,8 @@ const RSVP_EVENT: &str = r#"{
     "start": {"dateTime": "2026-09-30T07:00:00Z"},
     "end": {"dateTime": "2026-09-30T07:30:00Z"},
     "attendees": [
-        {"email": "jl@gladia.io", "responseStatus": "accepted", "organizer": true},
-        {"email": "mgaudin@gladia.io", "responseStatus": "needsAction"SELF}
+        {"email": "carol@example.com", "responseStatus": "accepted", "organizer": true},
+        {"email": "owner@example.com", "responseStatus": "needsAction"SELF}
     ]
 }"#;
 
@@ -666,9 +829,9 @@ async fn respond_updates_self_attendee_only() {
 
     let atts = patched_attendees(&server).await;
     assert_eq!(atts.len(), 2, "no attendee added: {atts:?}");
-    assert_eq!(atts[0]["email"], "jl@gladia.io");
+    assert_eq!(atts[0]["email"], "carol@example.com");
     assert_eq!(atts[0]["responseStatus"], "accepted");
-    assert_eq!(atts[1]["email"], "mgaudin@gladia.io");
+    assert_eq!(atts[1]["email"], "owner@example.com");
     assert_eq!(atts[1]["responseStatus"], "accepted");
 }
 
@@ -681,7 +844,7 @@ async fn respond_falls_back_to_primary_calendar_email() {
         .respond_with(ResponseTemplate::new(200).set_body_string(
             r#"{"items": [
                 {"id": "team@group.calendar.google.com", "primary": false},
-                {"id": "mgaudin@gladia.io", "primary": true}
+                {"id": "owner@example.com", "primary": true}
             ]}"#,
         ))
         .expect(1)
@@ -702,7 +865,7 @@ async fn respond_falls_back_to_primary_calendar_email() {
 
     let atts = patched_attendees(&server).await;
     assert_eq!(atts.len(), 2);
-    assert_eq!(atts[1]["email"], "mgaudin@gladia.io");
+    assert_eq!(atts[1]["email"], "owner@example.com");
     assert_eq!(atts[1]["responseStatus"], "declined");
     assert_eq!(atts[1]["comment"], "conflict");
 }
@@ -734,7 +897,7 @@ async fn respond_errors_instead_of_adding_unknown_attendee() {
         &api,
         "primary",
         "2k5hbff0r6uinr8p1d4g8bmt6g",
-        Some("mgaudin@gladia.io-calendar"),
+        Some("owner@example.com-calendar"),
         "accepted",
         None,
     )

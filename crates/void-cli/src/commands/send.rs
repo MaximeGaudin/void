@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn resolve_target_passthrough_non_channel() {
         let db = test_db();
-        let target = resolve_send_target(&db, Some("33651090627"), None, "whatsapp").unwrap();
-        assert_eq!(target, "33651090627");
+        let target = resolve_send_target(&db, Some("33600000000"), None, "whatsapp").unwrap();
+        assert_eq!(target, "33600000000");
     }
 }

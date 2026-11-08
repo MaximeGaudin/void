@@ -12,7 +12,7 @@ pub async fn run(args: &GmailArgs) -> anyhow::Result<()> {
 /// Strip the void internal ID prefix from a Gmail message or thread ID.
 ///
 /// Void stores IDs as `{connection_id}-{external_id}`, e.g.
-/// `mgaudin@gladia.io-19c9ae5982d4b217`. Gmail IDs are pure hex and
+/// `owner@example.com-19c9ae5982d4b217`. Gmail IDs are pure hex and
 /// never contain `@`, so the presence of `@` is an unambiguous indicator
 /// that the void prefix must be stripped before passing the ID to the API.
 pub(super) fn strip_void_id_prefix(id: &str) -> &str {
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn strip_void_prefix_removes_connection_prefix() {
         assert_eq!(
-            strip_void_id_prefix("mgaudin@gladia.io-19c9ae5982d4b217"),
+            strip_void_id_prefix("owner@example.com-19c9ae5982d4b217"),
             "19c9ae5982d4b217"
         );
     }
