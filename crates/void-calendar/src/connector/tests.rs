@@ -5,8 +5,9 @@ use wiremock::matchers::{body_string_contains, method, path, query_param, query_
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::attendees::{build_attendee_list, find_self_attendee};
-use super::events::respond_with_client;
+use super::events::{insert_request, respond_with_client, update_request};
 use super::mapping::{external_event_id, map_event, parse_date, parse_rfc3339};
+use super::types::{CreateEventParams, UpdateEventParams};
 
 /// Runs the initial sync pagination loop using a pre-built API client (for testing without tokens).
 async fn run_initial_sync_with_client(
@@ -664,6 +665,52 @@ async fn update_event_patches_only_visibility() {
     let reqs = mock_server.received_requests().await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
     assert_eq!(body, serde_json::json!({"visibility": "private"}));
+}
+
+#[test]
+fn insert_request_carries_visibility_and_transparency_from_params() {
+    let params = CreateEventParams {
+        title: "Dentist",
+        description: None,
+        start: "2026-03-15T08:00:00Z",
+        end: "2026-03-15T09:00:00Z",
+        meet: false,
+        attendees: None,
+        visibility: Some("private"),
+        transparency: Some("transparent"),
+    };
+    let json = serde_json::to_value(insert_request(&params, None)).unwrap();
+    assert_eq!(json["visibility"], "private");
+    assert_eq!(json["transparency"], "transparent");
+    assert!(json.get("conferenceData").is_none(), "{json}");
+
+    let unset = CreateEventParams {
+        visibility: None,
+        transparency: None,
+        ..params
+    };
+    let json = serde_json::to_value(insert_request(&unset, None)).unwrap();
+    assert!(json.get("visibility").is_none(), "{json}");
+    assert!(json.get("transparency").is_none(), "{json}");
+}
+
+#[test]
+fn update_request_sends_only_given_fields() {
+    let params = UpdateEventParams {
+        event_id: "ev1",
+        title: None,
+        description: None,
+        start: None,
+        end: None,
+        send_updates: Some("all"),
+        visibility: Some("confidential"),
+        transparency: Some("opaque"),
+    };
+    let json = serde_json::to_value(update_request(&params)).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"visibility": "confidential", "transparency": "opaque"})
+    );
 }
 
 #[test]

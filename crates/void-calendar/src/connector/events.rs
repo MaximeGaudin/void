@@ -7,8 +7,9 @@ use super::attendees::{build_attendee_list, build_response_attendees, find_self_
 use super::mapping::{external_event_id, map_event};
 use super::types::{CalendarConnector, CreateEventParams, UpdateEventParams};
 use crate::api::{
-    CalendarApiClient, ConferenceDataRequest, ConferenceSolutionKey, CreateConferenceRequest,
-    EventDateTimeRequest, GoogleCalendarEvent, InsertEventRequest, UpdateEventRequest,
+    AttendeeRequest, CalendarApiClient, ConferenceDataRequest, ConferenceSolutionKey,
+    CreateConferenceRequest, EventDateTimeRequest, GoogleCalendarEvent, InsertEventRequest,
+    UpdateEventRequest,
 };
 
 impl CalendarConnector {
@@ -26,38 +27,8 @@ impl CalendarConnector {
             .unwrap_or("primary");
         info!(connection_id = %self.connection_id, title = %params.title, calendar_id = %cal_id, "creating Calendar event");
 
-        let timezone = "UTC".to_string();
         let attendee_list = build_attendee_list(&self.connection_id, params.attendees);
-
-        let conference_data = if params.meet {
-            Some(ConferenceDataRequest {
-                create_request: CreateConferenceRequest {
-                    request_id: uuid::Uuid::new_v4().to_string(),
-                    conference_solution_key: ConferenceSolutionKey {
-                        key_type: "hangoutsMeet".to_string(),
-                    },
-                },
-            })
-        } else {
-            None
-        };
-
-        let request = InsertEventRequest {
-            summary: params.title.to_string(),
-            description: params.description.map(|d| d.to_string()),
-            start: EventDateTimeRequest {
-                date_time: params.start.to_string(),
-                time_zone: timezone.clone(),
-            },
-            end: EventDateTimeRequest {
-                date_time: params.end.to_string(),
-                time_zone: timezone,
-            },
-            attendees: attendee_list,
-            conference_data,
-            visibility: params.visibility.map(str::to_string),
-            transparency: params.transparency.map(str::to_string),
-        };
+        let request = insert_request(params, attendee_list);
 
         let conference_version = if params.meet { Some(1) } else { None };
         let send_notif = if request.attendees.is_some() {
@@ -113,23 +84,7 @@ impl CalendarConnector {
         let event_id = external_event_id(&self.connection_id, params.event_id);
         info!(connection_id = %self.connection_id, event_id, "updating Calendar event");
 
-        let timezone = "UTC".to_string();
-        let update = UpdateEventRequest {
-            summary: params.title.map(|s| s.to_string()),
-            description: params.description.map(|s| s.to_string()),
-            location: None,
-            start: params.start.map(|s| EventDateTimeRequest {
-                date_time: s.to_string(),
-                time_zone: timezone.clone(),
-            }),
-            end: params.end.map(|s| EventDateTimeRequest {
-                date_time: s.to_string(),
-                time_zone: timezone,
-            }),
-            attendees: None,
-            visibility: params.visibility.map(str::to_string),
-            transparency: params.transparency.map(str::to_string),
-        };
+        let update = update_request(params);
 
         let resp = api
             .update_event(cal_id, event_id, &update, params.send_updates)
@@ -261,6 +216,56 @@ impl CalendarConnector {
         api.freebusy(time_min, time_max, emails)
             .await
             .map_err(Into::into)
+    }
+}
+
+/// Build the events.insert body. Optional fields left `None` are not sent.
+pub(crate) fn insert_request(
+    params: &CreateEventParams<'_>,
+    attendees: Option<Vec<AttendeeRequest>>,
+) -> InsertEventRequest {
+    let conference_data = params.meet.then(|| ConferenceDataRequest {
+        create_request: CreateConferenceRequest {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            conference_solution_key: ConferenceSolutionKey {
+                key_type: "hangoutsMeet".to_string(),
+            },
+        },
+    });
+
+    InsertEventRequest {
+        summary: params.title.to_string(),
+        description: params.description.map(str::to_string),
+        start: EventDateTimeRequest {
+            date_time: params.start.to_string(),
+            time_zone: "UTC".to_string(),
+        },
+        end: EventDateTimeRequest {
+            date_time: params.end.to_string(),
+            time_zone: "UTC".to_string(),
+        },
+        attendees,
+        conference_data,
+        visibility: params.visibility.map(str::to_string),
+        transparency: params.transparency.map(str::to_string),
+    }
+}
+
+/// Build the events.patch body. Only the fields set in `params` are sent.
+pub(crate) fn update_request(params: &UpdateEventParams<'_>) -> UpdateEventRequest {
+    let date_time = |s: &str| EventDateTimeRequest {
+        date_time: s.to_string(),
+        time_zone: "UTC".to_string(),
+    };
+    UpdateEventRequest {
+        summary: params.title.map(str::to_string),
+        description: params.description.map(str::to_string),
+        location: None,
+        start: params.start.map(date_time),
+        end: params.end.map(date_time),
+        attendees: None,
+        visibility: params.visibility.map(str::to_string),
+        transparency: params.transparency.map(str::to_string),
     }
 }
 
