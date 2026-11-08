@@ -162,22 +162,30 @@ impl GmailConnector {
             .map_err(Into::into)
     }
 
+    /// Draft ids with their message and thread ids, paginated up to `max_results`.
+    /// One list call per 500 drafts and nothing else: use this when only ids are
+    /// needed (e.g. "which threads already have a draft?").
+    pub async fn list_draft_refs(
+        &self,
+        max_results: u32,
+        query: Option<&str>,
+    ) -> anyhow::Result<Vec<crate::api::DraftRef>> {
+        let api = self.get_client().await?;
+        list_draft_refs_with_api(&api, max_results, query).await
+    }
+
+    /// Drafts with To / Subject / snippet. Details are fetched with
+    /// `format=metadata` and [`DRAFT_FETCH_CONCURRENCY`] requests in flight
+    /// (was: one `format=full` request at a time, ~100 s for 170 drafts).
+    /// Order follows the list call (most recent first). A draft whose details
+    /// fail to load is still returned, with ids only.
     pub async fn list_drafts(
         &self,
         max_results: u32,
+        query: Option<&str>,
     ) -> anyhow::Result<Vec<crate::api::GmailDraft>> {
         let api = self.get_client().await?;
-        let resp = api.list_drafts(max_results).await?;
-        let mut drafts = Vec::new();
-        if let Some(refs) = resp.drafts {
-            for r in &refs {
-                match api.get_draft(&r.id).await {
-                    Ok(d) => drafts.push(d),
-                    Err(e) => warn!(draft_id = %r.id, "failed to fetch draft: {e}"),
-                }
-            }
-        }
-        Ok(drafts)
+        list_drafts_with_api(&api, max_results, query).await
     }
 
     /// Create a draft, optionally as a reply.
@@ -364,6 +372,54 @@ impl ReplyContext {
 
 /// Core draft-creation logic, decoupled from token acquisition so that tests
 /// can pass a pre-configured `GmailApiClient` (e.g. pointed at a wiremock server).
+/// Parallel detail fetches for `list_drafts`. The client's retry/rate limiter
+/// still applies to each request.
+pub const DRAFT_FETCH_CONCURRENCY: usize = 8;
+
+pub(super) async fn list_draft_refs_with_api(
+    api: &GmailApiClient,
+    max_results: u32,
+    query: Option<&str>,
+) -> anyhow::Result<Vec<crate::api::DraftRef>> {
+    let mut refs = Vec::new();
+    let mut page: Option<String> = None;
+    while (refs.len() as u32) < max_results {
+        let want = (max_results - refs.len() as u32).min(500);
+        let resp = api.list_drafts(want, page.as_deref(), query).await?;
+        refs.extend(resp.drafts.unwrap_or_default());
+        match resp.next_page_token {
+            Some(t) if !t.is_empty() => page = Some(t),
+            _ => break,
+        }
+    }
+    refs.truncate(max_results as usize);
+    Ok(refs)
+}
+
+pub(super) async fn list_drafts_with_api(
+    api: &GmailApiClient,
+    max_results: u32,
+    query: Option<&str>,
+) -> anyhow::Result<Vec<crate::api::GmailDraft>> {
+    use futures_util::stream::{self, StreamExt};
+
+    let refs = list_draft_refs_with_api(api, max_results, query).await?;
+    let drafts = stream::iter(refs)
+        .map(|r| async move {
+            match api.get_draft_metadata(&r.id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!(draft_id = %r.id, "failed to fetch draft: {e}");
+                    crate::api::GmailDraft::from_ref(r)
+                }
+            }
+        })
+        .buffered(DRAFT_FETCH_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+    Ok(drafts)
+}
+
 pub(super) async fn create_draft_with_api(
     api: &GmailApiClient,
     own_email: &str,

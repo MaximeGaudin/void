@@ -1,4 +1,7 @@
-use super::api_methods::{build_reply_all_recipients, create_draft_with_api, search_with_api};
+use super::api_methods::{
+    build_reply_all_recipients, create_draft_with_api, list_draft_refs_with_api,
+    list_drafts_with_api, search_with_api,
+};
 use super::*;
 use crate::api::{GmailApiClient, GmailMessage};
 use base64::Engine;
@@ -1812,6 +1815,133 @@ async fn search_live_skips_store() {
     let msgs = search_with_api(&api, None, "in:inbox", 10).await.unwrap();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].get_header("Subject").as_deref(), Some("Live"));
+}
+
+// ---------------------------------------------------------------------------
+// Drafts listing
+// ---------------------------------------------------------------------------
+
+async fn mount_two_draft_pages(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [
+                {"id": "d1", "message": {"id": "m1", "threadId": "t1"}},
+                {"id": "d2", "message": {"id": "m2", "threadId": "t2"}}
+            ],
+            "nextPageToken": "p2"
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(query_param("pageToken", "p2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [{"id": "d3", "message": {"id": "m3", "threadId": "t3"}}]
+        })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn list_draft_refs_paginates_without_fetching_drafts() {
+    let server = MockServer::start().await;
+    mount_two_draft_pages(&server).await;
+    // Any per-draft fetch would hit this and fail the expectation.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts/d1"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let refs = list_draft_refs_with_api(&api, 100, None).await.unwrap();
+    let ids: Vec<_> = refs
+        .iter()
+        .map(|r| {
+            (
+                r.id.as_str(),
+                r.message.as_ref().unwrap().thread_id.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(ids, vec![("d1", "t1"), ("d2", "t2"), ("d3", "t3")]);
+}
+
+#[tokio::test]
+async fn list_draft_refs_stops_at_max_and_passes_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(query_param("q", "to:alice"))
+        .and(query_param("maxResults", "2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [
+                {"id": "d1", "message": {"id": "m1", "threadId": "t1"}},
+                {"id": "d2", "message": {"id": "m2", "threadId": "t2"}}
+            ],
+            "nextPageToken": "more"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let refs = list_draft_refs_with_api(&api, 2, Some("to:alice"))
+        .await
+        .unwrap();
+    assert_eq!(refs.len(), 2);
+}
+
+#[tokio::test]
+async fn list_drafts_fetches_metadata_in_list_order_and_keeps_failed_ones() {
+    let server = MockServer::start().await;
+    mount_two_draft_pages(&server).await;
+    for (id, subject) in [("d1", "first"), ("d3", "third")] {
+        Mock::given(method("GET"))
+            .and(path(format!("/gmail/v1/users/me/drafts/{id}")))
+            .and(query_param("format", "metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": id,
+                "message": {
+                    "id": id.replace('d', "m"),
+                    "threadId": id.replace('d', "t"),
+                    "snippet": format!("{subject} snippet"),
+                    "payload": {"headers": [
+                        {"name": "To", "value": "alice@example.com"},
+                        {"name": "Subject", "value": subject}
+                    ]}
+                }
+            })))
+            .mount(&server)
+            .await;
+    }
+    // d2 cannot be fetched: it must still be listed, with its ids.
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts/d2"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let api = GmailApiClient::with_base_url("test-token", &server.uri());
+    let drafts = list_drafts_with_api(&api, 100, None).await.unwrap();
+
+    let ids: Vec<_> = drafts.iter().map(|d| d.id.as_deref().unwrap()).collect();
+    assert_eq!(ids, vec!["d1", "d2", "d3"]);
+    let subject = |i: usize| {
+        drafts[i]
+            .message
+            .as_ref()
+            .and_then(|m| m.get_header("Subject"))
+    };
+    assert_eq!(subject(0).as_deref(), Some("first"));
+    assert_eq!(subject(1), None);
+    assert_eq!(subject(2).as_deref(), Some("third"));
+    let m2 = drafts[1].message.as_ref().unwrap();
+    assert_eq!(m2.id.as_deref(), Some("m2"));
+    assert_eq!(m2.thread_id.as_deref(), Some("t2"));
 }
 
 // ---------------------------------------------------------------------------

@@ -135,8 +135,10 @@ pub struct GmailLabel {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DraftListResponse {
     pub drafts: Option<Vec<DraftRef>>,
+    pub next_page_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,6 +153,23 @@ pub struct DraftRef {
 pub struct GmailDraft {
     pub id: Option<String>,
     pub message: Option<GmailMessage>,
+}
+
+impl GmailDraft {
+    /// A draft known only from `drafts.list` (ids, no headers).
+    pub fn from_ref(r: DraftRef) -> Self {
+        Self {
+            id: Some(r.id),
+            message: r.message.map(|m| GmailMessage {
+                id: Some(m.id),
+                thread_id: Some(m.thread_id),
+                snippet: None,
+                internal_date: None,
+                label_ids: None,
+                payload: None,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

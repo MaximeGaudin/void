@@ -25,6 +25,7 @@ html-to-markdown-rs = { workspace = true }
 open = { workspace = true }
 url = { workspace = true }
 urlencoding = { workspace = true }
+futures-util = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
