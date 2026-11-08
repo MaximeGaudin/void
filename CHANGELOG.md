@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Gmail** — `void gmail search`, `void gmail thread` and `void gmail drafts` expose `cc` and `bcc` next to `to` (#119). Messages served from the local store also keep their `To` / `Cc` / `Bcc` / `Reply-To`: the store only kept `From` and `Subject`, so `to` came back empty and reply-all lost recipients. Sync now stores the recipient headers. Rows synced before this fix are read from the API until they are synced again.
+- **Gmail** — `void gmail search`, `void gmail thread` and `void gmail drafts` expose `cc` and `bcc` next to `to` (#119). Messages served from the local store also keep their `To` / `Cc` / `Bcc` / `Reply-To`: the store only kept `From` and `Subject`, so `to` came back empty. Sync now stores the recipient headers for newly synced mail. Mail synced before this fix is always read from the API instead of the store, so its recipients are correct too.
 
 ## [0.15.2] - 2026-10-27
 
