@@ -9,12 +9,15 @@ PREFIX="${LIBHEIF_PREFIX:-/usr/local}"
 EXPECTED_SHA256="${LIBHEIF_SHA256:-0de0327f60fcd47de90d5654c6fe152232738d60d84fe084ec3e0f35e03b166a}"
 
 sudo apt-get update
+# aom-tools: on Ubuntu 26.04 the libaom-dev CMake config imports AOM::aomdec and
+# fails at configure time when /usr/bin/aomdec is missing.
 sudo apt-get install -y \
   cmake \
   ninja-build \
   pkg-config \
   libde265-dev \
   libaom-dev \
+  aom-tools \
   libjpeg-turbo8-dev
 
 curl -fsSL \
