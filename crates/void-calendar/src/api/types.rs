@@ -37,6 +37,10 @@ pub struct GoogleCalendarEvent {
     pub attendees: Option<Vec<EventAttendee>>,
     pub conference_data: Option<ConferenceData>,
     pub html_link: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub transparency: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +118,10 @@ pub struct InsertEventRequest {
     pub attendees: Option<Vec<AttendeeRequest>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conference_data: Option<ConferenceDataRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<String>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -131,6 +139,10 @@ pub struct UpdateEventRequest {
     pub end: Option<EventDateTimeRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attendees: Option<Vec<AttendeeResponseRequest>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
