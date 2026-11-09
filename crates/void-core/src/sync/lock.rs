@@ -45,8 +45,16 @@ impl FileLock {
     fn is_stale_lock(content: &str) -> Option<bool> {
         let pid_str = content.trim().strip_prefix("pid=")?;
         let pid: u32 = pid_str.parse().ok()?;
-        let mut system = System::new_all();
-        Some(!refresh_void_daemon_exists(&mut system, Pid::from_u32(pid)))
+        // Same answer as before sysinfo 0.40 when the process table can't be
+        // read: the PID is not found, so the lock is stale.
+        let alive = match System::new_all() {
+            Ok(mut system) => refresh_void_daemon_exists(&mut system, Pid::from_u32(pid)),
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot read the process table; treating lock as stale");
+                false
+            }
+        };
+        Some(!alive)
     }
 }
 

@@ -23,6 +23,13 @@ pub fn is_daemon_running(store_path: &Path) -> bool {
         Ok(pid) => pid,
         Err(_) => return false,
     };
-    let mut system = System::new_all();
-    refresh_void_daemon_exists(&mut system, Pid::from_u32(pid))
+    // Same answer as before sysinfo 0.40 when the process table can't be read:
+    // no process found.
+    match System::new_all() {
+        Ok(mut system) => refresh_void_daemon_exists(&mut system, Pid::from_u32(pid)),
+        Err(e) => {
+            tracing::warn!(error = %e, "cannot read the process table; assuming no daemon");
+            false
+        }
+    }
 }
