@@ -47,7 +47,8 @@ fn show_local_status(cfg: &VoidConfig) -> anyhow::Result<()> {
         let content = std::fs::read_to_string(&lock_path).unwrap_or_default();
         if let Ok(pid) = parse_lock_pid(&content) {
             let sys_pid = Pid::from_u32(pid);
-            let mut system = System::new_all();
+            let mut system = System::new_all()
+                .map_err(|e| anyhow::anyhow!("cannot read the process table: {e}"))?;
             let alive = refresh_process_exists(&mut system, sys_pid);
             daemon = serde_json::json!({ "running": alive, "pid": pid, "location": "local" });
         }
