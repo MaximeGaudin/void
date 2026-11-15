@@ -39,6 +39,7 @@ impl HookRunner {
             let agent = hook.agent.clone();
             let exec_opts = HookExecOptions {
                 extra_args: hook.extra_args.clone(),
+                hook_name: hook_name.clone(),
             };
             let sem = Arc::clone(&sem);
             let db = self.db.clone();

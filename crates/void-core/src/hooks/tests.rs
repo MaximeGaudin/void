@@ -620,6 +620,7 @@ mod stub_agent {
             7,
             &HookExecOptions {
                 extra_args: vec!["--model".into(), "sonnet".into()],
+                ..Default::default()
             },
         )
         .unwrap();
@@ -638,5 +639,36 @@ mod stub_agent {
             argv.contains("--model sonnet"),
             "extra args appended: {argv}"
         );
+    }
+
+    #[test]
+    fn stub_receives_void_hook_env_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        // Echo $VOID_HOOK back as the result so we can assert the marker.
+        let stub = write_stub(
+            dir.path(),
+            "agent-env.sh",
+            "#!/bin/sh\nprintf '{\"type\":\"result\",\"result\":\"%s\",\"is_error\":false}\\n' \"$VOID_HOOK\"\nexit 0\n",
+        );
+
+        let out = execute_hook_blocking(
+            stub.to_str().unwrap(),
+            "p",
+            1,
+            &HookExecOptions {
+                hook_name: "email-triage".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(out.success);
+        assert_eq!(out.result_summary, "email-triage");
+
+        // Unnamed hooks still get a non-empty marker.
+        let out =
+            execute_hook_blocking(stub.to_str().unwrap(), "p", 1, &HookExecOptions::default())
+                .unwrap();
+        assert_eq!(out.result_summary, "1");
+        assert_eq!(crate::hooks::HOOK_ENV_VAR, "VOID_HOOK");
     }
 }

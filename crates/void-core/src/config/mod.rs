@@ -18,6 +18,6 @@ pub use paths::{
 };
 pub use secure_fs::{restrict_file, write_secure};
 pub use void_config::{
-    RemoteCacheConfig, RemoteSshConfig, RemoteStoreConfig, StoreConfig, StoreMode, SyncConfig,
-    VoidConfig,
+    HooksConfig, McpConfig, RemoteCacheConfig, RemoteSshConfig, RemoteStoreConfig, StoreConfig,
+    StoreMode, SyncConfig, VoidConfig,
 };

@@ -161,6 +161,8 @@ fn find_connection_returns_match() {
     let config = VoidConfig {
         store: StoreConfig::default(),
         sync: SyncConfig::default(),
+        hooks: Default::default(),
+        mcp: Default::default(),
         connections: vec![
             ConnectionConfig {
                 id: "work-slack".into(),
@@ -189,6 +191,8 @@ fn find_connection_by_connector_returns_match() {
     let config = VoidConfig {
         store: StoreConfig::default(),
         sync: SyncConfig::default(),
+        hooks: Default::default(),
+        mcp: Default::default(),
         connections: vec![ConnectionConfig {
             id: "gmail-1".into(),
             connector_type: ConnectorType::from_static("gmail"),
@@ -232,6 +236,8 @@ fn save_and_load_roundtrip() {
             ..Default::default()
         },
         sync: SyncConfig::default(),
+        hooks: Default::default(),
+        mcp: Default::default(),
         connections: vec![ConnectionConfig {
             id: "wa".to_string(),
             connector_type: ConnectorType::from_static("whatsapp"),
@@ -322,6 +328,8 @@ fn migrate_slack_sidecar_token_into_config() {
             ..Default::default()
         },
         sync: SyncConfig::default(),
+        hooks: Default::default(),
+        mcp: Default::default(),
         connections: vec![ConnectionConfig {
             id: "work-slack".into(),
             connector_type: ConnectorType::from_static("slack"),
@@ -587,6 +595,8 @@ fn add_and_remove_ignore_conversation() {
     let mut cfg = VoidConfig {
         store: StoreConfig::default(),
         sync: SyncConfig::default(),
+        hooks: Default::default(),
+        mcp: Default::default(),
         connections: vec![ConnectionConfig {
             id: "work-slack".into(),
             connector_type: ConnectorType::from_static("slack"),

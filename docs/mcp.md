@@ -134,6 +134,15 @@ These call the shared service layer in-process (faster, typed schemas). Prefer *
 
 `cc` / `bcc` and `signature` / `signature_from` on `send` / `reply` / `forward` match the CLI `--cc` / `--bcc` and `--signature` / `--signature-from` flags (Gmail only). Signature requires a prior interactive grant of `gmail.settings.basic` (run one terminal command with `--signature`); the MCP server will not open a browser. Pass a body/comment without an existing signature — append is not idempotent.
 
+### Tool annotations and send guardrails
+
+Every tool declares MCP [tool annotations](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#tool-annotations) so clients can decide what needs confirmation: read tools are `readOnlyHint: true`; `send`, `reply`, `forward`, `edit`, `archive`, `mute` and `run` (it can run any subcommand) are `destructiveHint: true`. Configure your client to ask before calling destructive tools.
+
+An agent that reads your messages through MCP can be steered by their content (prompt injection). Two guardrails limit what it can send:
+
+- Set `[mcp] allowed_recipients` in `config.toml` to restrict `send`, `reply`, `forward` and `edit` (named tools and through `run`) to a list of recipients. Empty, the default, allows any recipient. See [`[mcp]`](configuration.md#mcp).
+- When `void mcp` runs under a [hook](hooks.md) agent (`VOID_HOOK` set), sending is refused unless `[hooks] allow_send = true`. See [Security: hooks and sending](hooks.md#security-hooks-and-sending).
+
 In-process write tools (`send`, `reply`, `edit`, `forward`, `archive`) require **local store mode**. Use **`run`** instead when on a remote client — it follows the same SSH proxy path as the CLI.
 
 ## Architecture

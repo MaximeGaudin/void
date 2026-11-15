@@ -311,7 +311,10 @@ fn service_result(result: anyhow::Result<serde_json::Value>) -> CallToolResult {
 
 #[tool_router]
 impl VoidMcpServer {
-    #[tool(description = "Show recent messages across all connectors (void inbox)")]
+    #[tool(
+        description = "Show recent messages across all connectors (void inbox)",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn inbox(&self, params: Parameters<InboxToolParams>) -> Result<CallToolResult, McpError> {
         let db = match open_db() {
             Ok(db) => db,
@@ -332,7 +335,10 @@ impl VoidMcpServer {
         )))
     }
 
-    #[tool(description = "List conversations across all connectors")]
+    #[tool(
+        description = "List conversations across all connectors",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn conversations(
         &self,
         params: Parameters<ConversationsToolParams>,
@@ -354,7 +360,10 @@ impl VoidMcpServer {
         )))
     }
 
-    #[tool(description = "Show messages in a conversation or for a connector")]
+    #[tool(
+        description = "Show messages in a conversation or for a connector",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn messages(
         &self,
         params: Parameters<MessagesToolParams>,
@@ -377,7 +386,10 @@ impl VoidMcpServer {
         )))
     }
 
-    #[tool(description = "Full-text search across synced messages")]
+    #[tool(
+        description = "Full-text search across synced messages",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn search(
         &self,
         params: Parameters<SearchToolParams>,
@@ -401,7 +413,10 @@ impl VoidMcpServer {
         )))
     }
 
-    #[tool(description = "List contacts across all connectors")]
+    #[tool(
+        description = "List contacts across all connectors",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn contacts(
         &self,
         params: Parameters<ContactsToolParams>,
@@ -423,7 +438,10 @@ impl VoidMcpServer {
         )))
     }
 
-    #[tool(description = "List channels and groups (excluding DMs)")]
+    #[tool(
+        description = "List channels and groups (excluding DMs)",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn channels(
         &self,
         params: Parameters<ChannelsToolParams>,
@@ -446,7 +464,10 @@ impl VoidMcpServer {
         )))
     }
 
-    #[tool(description = "List calendar events from the local sync cache")]
+    #[tool(
+        description = "List calendar events from the local sync cache",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn calendar(
         &self,
         params: Parameters<CalendarToolParams>,
@@ -473,7 +494,10 @@ impl VoidMcpServer {
         Ok(service_result(result))
     }
 
-    #[tool(description = "Check connectivity health for all configured connections")]
+    #[tool(
+        description = "Check connectivity health for all configured connections",
+        annotations(read_only_hint = true, open_world_hint = true)
+    )]
     async fn health(
         &self,
         _params: Parameters<HealthToolParams>,
@@ -484,7 +508,10 @@ impl VoidMcpServer {
         Ok(tool_ok(statuses))
     }
 
-    #[tool(description = "List Slack messages saved for later (void slack saved)")]
+    #[tool(
+        description = "List Slack messages saved for later (void slack saved)",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
     async fn slack_saved(
         &self,
         params: Parameters<SlackSavedToolParams>,
@@ -505,7 +532,12 @@ impl VoidMcpServer {
     }
 
     #[tool(
-        description = "Run any void CLI subcommand with full parity (e.g. args=[\"slack\",\"saved\"], [\"gmail\",\"search\",\"from:alice\"], [\"hook\",\"list\"]). Blocks interactive setup and sync --daemon."
+        description = "Run any void CLI subcommand with full parity (e.g. args=[\"slack\",\"saved\"], [\"gmail\",\"search\",\"from:alice\"], [\"hook\",\"list\"]). Blocks interactive setup and sync --daemon.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn run(&self, params: Parameters<RunToolParams>) -> Result<CallToolResult, McpError> {
         let p = params.0;
@@ -525,7 +557,14 @@ impl VoidMcpServer {
         }
     }
 
-    #[tool(description = "Send a new message via a connector")]
+    #[tool(
+        description = "Send a new message via a connector",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = true
+        )
+    )]
     async fn send(&self, params: Parameters<SendToolParams>) -> Result<CallToolResult, McpError> {
         if let Some(err) = require_local_store_for_writes() {
             return Ok(err);
@@ -569,7 +608,14 @@ impl VoidMcpServer {
         }
     }
 
-    #[tool(description = "Reply to a message")]
+    #[tool(
+        description = "Reply to a message",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = true
+        )
+    )]
     async fn reply(&self, params: Parameters<ReplyToolParams>) -> Result<CallToolResult, McpError> {
         if let Some(err) = require_local_store_for_writes() {
             return Ok(err);
@@ -611,7 +657,12 @@ impl VoidMcpServer {
     }
 
     #[tool(
-        description = "Edit a Slack message you sent (chat.update). Accepts void message IDs or Slack permalinks. Slack-only."
+        description = "Edit a Slack message you sent (chat.update). Accepts void message IDs or Slack permalinks. Slack-only.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn edit(&self, params: Parameters<EditToolParams>) -> Result<CallToolResult, McpError> {
         if let Some(err) = require_local_store_for_writes() {
@@ -639,7 +690,14 @@ impl VoidMcpServer {
         }
     }
 
-    #[tool(description = "Forward a message to another recipient")]
+    #[tool(
+        description = "Forward a message to another recipient",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = true
+        )
+    )]
     async fn forward(
         &self,
         params: Parameters<ForwardToolParams>,
@@ -675,7 +733,14 @@ impl VoidMcpServer {
         }
     }
 
-    #[tool(description = "Archive one or more messages, or bulk-archive before a date")]
+    #[tool(
+        description = "Archive one or more messages, or bulk-archive before a date",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = true
+        )
+    )]
     async fn archive(
         &self,
         params: Parameters<ArchiveToolParams>,
@@ -705,7 +770,14 @@ impl VoidMcpServer {
         ))
     }
 
-    #[tool(description = "Mute or unmute conversations/channels")]
+    #[tool(
+        description = "Mute or unmute conversations/channels",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn mute(&self, params: Parameters<MuteToolParams>) -> Result<CallToolResult, McpError> {
         let p = params.0;
         if p.targets.is_empty() {
@@ -746,6 +818,8 @@ impl ServerHandler for VoidMcpServer {
 }
 
 pub async fn run_server() -> anyhow::Result<()> {
+    // Write tools (and `run` subprocesses) apply `[mcp] allowed_recipients`.
+    crate::service::guard::mark_mcp_server();
     let server = VoidMcpServer::new();
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
@@ -784,6 +858,62 @@ mod tests {
                 "missing tool {expected}, got {names:?}"
             );
         }
+    }
+
+    #[test]
+    fn tools_declare_safety_annotations() {
+        let server = VoidMcpServer::new();
+        let tools = server.tool_router.list_all();
+        let annotations = |name: &str| {
+            tools
+                .iter()
+                .find(|t| t.name == name)
+                .unwrap_or_else(|| panic!("missing tool {name}"))
+                .annotations
+                .clone()
+                .unwrap_or_else(|| panic!("tool {name} has no annotations"))
+        };
+        for name in [
+            "inbox",
+            "conversations",
+            "messages",
+            "search",
+            "contacts",
+            "channels",
+            "calendar",
+            "health",
+            "slack_saved",
+        ] {
+            let a = annotations(name);
+            assert_eq!(a.read_only_hint, Some(true), "{name} read_only_hint");
+            assert_ne!(a.destructive_hint, Some(true), "{name} destructive_hint");
+        }
+        for name in ["send", "reply", "forward", "edit", "archive", "mute", "run"] {
+            let a = annotations(name);
+            assert_eq!(a.read_only_hint, Some(false), "{name} read_only_hint");
+            assert_eq!(a.destructive_hint, Some(true), "{name} destructive_hint");
+        }
+        for name in ["send", "reply", "forward", "run"] {
+            assert_eq!(
+                annotations(name).open_world_hint,
+                Some(true),
+                "{name} open_world_hint"
+            );
+        }
+        // Every tool declares annotations.
+        for t in &tools {
+            assert!(t.annotations.is_some(), "{} has no annotations", t.name);
+        }
+        // And they reach clients in the serialized tool list.
+        let json = serde_json::to_value(&tools).unwrap();
+        let send = json
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "send")
+            .unwrap();
+        assert_eq!(send["annotations"]["destructiveHint"], true);
+        assert_eq!(send["annotations"]["readOnlyHint"], false);
     }
 
     #[test]

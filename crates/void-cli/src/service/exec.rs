@@ -47,6 +47,8 @@ pub fn run_subcommand(params: &ExecParams<'_>) -> anyhow::Result<ExecResult> {
         cmd.arg("--no-context");
     }
     cmd.args(params.args);
+    // The child applies the same `[mcp]` send guardrails as the MCP tools.
+    cmd.env(crate::service::guard::MCP_ENV_VAR, "1");
 
     // Stdio MCP is sequential; wrap in `spawn_blocking` only if a concurrent
     // transport (e.g. SSE) is added later.

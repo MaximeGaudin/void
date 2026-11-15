@@ -6,6 +6,8 @@
 - [Full example](#full-example)
 - [`[store]`](#store)
 - [`[sync]`](#sync)
+- [`[hooks]`](#hooks)
+- [`[mcp]`](#mcp)
 - [`[[connections]]`](#connections)
 - [`ignore_conversations`](#ignore_conversations)
 - [Data storage layout](#data-storage-layout)
@@ -36,6 +38,13 @@ linkedin_backfill_days = 15
 retention_days = 15
 github_poll_interval_secs = 120
 circleback_poll_interval_secs = 900
+
+[hooks]
+allow_send = false
+allowed_recipients = []
+
+[mcp]
+allowed_recipients = []
 
 [[connections]]
 id = "whatsapp"
@@ -119,6 +128,25 @@ Polling intervals for connectors that poll (push-based connectors — WhatsApp, 
 | `retention_days` | 15 |
 | `github_poll_interval_secs` | 120 |
 | `circleback_poll_interval_secs` | 900 |
+
+## `[hooks]`
+
+What agents spawned by [hooks](hooks.md) may do. Hook agents read untrusted inbound messages, so by default they cannot send: `void send`, `void reply`, `void forward`, `void gmail forward`, `void slack forward`, `void slack schedule`, `void slack edit` and `void telegram forward` (and the MCP tools of the same name) fail when the `VOID_HOOK` environment variable, which void sets on every hook agent, is present. `void gmail draft create` always works. See [Security: hooks and sending](hooks.md#security-hooks-and-sending).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `allow_send` | `false` | Let hook agents send, reply and forward |
+| `allowed_recipients` | `[]` | With `allow_send = true`: when non-empty, every recipient (including `cc` / `bcc`) must be on this list. Entries match an email address, phone number, Slack channel or user ID, or a void or connector-side conversation ID, case-insensitively. Empty allows any recipient |
+
+## `[mcp]`
+
+Guardrails for the [MCP server](mcp.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `allowed_recipients` | `[]` | When non-empty, the MCP `send`, `reply`, `forward` and `edit` tools (and the matching commands through `run`) may only reach these recipients, matched as for `[hooks]`. Empty keeps the default: any recipient |
+
+In [remote store mode](remote-store.md), commands are proxied over SSH before recipients can be resolved, so a send from a hook agent or MCP fails when the matching `allowed_recipients` list is set. Run the agent on the host that holds the store.
 
 ## `[[connections]]`
 

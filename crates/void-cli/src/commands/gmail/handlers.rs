@@ -334,6 +334,11 @@ async fn run_draft(args: &DraftCommand) -> anyhow::Result<()> {
 }
 
 async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
+    crate::service::guard::check_outbound_lists(
+        crate::context::void_config(),
+        "gmail forward",
+        &[Some(&args.to), args.cc.as_deref(), args.bcc.as_deref()],
+    )?;
     let db = crate::context::open_db()?;
 
     let msg = crate::commands::resolve::resolve_message(&db, &args.message_id)?;
