@@ -1,3 +1,8 @@
+/// Environment variable set on every agent process a hook spawns, holding the
+/// hook's name. `void send` / `reply` / `forward` read it to refuse sending
+/// from hook agents unless `[hooks] allow_send = true` (prompt-injection guard).
+pub const HOOK_ENV_VAR: &str = "VOID_HOOK";
+
 #[derive(Debug, Clone)]
 pub struct HookExecResult {
     pub input_prompt: String,
@@ -16,6 +21,9 @@ pub struct HookExecOptions {
     /// splitting). Use this to pass agent-specific flags — `void` does not
     /// interpret the contents.
     pub extra_args: Vec<String>,
+    /// Hook name exported to the agent as [`HOOK_ENV_VAR`]. Empty falls back
+    /// to `"1"` so the marker is always present.
+    pub hook_name: String,
 }
 
 pub fn execute_hook_public(
@@ -46,6 +54,13 @@ pub(crate) fn execute_hook_blocking(
     if !opts.extra_args.is_empty() {
         cmd.args(&opts.extra_args);
     }
+
+    let marker = if opts.hook_name.is_empty() {
+        "1"
+    } else {
+        opts.hook_name.as_str()
+    };
+    cmd.env(HOOK_ENV_VAR, marker);
 
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::piped());

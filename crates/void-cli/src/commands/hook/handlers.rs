@@ -254,6 +254,7 @@ pub(crate) fn cmd_test(
 
     let exec_opts = hooks::HookExecOptions {
         extra_args: hook.extra_args.clone(),
+        hook_name: hook.name.clone(),
     };
     let exec = hooks::execute_hook_public(&hook.agent, &prompt, hook.max_turns, &exec_opts)?;
     if exec.success {

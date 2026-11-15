@@ -135,6 +135,11 @@ async fn run_edit(args: &EditArgs) -> anyhow::Result<()> {
 }
 
 async fn run_schedule(args: &ScheduleArgs) -> anyhow::Result<()> {
+    crate::service::guard::check_outbound_lists(
+        load_config(),
+        "slack schedule",
+        &[Some(&args.channel)],
+    )?;
     let post_at = parse_schedule_time(&args.at)?;
     let now = chrono::Utc::now().timestamp();
     if post_at <= now {
@@ -229,6 +234,7 @@ pub fn parse_schedule_time(input: &str) -> anyhow::Result<i64> {
 
 async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
     let cfg = load_config();
+    crate::service::guard::check_outbound_lists(cfg, "slack forward", &[Some(&args.to)])?;
     let db = crate::context::open_db()?;
 
     let msg = super::resolve::resolve_message(&db, &args.message_id)?;

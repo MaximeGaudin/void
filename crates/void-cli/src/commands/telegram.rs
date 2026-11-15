@@ -102,6 +102,7 @@ async fn run_download(args: &DownloadArgs) -> anyhow::Result<()> {
 
 async fn run_forward(args: &ForwardArgs) -> anyhow::Result<()> {
     let cfg = crate::context::void_config();
+    crate::service::guard::check_outbound_lists(cfg, "telegram forward", &[Some(&args.to)])?;
 
     let db = crate::context::open_db()?;
 

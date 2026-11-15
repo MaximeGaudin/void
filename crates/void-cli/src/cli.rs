@@ -115,6 +115,34 @@ fn refresh_policy_for_cli(cli: &Cli) -> void_core::store::RefreshPolicy {
     }
 }
 
+/// Name of the outbound (message-sending) action `cmd` performs, if any.
+/// Drafts (`gmail draft ...`) are not outbound: a human still sends them.
+fn outbound_action(cmd: &Command) -> Option<&'static str> {
+    use commands::gmail::GmailCommand;
+    use commands::slack::SlackCommand;
+    use commands::telegram::TelegramCommand;
+    match cmd {
+        Command::Send(_) => Some("send"),
+        Command::Reply(_) => Some("reply"),
+        Command::Forward(_) => Some("forward"),
+        Command::Slack(a) => match &a.command {
+            SlackCommand::Forward(_) => Some("slack forward"),
+            SlackCommand::Schedule(_) => Some("slack schedule"),
+            SlackCommand::Edit(_) => Some("slack edit"),
+            _ => None,
+        },
+        Command::Gmail(g) => match &g.command {
+            GmailCommand::Forward(_) => Some("gmail forward"),
+            _ => None,
+        },
+        Command::Telegram(t) => match &t.command {
+            TelegramCommand::Forward(_) => Some("telegram forward"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 pub fn run() -> anyhow::Result<()> {
     let mut cmd = Cli::command();
     crate::output::patch_connector_arg_help(&mut cmd);
@@ -157,6 +185,15 @@ pub fn run() -> anyhow::Result<()> {
             if !context::runs_with_local_cache(cmd) {
                 if matches!(cmd, Command::Hook(_)) {
                     commands::hook::warn_local_hooks_ignored(&context::hooks_dir());
+                }
+                // The agent marker does not travel over SSH: apply the
+                // send guardrails here, before proxying.
+                if let Some(action) = outbound_action(cmd) {
+                    crate::service::guard::check_before_proxy(
+                        context::void_config(),
+                        &crate::service::guard::AgentContext::detect(),
+                        action,
+                    )?;
                 }
                 context::proxy_current_command()?;
             }

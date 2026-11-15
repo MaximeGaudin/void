@@ -17,6 +17,7 @@ use crate::commands::connector_factory;
 use crate::commands::resolve::resolve_message;
 use crate::connectors;
 use crate::output::{parse_connector_type, resolve_connector_filter};
+use crate::service::guard::{self, AgentContext, Recipient};
 
 pub struct SendParams<'a> {
     pub to: Option<&'a str>,
@@ -110,6 +111,9 @@ pub async fn send(
     store_path: &Path,
     params: SendParams<'_>,
 ) -> anyhow::Result<OutboundResult> {
+    let agent = AgentContext::detect();
+    guard::ensure_agent_may_send(cfg, &agent, "send")?;
+
     let connector_type = parse_connector_type(params.via)
         .ok_or_else(|| anyhow::anyhow!("Unknown connector type: {}", params.via))?;
 
@@ -134,12 +138,27 @@ pub async fn send(
         let to = params
             .to
             .ok_or_else(|| anyhow::anyhow!("--to is required for scheduled Slack sends"))?;
+        guard::check_recipients(cfg, &agent, "send", &[Recipient::new([to])])?;
         let (id, scheduled_at) =
             run_slack_scheduled_send(connection, to, params.message, at_str).await?;
         return Ok(OutboundResult::scheduled(id, scheduled_at));
     }
 
     let to = resolve_send_target(db, params.to, params.conversation, &target_type)?;
+
+    // Gmail accepts `a@x.com,b@y.com`: check each address on its own.
+    let mut recipients = if to.contains(',') {
+        guard::recipients_from_list(Some(&to))
+    } else {
+        vec![Recipient::new(
+            [params.to, params.conversation, Some(to.as_str())]
+                .into_iter()
+                .flatten(),
+        )]
+    };
+    recipients.extend(guard::recipients_from_list(params.cc));
+    recipients.extend(guard::recipients_from_list(params.bcc));
+    guard::check_recipients(cfg, &agent, "send", &recipients)?;
 
     let content = if let Some(path) = params.file {
         MessageContent::File {
@@ -178,11 +197,19 @@ pub async fn reply(
     store_path: &Path,
     params: ReplyParams<'_>,
 ) -> anyhow::Result<OutboundResult> {
+    let agent = AgentContext::detect();
+    guard::ensure_agent_may_send(cfg, &agent, "reply")?;
+
     let msg = resolve_message(db, params.message_id)?;
 
     let conv = db
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
+
+    let mut recipients = vec![reply_recipient(&msg, &conv)];
+    recipients.extend(guard::recipients_from_list(params.cc));
+    recipients.extend(guard::recipients_from_list(params.bcc));
+    guard::check_recipients(cfg, &agent, "reply", &recipients)?;
 
     let connection = cfg
         .find_connection_by_connector(&msg.connector)
@@ -259,6 +286,24 @@ pub async fn reply(
     Ok(OutboundResult::immediate(sent_id))
 }
 
+/// Who a reply reaches, for the agent allow-lists: the original sender for
+/// Gmail (the reply goes to its `From`), the conversation otherwise.
+pub(crate) fn reply_recipient(
+    msg: &void_core::models::Message,
+    conv: &void_core::models::Conversation,
+) -> Recipient {
+    if msg.connector == "gmail" {
+        Recipient::new([msg.sender.as_str()])
+    } else {
+        conversation_recipient(conv)
+    }
+}
+
+/// A conversation is known by its void id and its connector-side id.
+pub(crate) fn conversation_recipient(conv: &void_core::models::Conversation) -> Recipient {
+    Recipient::new([conv.id.as_str(), conv.external_id.as_str()])
+}
+
 /// External id an immediate reply targets: the thread root for a threaded
 /// Slack reply, the message itself otherwise.
 fn reply_target_external_id(
@@ -299,6 +344,9 @@ pub async fn edit(
     cfg: &VoidConfig,
     params: EditParams<'_>,
 ) -> anyhow::Result<String> {
+    let agent = AgentContext::detect();
+    guard::ensure_agent_may_send(cfg, &agent, "slack edit")?;
+
     let msg = resolve_message(db, params.message_id)?;
 
     if msg.connector != "slack" {
@@ -312,6 +360,8 @@ pub async fn edit(
     let conv = db
         .get_conversation(&msg.conversation_id)?
         .ok_or_else(|| anyhow::anyhow!("Conversation not found: {}", msg.conversation_id))?;
+
+    guard::check_recipients(cfg, &agent, "slack edit", &[conversation_recipient(&conv)])?;
 
     let connection_filter = resolve_edit_connection_filter(params.connection, &msg.connection_id);
     let connector = connector_factory::build_slack_connector(connection_filter, cfg)?;
@@ -335,6 +385,8 @@ pub async fn forward(
     store_path: &Path,
     params: ForwardParams<'_>,
 ) -> anyhow::Result<String> {
+    guard::check_outbound_lists(cfg, "forward", &[Some(params.to), params.cc, params.bcc])?;
+
     let msg = resolve_message(db, params.message_id)?;
 
     let conv = db

@@ -18,6 +18,8 @@ fn make_config(connection_id: &str, connector_id: &str) -> VoidConfig {
     VoidConfig {
         store: StoreConfig::default(),
         sync: SyncConfig::default(),
+        hooks: Default::default(),
+        mcp: Default::default(),
         connections: vec![ConnectionConfig {
             id: connection_id.into(),
             connector_type: ConnectorType::new(connector_id),

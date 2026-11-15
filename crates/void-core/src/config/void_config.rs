@@ -15,8 +15,54 @@ pub struct VoidConfig {
     pub store: StoreConfig,
     #[serde(default)]
     pub sync: SyncConfig,
+    /// Guardrails for agents spawned by hooks (`[hooks]`).
+    #[serde(default, skip_serializing_if = "HooksConfig::is_default")]
+    pub hooks: HooksConfig,
+    /// Guardrails for the MCP server (`[mcp]`).
+    #[serde(default, skip_serializing_if = "McpConfig::is_default")]
+    pub mcp: McpConfig,
     #[serde(default)]
     pub connections: Vec<ConnectionConfig>,
+}
+
+/// `[hooks]`: what an agent spawned by a hook may do.
+///
+/// Hook agents read untrusted inbound messages, so a prompt injection could
+/// make them send data to an attacker. Sending (`void send` / `reply` /
+/// `forward`, Slack schedule and edit) is refused for them unless
+/// `allow_send = true`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HooksConfig {
+    /// Let hook-spawned agents send, reply and forward. Default `false`.
+    #[serde(default)]
+    pub allow_send: bool,
+    /// When `allow_send = true` and non-empty, hook agents may only send to
+    /// these recipients or conversations (email, phone, channel, conversation
+    /// id). Empty means any recipient.
+    #[serde(default)]
+    pub allowed_recipients: Vec<String>,
+}
+
+impl HooksConfig {
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// `[mcp]`: guardrails for the MCP server's write tools.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpConfig {
+    /// When non-empty, MCP `send` / `reply` / `forward` (and `run` for those
+    /// subcommands) may only target these recipients or conversations. Empty
+    /// (the default) allows any recipient.
+    #[serde(default)]
+    pub allowed_recipients: Vec<String>,
+}
+
+impl McpConfig {
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

@@ -7,7 +7,7 @@ mod runner;
 #[cfg(test)]
 mod tests;
 
-pub use execute::{execute_hook_public, HookExecOptions, HookExecResult};
+pub use execute::{execute_hook_public, HookExecOptions, HookExecResult, HOOK_ENV_VAR};
 pub use hook_fs::{
     delete_hook, find_hook, hook_files, hooks_dir, hooks_dir_for, load_hooks, save_hook, slugify,
     update_hook_enabled,
