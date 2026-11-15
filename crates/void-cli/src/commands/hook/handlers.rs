@@ -100,6 +100,8 @@ pub(crate) fn cmd_create(
     active_end: Option<&str>,
     active_utc_offset: Option<i32>,
 ) -> anyhow::Result<()> {
+    hooks::validate_agent(agent).map_err(|e| anyhow::anyhow!(e))?;
+
     let prompt_text = match (prompt, prompt_file) {
         (Some(text), _) => text.to_string(),
         (_, Some(path)) => std::fs::read_to_string(path)

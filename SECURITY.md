@@ -23,6 +23,14 @@ Void handles sensitive material by design. What you should know:
 
 Hardening contributions (e.g. OS keychain integration for tokens) are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Prompt injection
+
+Hooks and the MCP server hand third-party message content (emails, chats, DMs) to an AI agent. Whoever sent that message controls its text, and it may contain instructions meant for your agent rather than for you.
+
+- Hook prompts wrap `{message}` in `<untrusted_message>` tags with a notice that the content is data, not instructions (see [Hooks](docs/hooks.md#untrusted-message-content)). This lowers the risk; it does not remove it.
+- Restrict the agent's tools to what the task needs, read-only where possible (e.g. `extra_args = ["--allowedTools", "Bash(void inbox *)"]`).
+- Never auto-approve sending: have the agent draft replies for you to review instead of calling `void send` / `void reply` unattended.
+
 ## Embedded Google OAuth client
 
 The repository ships a Google OAuth client (`crates/void-gmail/google-credentials.json`, compiled into the binary) so Gmail and Calendar work without a Google Cloud project. Secret scanners flag the `client_secret` in this file — that is expected and is **not** a credential leak:

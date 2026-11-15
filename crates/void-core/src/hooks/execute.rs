@@ -41,6 +41,10 @@ pub(crate) fn execute_hook_blocking(
     max_turns: usize,
     opts: &HookExecOptions,
 ) -> anyhow::Result<HookExecResult> {
+    // Hook files can be edited by hand: re-check the agent before spawning it.
+    super::model::validate_agent(agent)
+        .map_err(|e| anyhow::anyhow!("refusing to run hook: {e}"))?;
+
     let mut cmd = std::process::Command::new(agent);
     cmd.args(["-p", prompt]);
     cmd.args(["--verbose"]);

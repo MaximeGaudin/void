@@ -532,7 +532,7 @@ impl VoidMcpServer {
     }
 
     #[tool(
-        description = "Run any void CLI subcommand with full parity (e.g. args=[\"slack\",\"saved\"], [\"gmail\",\"search\",\"from:alice\"], [\"hook\",\"list\"]). Blocks interactive setup and sync --daemon.",
+        description = "Run any void CLI subcommand with full parity (e.g. args=[\"slack\",\"saved\"], [\"gmail\",\"search\",\"from:alice\"], [\"hook\",\"list\"]). Blocks interactive setup, sync --daemon, and hook subcommands other than list/show/log.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,

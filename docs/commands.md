@@ -184,7 +184,7 @@ LLM automations triggered by new messages or cron schedules. See the full [Hooks
 | Command | Description |
 |---------|-------------|
 | `void hook list` | List all hooks |
-| `void hook create --name <n> --trigger <new_message\|schedule> --prompt <text>` | Create a hook. `--prompt-file <path>` instead of inline text, `--connector` to filter trigger, `--cron <expr>` for schedules, `--agent <cli>` (default: `claude`), `--max-turns <N>`, `--active-days`/`--active-start`/`--active-end`/`--active-utc-offset` to restrict when it fires |
+| `void hook create --name <n> --trigger <new_message\|schedule> --prompt <text>` | Create a hook. `--prompt-file <path>` instead of inline text, `--connector` to filter trigger, `--cron <expr>` for schedules, `--agent <cli>` (default: `claude`; a supported agent name or an absolute path, see [Choosing the agent](hooks.md#choosing-the-agent)), `--max-turns <N>`, `--active-days`/`--active-start`/`--active-end`/`--active-utc-offset` to restrict when it fires |
 | `void hook show <name>` | Show a hook's full configuration |
 | `void hook enable <name>` / `void hook disable <name>` | Toggle a hook |
 | `void hook delete <name>` | Delete a hook |

@@ -212,3 +212,39 @@ pub(crate) fn default_max_turns() -> usize {
 pub(crate) fn default_agent() -> String {
     "claude".to_string()
 }
+
+/// Agent CLIs a hook may name by bare name (resolved through `PATH`).
+pub const SUPPORTED_AGENTS: &[&str] = &["claude", "cursor-agent", "codex", "gemini", "opencode"];
+
+/// Check that a hook's `agent` is safe to spawn.
+///
+/// Accepted: a bare name from [`SUPPORTED_AGENTS`], or an absolute path to an
+/// existing executable file. Everything else (relative paths, other bare
+/// names, strings with spaces or arguments) is rejected, so a hook cannot be
+/// pointed at an arbitrary program such as `sh` or `./evil`.
+pub fn validate_agent(agent: &str) -> Result<(), String> {
+    if SUPPORTED_AGENTS.contains(&agent) {
+        return Ok(());
+    }
+    let path = std::path::Path::new(agent);
+    if !path.is_absolute() {
+        return Err(format!(
+            "unsupported hook agent '{agent}': use one of {} or an absolute path to an \
+             executable file",
+            SUPPORTED_AGENTS.join(", ")
+        ));
+    }
+    let meta =
+        std::fs::metadata(path).map_err(|e| format!("hook agent '{agent}' cannot be read: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("hook agent '{agent}' is not a file"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o111 == 0 {
+            return Err(format!("hook agent '{agent}' is not executable"));
+        }
+    }
+    Ok(())
+}

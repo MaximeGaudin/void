@@ -101,7 +101,7 @@ Successful commands return the same JSON envelope printed by the CLI (`{ "data",
 
 Do **not** pass global CLI flags (`--store`, `--config`, `--verbose`/`-v`, `--no-context`, `--local-store`) inside `run` args — the server already injects `--store`/`--config`, and `no_context` is a tool parameter.
 
-**Blocked via `run`:** `void mcp` (recursion), `void setup` (interactive wizard), `void sync --daemon` (background daemon — start from a terminal).
+**Blocked via `run`:** `void mcp` (recursion), `void setup` (interactive wizard), `void sync --daemon` (background daemon — start from a terminal), and every `void hook` subcommand except `list`, `show` and `log`. A hook spawns an agent process on future messages, so `hook create`, `delete`, `enable`, `disable`, `test` and `push` must be run from a terminal. The check scans every positional token, so a leading flag (`["-n", "10", "hook", "create"]`) does not get around it.
 
 ## Named tools (convenience)
 
