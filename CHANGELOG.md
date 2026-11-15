@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Gmail** — `void gmail search`, `void gmail thread` and `void gmail drafts` expose `cc` and `bcc` next to `to` (#119). Messages served from the local store also keep their `To` / `Cc` / `Bcc` / `Reply-To`: the store only kept `From` and `Subject`, so `to` came back empty. Sync now stores the recipient headers for newly synced mail. Mail synced before this fix is always read from the API instead of the store, so its recipients are correct too.
 
+### Security
+
+- **Hooks** — `{message}` in a hook prompt now expands to a fixed notice that the content is third-party data, not instructions, followed by the message JSON inside `<untrusted_message>` … `</untrusted_message>` tags. Every `<` in the JSON is escaped as `\u003c` (still valid JSON), so a message cannot close the block and pass its text off as part of your prompt. This reduces prompt-injection risk from incoming messages but does not eliminate it: keep hook agents on restricted, read-only tools and never let them send unattended. See [SECURITY.md](SECURITY.md#prompt-injection).
+
 ## [0.15.2] - 2026-10-27
 
 ### Fixed
