@@ -13,7 +13,8 @@ pub use hook_fs::{
     update_hook_enabled,
 };
 pub use model::{
-    ActiveWindow, Hook, HookLog, HookLogInsert, HookRunSummary, PromptConfig, Trigger, Weekday,
+    validate_agent, ActiveWindow, Hook, HookLog, HookLogInsert, HookRunSummary, PromptConfig,
+    Trigger, Weekday, SUPPORTED_AGENTS,
 };
 pub use placeholders::expand_placeholders_public;
 pub use runner::HookRunner;

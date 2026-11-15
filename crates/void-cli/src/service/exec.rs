@@ -27,6 +27,15 @@ const REJECTED_GLOBALS: &[&str] = &[
     "--local-store",
 ];
 
+/// `void hook` subcommands the `run` tool may invoke: read-only inspection.
+const ALLOWED_HOOK_SUBCOMMANDS: &[&str] = &["list", "show", "log"];
+
+/// `void hook` subcommands that create, change, copy or execute hooks. A hook
+/// spawns a process on every matching message, so an agent driven through MCP
+/// (and possibly by prompt injection) must never manage them.
+const BLOCKED_HOOK_SUBCOMMANDS: &[&str] =
+    &["create", "delete", "enable", "disable", "test", "push"];
+
 /// Run a void CLI subcommand in a child process (same binary) and capture output.
 ///
 /// This keeps MCP in full parity with the CLI without duplicating every subcommand as a tool.
@@ -110,6 +119,36 @@ pub fn validate_run_args(args: &[String]) -> anyhow::Result<()> {
         }
     }
 
+    validate_hook_args(args)?;
+
+    Ok(())
+}
+
+/// Only read-only `void hook` subcommands may run through MCP.
+///
+/// The first positional token after `hook` must be an allowed subcommand
+/// (a flag value such as `-n 5` cannot stand in for it), and no later
+/// positional token may name a mutating subcommand.
+fn validate_hook_args(args: &[String]) -> anyhow::Result<()> {
+    let mut positionals = positional_args(args).skip_while(|a| *a != "hook");
+    if positionals.next().is_none() {
+        return Ok(());
+    }
+    let sub = positionals.next();
+    let blocked = match sub {
+        Some(s) if ALLOWED_HOOK_SUBCOMMANDS.contains(&s) => {
+            positionals.any(|a| BLOCKED_HOOK_SUBCOMMANDS.contains(&a))
+        }
+        // `void hook` alone only prints help.
+        None => false,
+        Some(_) => true,
+    };
+    if blocked {
+        anyhow::bail!(
+            "only `void hook list`, `void hook show` and `void hook log` are allowed via the run \
+             tool — hooks must be created, changed, tested or pushed from a terminal"
+        );
+    }
     Ok(())
 }
 
@@ -158,6 +197,54 @@ mod tests {
         assert!(validate_run_args(&["--store=/tmp/x".into(), "inbox".into()]).is_err());
         assert!(validate_run_args(&["inbox".into(), "--no-context".into()]).is_err());
         assert!(validate_run_args(&["inbox".into(), "--local-store".into()]).is_err());
+    }
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn validate_rejects_mutating_hook_subcommands() {
+        for sub in BLOCKED_HOOK_SUBCOMMANDS {
+            let err = validate_run_args(&args(&["hook", sub, "x"])).unwrap_err();
+            assert!(err.to_string().contains("terminal"), "{sub}: {err}");
+        }
+        assert!(validate_run_args(&args(&[
+            "hook",
+            "create",
+            "--name",
+            "x",
+            "--trigger",
+            "new_message",
+            "--prompt",
+            "p",
+            "--agent",
+            "/bin/sh",
+        ]))
+        .is_err());
+    }
+
+    #[test]
+    fn validate_rejects_hook_subcommand_behind_flags() {
+        assert!(validate_run_args(&args(&["-n", "10", "hook", "create"])).is_err());
+        assert!(validate_run_args(&args(&["hook", "--some-flag", "create"])).is_err());
+        assert!(validate_run_args(&args(&["hook", "-n", "5", "test", "x"])).is_err());
+        assert!(validate_run_args(&args(&["hook", "--x=1", "push"])).is_err());
+        assert!(validate_run_args(&args(&["hook", "list", "test"])).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_hook_subcommand() {
+        assert!(validate_run_args(&args(&["hook", "run", "x"])).is_err());
+    }
+
+    #[test]
+    fn validate_allows_read_only_hook_subcommands() {
+        assert!(validate_run_args(&args(&["hook", "list"])).is_ok());
+        assert!(validate_run_args(&args(&["hook", "show", "email-triage"])).is_ok());
+        assert!(validate_run_args(&args(&["hook", "log", "-n", "5"])).is_ok());
+        assert!(validate_run_args(&args(&["hook", "log", "--hook", "triage"])).is_ok());
+        assert!(validate_run_args(&args(&["hook"])).is_ok());
     }
 
     #[test]

@@ -38,7 +38,8 @@ pub enum HookCommand {
         /// Max agent turns
         #[arg(long, default_value = "3")]
         max_turns: usize,
-        /// The agent to execute the hook (e.g. "claude", "cursor")
+        /// Agent to run: claude, cursor-agent, codex, gemini, opencode, or an
+        /// absolute path to an executable
         #[arg(long, default_value = "claude")]
         agent: String,
         /// Active window: days of the week (comma-separated, e.g. "mon,tue,wed,thu,fri")

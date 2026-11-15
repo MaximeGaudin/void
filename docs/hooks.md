@@ -53,7 +53,7 @@ Key flags for `void hook create`:
 | `--connector <type>` | For `new_message`: only fire for this connector |
 | `--cron <expr>` | For `schedule`: cron expression |
 | `--prompt <text>` / `--prompt-file <path>` | The prompt (one required) |
-| `--agent <cli>` | Agent binary to run (default: `claude`) |
+| `--agent <cli>` | Agent to run (default: `claude`). See [Choosing the agent](#choosing-the-agent) |
 | `--max-turns <N>` | Max agent turns (default: 3) |
 | `--active-days`, `--active-start`, `--active-end`, `--active-utc-offset` | Restrict when the hook may fire |
 
@@ -92,7 +92,18 @@ Windows may wrap midnight (e.g. `22:00` → `06:00`). Without `--active-utc-offs
 
 ## Choosing the agent
 
-The default agent is `claude`. The `extra_args` field in the hook file forwards additional flags verbatim to the agent process — void doesn't interpret them. Common examples for Claude:
+The default agent is `claude`. `--agent` (and `agent` in the hook file) accepts:
+
+- a supported agent CLI by bare name, resolved through `PATH`: `claude`, `cursor-agent`, `codex`, `gemini`, `opencode`
+- an absolute path to an executable file, e.g. `/opt/homebrew/bin/claude` or a wrapper script you wrote
+
+Anything else — another bare name (`sh`, `python`), a relative path (`./agent`, `bin/claude`), or a command line with arguments (`sh -c ...`) — is rejected by `void hook create`. A hand-edited hook file with such an agent still loads (so `void hook list` / `show` / `disable` work), but void logs a warning and refuses to run it.
+
+The agent must accept the flags shown in [How it works](#how-it-works).
+
+Hooks can only be created, changed, tested or pushed from a terminal: the MCP `run` tool allows `void hook list`, `show` and `log` only (see [MCP](mcp.md#full-cli-parity-the-run-tool)).
+
+The `extra_args` field in the hook file forwards additional flags verbatim to the agent process — void doesn't interpret them. Common examples for Claude:
 
 ```toml
 extra_args = ["--model", "haiku"]                                # cheaper model
