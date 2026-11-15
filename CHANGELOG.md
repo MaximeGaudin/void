@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Hooks** — `{message}` in a hook prompt now expands to a fixed notice that the content is third-party data, not instructions, followed by the message JSON inside `<untrusted_message>` … `</untrusted_message>` tags. Every `<` in the JSON is escaped as `\u003c` (still valid JSON), so a message cannot close the block and pass its text off as part of your prompt. This reduces prompt-injection risk from incoming messages but does not eliminate it: keep hook agents on restricted, read-only tools and never let them send unattended. See [SECURITY.md](SECURITY.md#prompt-injection).
 - **Dependencies** — the bundled SQLite is now 3.54 (RUSTSEC-2026-0459: stale page-cache memory read through a crafted `-wal` file), and `openssl` and `rmcp` are updated past RUSTSEC-2026-0474, RUSTSEC-2026-0476, RUSTSEC-2026-0477 and RUSTSEC-2026-0462.
 
 ## [0.15.2] - 2026-10-27
