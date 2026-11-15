@@ -580,6 +580,7 @@ fn cron_invalid_expression_is_error_not_panic() {
 #[cfg(unix)]
 mod stub_agent {
     use crate::hooks::execute::{execute_hook_blocking, HookExecOptions};
+    use crate::hooks::model::validate_agent;
 
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
@@ -706,5 +707,62 @@ mod stub_agent {
             argv.contains("--model sonnet"),
             "extra args appended: {argv}"
         );
+    }
+
+    #[test]
+    fn validate_agent_accepts_absolute_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let stub = write_stub(dir.path(), "agent.sh", "#!/bin/sh\nexit 0\n");
+        assert!(validate_agent(stub.to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn validate_agent_rejects_absolute_non_executable_and_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plain.txt");
+        std::fs::write(&file, "x").unwrap();
+        assert!(validate_agent(file.to_str().unwrap()).is_err());
+        assert!(validate_agent(dir.path().to_str().unwrap()).is_err());
+        let missing = dir.path().join("missing");
+        assert!(validate_agent(missing.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn execute_refuses_unsupported_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        // A real executable reached by a relative path must not be spawned.
+        write_stub(dir.path(), "evil", "#!/bin/sh\nexit 0\n");
+        let err = execute_hook_blocking("./evil", "p", 1, &HookExecOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refusing to run hook"), "{err}");
+        assert!(execute_hook_blocking("sh", "p", 1, &HookExecOptions::default()).is_err());
+    }
+}
+
+#[test]
+fn validate_agent_accepts_supported_bare_names() {
+    use crate::hooks::model::{validate_agent, SUPPORTED_AGENTS};
+    assert!(SUPPORTED_AGENTS.contains(&"claude"));
+    for agent in SUPPORTED_AGENTS {
+        assert!(validate_agent(agent).is_ok(), "{agent}");
+    }
+}
+
+#[test]
+fn validate_agent_rejects_relative_and_unknown() {
+    use crate::hooks::model::validate_agent;
+    for agent in [
+        "./evil",
+        "evil",
+        "bin/claude",
+        "../claude",
+        "sh",
+        "sh -c 'id'",
+        "claude --dangerously-skip-permissions",
+        "",
+    ] {
+        let err = validate_agent(agent).unwrap_err();
+        assert!(err.contains("unsupported hook agent"), "{agent}: {err}");
     }
 }

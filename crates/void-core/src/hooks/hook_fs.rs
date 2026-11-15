@@ -57,7 +57,12 @@ pub fn load_hooks(dir: &Path) -> Vec<Hook> {
         }
         match std::fs::read_to_string(&path) {
             Ok(content) => match toml::from_str::<Hook>(&content) {
-                Ok(hook) => hooks.push(hook),
+                Ok(hook) => {
+                    if let Err(e) = super::model::validate_agent(&hook.agent) {
+                        warn!(path = %path.display(), "hook will not run: {e}");
+                    }
+                    hooks.push(hook);
+                }
                 Err(e) => warn!(path = %path.display(), "invalid hook file: {e}"),
             },
             Err(e) => warn!(path = %path.display(), "cannot read hook file: {e}"),

@@ -505,7 +505,7 @@ impl VoidMcpServer {
     }
 
     #[tool(
-        description = "Run any void CLI subcommand with full parity (e.g. args=[\"slack\",\"saved\"], [\"gmail\",\"search\",\"from:alice\"], [\"hook\",\"list\"]). Blocks interactive setup and sync --daemon."
+        description = "Run any void CLI subcommand with full parity (e.g. args=[\"slack\",\"saved\"], [\"gmail\",\"search\",\"from:alice\"], [\"hook\",\"list\"]). Blocks interactive setup, sync --daemon, and hook subcommands other than list/show/log."
     )]
     async fn run(&self, params: Parameters<RunToolParams>) -> Result<CallToolResult, McpError> {
         let p = params.0;

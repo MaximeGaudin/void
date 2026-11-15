@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **MCP** — the `run` tool rejects `void hook create`, `delete`, `enable`, `disable`, `test` and `push`; only `void hook list`, `show` and `log` are allowed. An agent driven through MCP (for example by a prompt injection in a synced message) could create a hook running any program and fire it with `hook test`, or leave it to run on future messages. Hooks are now managed from a terminal only.
+- **Hooks** — the hook `agent` must be a supported agent CLI by bare name (`claude`, `cursor-agent`, `codex`, `gemini`, `opencode`) or an absolute path to an executable file. `void hook create` rejects anything else, and a hand-edited hook file with another agent is refused at run time. Existing `claude` hooks are unaffected.
 - **Hooks** — `{message}` in a hook prompt now expands to a fixed notice that the content is third-party data, not instructions, followed by the message JSON inside `<untrusted_message>` … `</untrusted_message>` tags. Every `<` in the JSON is escaped as `\u003c` (still valid JSON), so a message cannot close the block and pass its text off as part of your prompt. This reduces prompt-injection risk from incoming messages but does not eliminate it: keep hook agents on restricted, read-only tools and never let them send unattended. See [SECURITY.md](SECURITY.md#prompt-injection).
 - **Dependencies** — the bundled SQLite is now 3.54 (RUSTSEC-2026-0459: stale page-cache memory read through a crafted `-wal` file), and `openssl` and `rmcp` are updated past RUSTSEC-2026-0474, RUSTSEC-2026-0476, RUSTSEC-2026-0477 and RUSTSEC-2026-0462.
 
