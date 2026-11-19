@@ -62,7 +62,7 @@ reqwest = { version = "0.13", features = ["json", "multipart", "form", "query"] 
 # through `reqwest::Response` (used by the Gmail retry path to buffer a body).
 http = "1"
 quick-xml = { version = "0.42", features = ["serialize"] }
-tokio-tungstenite = { version = "0.29", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
 futures-util = "0.3"
 base64 = "0.23"
 libc = "0.2"
